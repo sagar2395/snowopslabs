@@ -1,0 +1,25 @@
+# Custom values for istiod (control plane).
+# Referenced by platform/mesh/istio/install.sh via -f.
+# Tuned minimal for k3d resource reality — raise for cloud/load testing.
+
+pilot:
+  # Keep the control plane lightweight on a laptop cluster.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  autoscaleEnabled: false
+
+# Sidecar proxy defaults kept modest; the demo workloads are tiny.
+global:
+  proxy:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi

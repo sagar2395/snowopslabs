@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labs.snowops.net/schemas/challenge.schema.json",
+  "title": "SnowOps Labs Challenge (challenge.yaml)",
+  "description": "Schema for a graded SnowOps Labs challenge: set up a broken state, time the fix, grade against checks.",
+  "type": "object",
+  "required": ["name", "setup", "grading"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+    "displayName": { "type": "string" },
+    "description": { "type": "string" },
+    "category": { "type": "string" },
+    "parTime": { "type": "string", "description": "Target time, e.g. \"12m\" (Go duration)." },
+    "hintPenalty": { "type": "integer", "minimum": 0, "maximum": 100, "description": "Percent score deducted per revealed hint (default 5)." },
+    "setup": {
+      "type": "object",
+      "required": ["type", "ref"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["scenario", "incident"] },
+        "ref": { "type": "string", "description": "Name of the scenario or incident to stage (cross-reference checked)." }
+      }
+    },
+    "grading": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "useDetectionCheck": {
+          "type": "boolean",
+          "description": "Grade using the setup incident's detection check. Requires setup.type == incident."
+        },
+        "checks": { "type": "array", "items": { "$ref": "check.schema.json" } }
+      },
+      "anyOf": [
+        { "required": ["useDetectionCheck"] },
+        { "required": ["checks"] }
+      ]
+    }
+  }
+}

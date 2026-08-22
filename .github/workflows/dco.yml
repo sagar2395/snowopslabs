@@ -1,0 +1,45 @@
+# DCO — verify every commit in a pull request is signed off.
+#
+# SnowOps Labs uses the Developer Certificate of Origin instead of a CLA
+# (see DCO.md). Contributors sign off with `git commit -s`; this check fails the
+# PR if any commit lacks a matching `Signed-off-by` line.
+name: DCO
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: Check sign-off
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify Signed-off-by on every PR commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          missing=0
+          # Walk each commit in the PR range; merge commits are exempt.
+          for sha in $(git rev-list --no-merges "$BASE_SHA".."$HEAD_SHA"); do
+            author="$(git show -s --format='%an <%ae>' "$sha")"
+            if git show -s --format='%(trailers:key=Signed-off-by)' "$sha" \
+                 | grep -qiF "Signed-off-by: $author"; then
+              continue
+            fi
+            echo "::error::commit $sha is not signed off by its author ($author)"
+            echo "  fix with: git commit --amend -s   (or: git rebase --signoff main)"
+            missing=1
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "DCO check failed — see DCO.md."
+            exit 1
+          fi
+          echo "All commits are signed off."

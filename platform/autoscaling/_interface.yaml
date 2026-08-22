@@ -1,0 +1,51 @@
+# Autoscaling Provider Interface
+# Any autoscaling provider must satisfy this contract.
+# Current implementations: keda
+
+name: autoscaling
+description: Event/metric-driven horizontal autoscaling for workloads (beyond CPU/memory HPA).
+
+provides:
+  - CRDs to declare scaling rules (KEDA ScaledObject/ScaledJob)
+  - An autoscaler that drives a Kubernetes HPA from external metrics
+    (Prometheus queries, Kafka consumer lag, queue depth, …)
+  - Scale-to/from based on the configured triggers and thresholds
+
+requires:
+  kubernetes_resources:
+    - Operator + metrics apiserver Deployments (provider)
+    - A target workload (Deployment) referenced by scaleTargetRef
+    - A metrics source for the trigger (e.g. the monitoring/metrics Prometheus)
+  tools:
+    - helm
+    - kubectl
+
+env_variables:
+  AUTOSCALING_PROVIDER: "Active provider: keda"
+  KEDA_CHART_VERSION: "keda: pinned kedacore/keda chart version (versions.env)"
+
+scripts:
+  install.sh: "Install the operator + metrics server via Helm (idempotent)"
+  uninstall.sh: "Remove the operator and its CRDs (also removes ScaledObjects/HPAs)"
+  status.sh: "Show component health, CRDs, and any ScaledObjects + managed HPAs"
+
+values:
+  values.yaml: "Helm chart values for the provider (k3d-minimal resources)"
+
+conventions:
+  - The provider only installs the autoscaler; scaling rules (ScaledObject) are
+    declared by scenarios/apps, not baked into the provider.
+  - Prometheus-trigger ScaledObjects must read the monitoring namespace from a
+    template/env (rule 3/4), not a hardcoded namespace.
+  - Chart versions are pinned and overridable via env (defaults in versions.env).
+
+implementations:
+  keda:
+    chart: kedacore/keda
+    crds: [scaledobjects.keda.sh, scaledjobs.keda.sh, triggerauthentications.keda.sh]
+    managed_hpa: "keda-hpa-<scaledobject-name>"
+    notes: "Prometheus scaler queries the existing monitoring stack. Drives an HPA."
+
+resource_notes:
+  - "KEDA's footprint is small; it fits a laptop k3d easily alongside monitoring."
+  - "Used by the autoscaling-under-load scenario: spike traffic -> scale up -> cooldown -> scale down."

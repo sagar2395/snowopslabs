@@ -1,0 +1,17 @@
+# Custom values for Traefik installation
+# This file is referenced by platform/ingress/traefik/install.sh via -f.
+
+# expose dashboard via API (additional ingressRoute is disabled by default)
+api:
+  dashboard: true
+
+# service type exposes load balancer for k3d
+service:
+  type: LoadBalancer
+
+# If you want the dashboard ingress route as well:
+# ingressRoute:
+#   dashboard:
+#     enabled: true
+#     entryPoints:
+#       - traefik

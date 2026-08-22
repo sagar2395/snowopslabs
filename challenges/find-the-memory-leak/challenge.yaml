@@ -1,0 +1,14 @@
+name: find-the-memory-leak
+displayName: "Find the memory leak"
+description: >
+  echo-server pods keep getting OOMKilled at startup — a memory limit was
+  recently changed. Find the resource limit that was misconfigured and
+  restore the pod to a healthy Running state.
+category: resources
+parTime: "8m"
+setup:
+  type: incident
+  ref: oom-kill
+grading:
+  useDetectionCheck: true
+hintPenalty: 5

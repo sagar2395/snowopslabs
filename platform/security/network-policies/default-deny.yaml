@@ -1,0 +1,24 @@
+# Default deny all ingress and egress traffic
+# Applied to namespaces with label: network-policy=enforced
+# This forms the baseline — explicit allow rules open specific paths
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: go-api
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: echo-server
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress

@@ -1,0 +1,82 @@
+---
+# Staging environment — namespace, release metadata, go-api deployment + service
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: env-staging
+  labels:
+    snowops.net/env: staging
+    snowops.net/scenario: env-promotion
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: env-metadata
+  namespace: env-staging
+  labels:
+    snowops.net/env: staging
+    snowops.net/scenario: env-promotion
+data:
+  env_name: "staging"
+  app: "go-api"
+  image_tag: "v1.1.0"
+  promoted_from: ""
+  promoted_at: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-api
+  namespace: env-staging
+  labels:
+    app: go-api
+    snowops.net/env: staging
+    snowops.net/image-tag: v1.1.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-api
+      snowops.net/env: staging
+  template:
+    metadata:
+      labels:
+        app: go-api
+        snowops.net/env: staging
+    spec:
+      containers:
+        - name: go-api
+          image: go-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ENV_NAME
+              value: staging
+            - name: IMAGE_TAG
+              valueFrom:
+                configMapKeyRef:
+                  name: env-metadata
+                  key: image_tag
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-api
+  namespace: env-staging
+  labels:
+    snowops.net/env: staging
+spec:
+  selector:
+    app: go-api
+    snowops.net/env: staging
+  ports:
+    - port: 80
+      targetPort: 8080

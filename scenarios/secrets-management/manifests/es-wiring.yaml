@@ -1,0 +1,38 @@
+# Vault->Kubernetes sync wiring for the rotation demo. Idempotent (kubectl apply).
+# The vault-token secret is (re)created by scripts/seed-baseline.sh from the env,
+# so nothing secret is committed here. refreshInterval is short for a snappy demo.
+---
+apiVersion: external-secrets.io/v1beta1
+kind: SecretStore
+metadata:
+  name: vault-backend
+  namespace: go-api
+spec:
+  provider:
+    vault:
+      server: "http://vault.vault.svc:8200"
+      path: "secret"
+      version: "v2"
+      auth:
+        tokenSecretRef:
+          name: vault-token
+          key: token
+---
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: go-api-secret
+  namespace: go-api
+spec:
+  refreshInterval: 10s
+  secretStoreRef:
+    name: vault-backend
+    kind: SecretStore
+  target:
+    name: go-api-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: api-key
+      remoteRef:
+        key: go-api
+        property: api-key

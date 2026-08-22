@@ -1,0 +1,55 @@
+# Cost Provider Interface
+# Any cost provider must satisfy this contract.
+# Current implementations: opencost
+
+name: cost
+description: >
+  Kubernetes cost visibility: per-namespace, per-workload cost estimation using
+  resource usage from Prometheus and configurable pricing models. Suitable for
+  right-sizing exercises even without real cloud billing data.
+
+provides:
+  - Per-namespace and per-workload cost estimates (CPU + memory)
+  - A UI to explore allocation, efficiency, and overspend at a glance
+  - Prometheus metrics for cost-per-namespace queries
+
+requires:
+  kubernetes_resources:
+    - The monitoring/metrics Prometheus (PROMETHEUS_SVC must be reachable)
+    - An ingress controller (optional — the UI is also accessible via port-forward)
+  tools:
+    - helm
+    - kubectl
+
+env_variables:
+  COST_PROVIDER: "Active provider: opencost"
+  OPENCOST_CHART_VERSION: "opencost: pinned chart version (versions.env)"
+  MONITORING_NAMESPACE: "Namespace where Prometheus runs (default: monitoring)"
+  PROMETHEUS_SVC: "Full Prometheus service URL for OpenCost to query (auto-derived from MONITORING_NAMESPACE if unset)"
+
+scripts:
+  install.sh: "Install the cost tool via Helm (idempotent)"
+  uninstall.sh: "Remove the cost tool and its namespace"
+  status.sh: "Show component health and access instructions"
+
+values:
+  values.yaml: "Helm chart values for the provider (k3d-minimal resources; ingress off by default)"
+
+conventions:
+  - Install monitoring/metrics (Prometheus) BEFORE this provider — it reads metrics from there.
+  - k3d/lab deployments have no real billing API; on-prem pricing defaults are used.
+    Cost numbers are relative (useful for right-sizing) not absolute invoices.
+  - Chart versions are pinned and overridable via env (defaults in versions.env).
+
+implementations:
+  opencost:
+    chart: opencost/opencost
+    ui_port: 9090
+    notes: >
+      Reads http_requests_total + container resource usage from Prometheus.
+      UI shows cost breakdown by namespace, controller, pod, and container.
+      Used by the cost-right-sizing scenario to confirm requests were reduced.
+
+resource_notes:
+  - "OpenCost footprint is minimal; fits a laptop k3d alongside the monitoring stack."
+  - "Used by the cost-right-sizing scenario: inflate requests -> observe cost -> right-size -> verify."

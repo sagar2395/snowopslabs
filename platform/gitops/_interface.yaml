@@ -1,0 +1,45 @@
+# GitOps Provider Interface
+# Continuous delivery and declarative infrastructure management.
+# Current implementations: argocd
+
+name: gitops
+description: GitOps continuous delivery platform for Kubernetes declarative deployments.
+
+provides:
+  - Continuous sync of Git repositories to Kubernetes clusters
+  - Application CRD for declarative deployment management
+  - Web dashboard for application status and sync visualization
+  - Multi-environment deployment via ApplicationSets
+  - Automated drift detection and reconciliation
+
+requires:
+  kubernetes_resources:
+    - Namespace (argocd)
+    - CRDs (applications, applicationsets, appprojects)
+  ports:
+    - 80 (HTTP web interface via ingress)
+    - 8080 (ArgoCD server internal)
+  dependencies:
+    - ingress (for dashboard access)
+
+env_variables: {}
+
+scripts:
+  install.sh: "Install GitOps controller via Helm with ingress configuration"
+  uninstall.sh: "Remove GitOps controller, CRDs, and Application resources"
+  status.sh: "Show pods, services, ingress, and managed applications"
+
+values:
+  values.yaml: "Helm chart values including ingress, resource limits, and component configuration"
+
+conventions:
+  - GitOps dashboard must be accessible via ingress at argocd.${DOMAIN_SUFFIX}
+  - Server runs in insecure mode (no TLS) for local dev behind ingress
+  - SSO (Dex) disabled for local development
+  - Applications defined as CRDs pointing to app deploy/helm/ directories
+  - Internal endpoint: http://argocd-server.argocd.svc.cluster.local:80
+
+implementations:
+  argocd:
+    chart: argo/argo-cd
+    notes: "Default. Full ArgoCD deployment with server, controller, repo-server, and redis. Dex and notifications disabled for local dev."

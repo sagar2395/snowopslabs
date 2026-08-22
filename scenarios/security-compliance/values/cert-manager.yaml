@@ -1,0 +1,26 @@
+## cert-manager values for security-compliance scenario
+
+crds:
+  enabled: true
+
+replicaCount: 1
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+webhook:
+  replicaCount: 1
+
+cainjector:
+  replicaCount: 1
+
+prometheus:
+  enabled: true
+  servicemonitor:
+    enabled: true
+    namespace: "{{.MonitoringNamespace}}"

@@ -1,0 +1,15 @@
+# Custom values for the strimzi-kafka-operator Helm chart.
+# Referenced by platform/data/kafka/install.sh via -f.
+# The operator watches its own release namespace (where the Kafka CR lives).
+# Keep the operator footprint small for k3d.
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi
+
+# Watch only the release namespace (default behaviour, stated explicitly).
+watchAnyNamespace: false

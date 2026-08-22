@@ -1,0 +1,17 @@
+name: oom-kill
+displayName: "OOMKilled: memory limit too low"
+description: "echo-server pods keep restarting and the service is flapping. Restart counts climb; the kernel is killing the container the moment it allocates memory."
+category: resources
+severity: high
+target:
+  namespace: echo-server
+  workload: echo-server
+prerequisites:
+  apps:
+    - echo-server
+detection:
+  name: rollout-healthy
+  type: script
+  script: checks/resolved.sh
+  timeoutSeconds: 30
+expectAlert: LabFaultOOMKill

@@ -1,0 +1,16 @@
+name: noisy-neighbor
+displayName: "Noisy neighbor: CPU-hungry tenant"
+description: "Latency on go-api crept up and node CPU is pegged, but go-api itself didn't change. Someone else moved in — a workload with big CPU requests, no limits, and a hot loop."
+category: resources
+severity: low
+target:
+  namespace: labfault-noisy-neighbor
+  workload: noisy-neighbor
+prerequisites:
+  apps:
+    - go-api
+detection:
+  name: neighbor-evicted
+  type: script
+  script: checks/resolved.sh
+  timeoutSeconds: 20

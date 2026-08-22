@@ -1,0 +1,55 @@
+# SnowOps Labs
+
+## IDE & local files
+.env
+.DS_Store
+*.swp
+*.swo
+*~
+
+## Go build output (golden rule 6: never commit build artifacts)
+bin/
+dist/
+*.exe
+apps/echo-server/echo-server
+apps/go-api/go-api
+apps/go-api/app
+
+## Coverage output
+coverage.out
+coverage.html
+.coverage-func.txt
+
+## Embedded UI in the binary (copied at build time by make cli-build)
+internal/webui/dist/*
+!internal/webui/dist/.gitkeep
+
+## SPA build output and dependencies
+ui/node_modules/
+ui/dist/*
+!ui/dist/.gitkeep
+ui/.env.local
+ui/*.tsbuildinfo
+
+## UI test output
+ui/coverage/
+ui/test-results/
+ui/playwright-report/
+ui/blob-report/
+ui/.playwright/
+
+## Docker
+*.tar
+
+## OS
+Thumbs.db
+
+## Local runtime state (written by labctl at runtime, never committed)
+.labctl/
+.snowops/
+
+## AI-assisted development scaffolding — kept locally, never part of the
+## public repository (planning state, session instructions, scratch logs).
+.ai/
+CLAUDE.md
+AGENTS.md

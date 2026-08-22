@@ -1,0 +1,82 @@
+---
+# Prod environment — namespace, release metadata, go-api deployment + service
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: env-prod
+  labels:
+    snowops.net/env: prod
+    snowops.net/scenario: env-promotion
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: env-metadata
+  namespace: env-prod
+  labels:
+    snowops.net/env: prod
+    snowops.net/scenario: env-promotion
+data:
+  env_name: "prod"
+  app: "go-api"
+  image_tag: "v1.0.0"
+  promoted_from: ""
+  promoted_at: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-api
+  namespace: env-prod
+  labels:
+    app: go-api
+    snowops.net/env: prod
+    snowops.net/image-tag: v1.0.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: go-api
+      snowops.net/env: prod
+  template:
+    metadata:
+      labels:
+        app: go-api
+        snowops.net/env: prod
+    spec:
+      containers:
+        - name: go-api
+          image: go-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ENV_NAME
+              value: prod
+            - name: IMAGE_TAG
+              valueFrom:
+                configMapKeyRef:
+                  name: env-metadata
+                  key: image_tag
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-api
+  namespace: env-prod
+  labels:
+    snowops.net/env: prod
+spec:
+  selector:
+    app: go-api
+    snowops.net/env: prod
+  ports:
+    - port: 80
+      targetPort: 8080

@@ -1,0 +1,17 @@
+name: bad-deploy-rollout
+displayName: "Bad deploy: image that doesn't exist"
+description: "A release went out referencing an image tag that was never pushed. The rollout is stuck — new pods sit in ImagePullBackOff while the old version keeps serving."
+category: workload
+severity: medium
+target:
+  namespace: go-api
+  workload: go-api
+prerequisites:
+  apps:
+    - go-api
+detection:
+  name: rollout-healthy
+  type: script
+  script: checks/resolved.sh
+  timeoutSeconds: 30
+expectAlert: LabFaultImagePullBackOff

@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "go-api.fullname" . }}-test-connection"
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "go-api.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  containers:
+    - name: wget
+      image: busybox:1.36
+      command: ['wget']
+      args: ['--timeout=5', '-qO-', 'http://{{ include "go-api.fullname" . }}.{{ .Values.namespace.name }}.svc.cluster.local:{{ .Values.service.port }}/health']
+  restartPolicy: Never

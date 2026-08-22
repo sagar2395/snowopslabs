@@ -1,0 +1,49 @@
+# Development values for local k3d deployment
+
+nameOverride: ""
+fullnameOverride: ""
+
+namespace:
+  create: true
+  name: go-api
+
+deployment:
+  replicaCount: 1
+
+image:
+  repository: go-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: go-api.k3d.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+env:
+  PORT: "8080"
+  READINESS_FAILURE: "false"
+  SHUTDOWN_TIMEOUT: "10s"
+
+podAnnotations:
+  dev: "true"
+
+prometheus:
+  enabled: true
+  port: 8080
+  path: /metrics

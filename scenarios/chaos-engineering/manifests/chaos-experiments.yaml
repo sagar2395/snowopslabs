@@ -1,0 +1,197 @@
+# Chaos Engineering Experiments for SnowOps Labs
+# These are Chaos Mesh CRD resources that inject failures into the cluster.
+# Each experiment targets specific applications and failure modes.
+---
+# Experiment 1: Pod Kill — randomly kill go-api pods
+# Tests: Self-healing, PDB protection, HPA response
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-kill-go-api
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: pod-kill
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - go-api
+    labelSelectors:
+      app: go-api
+  duration: "30s"
+---
+# Experiment 2: Pod Kill — randomly kill echo-server pods
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-kill-echo-server
+  namespace: echo-server
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: pod-kill
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - echo-server
+    labelSelectors:
+      app: echo-server
+  duration: "30s"
+---
+# Experiment 3: Pod Failure — make go-api pods unavailable for 60s
+# Tests: Readiness probe behavior, traffic routing during failures
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-failure-go-api
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: pod-failure
+spec:
+  action: pod-failure
+  mode: one
+  selector:
+    namespaces:
+      - go-api
+    labelSelectors:
+      app: go-api
+  duration: "60s"
+---
+# Experiment 4: Network Delay — 500ms latency between echo-server and Redis
+# Tests: Timeout handling, degraded performance, client retry behavior
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-echo-redis
+  namespace: echo-server
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: network-delay
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - echo-server
+    labelSelectors:
+      app: echo-server
+  delay:
+    latency: "500ms"
+    jitter: "100ms"
+    correlation: "50"
+  direction: to
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - services
+      labelSelectors:
+        app.kubernetes.io/name: redis
+  duration: "120s"
+---
+# Experiment 5: Network Partition — isolate go-api from all external traffic
+# Tests: Circuit breaker behavior, failover mechanisms
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-partition-go-api
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: network-partition
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces:
+      - go-api
+    labelSelectors:
+      app: go-api
+  direction: both
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - traefik
+  duration: "60s"
+---
+# Experiment 6: Network Loss — 50% packet loss on echo-server
+# Tests: Retry logic, error handling under unreliable network
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-loss-echo-server
+  namespace: echo-server
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: network-loss
+spec:
+  action: loss
+  mode: all
+  selector:
+    namespaces:
+      - echo-server
+    labelSelectors:
+      app: echo-server
+  loss:
+    loss: "50"
+    correlation: "25"
+  direction: to
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - services
+      labelSelectors:
+        app.kubernetes.io/name: redis
+  duration: "120s"
+---
+# Experiment 7: CPU Stress — saturate CPU on go-api pods
+# Tests: HPA scale-up reaction, resource limit behavior, OOM avoidance
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: cpu-stress-go-api
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: cpu-stress
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - go-api
+    labelSelectors:
+      app: go-api
+  stressors:
+    cpu:
+      workers: 2
+      load: 80
+  duration: "120s"
+---
+# Experiment 8: Memory Stress — pressure memory on echo-server pods
+# Tests: OOMKill behavior, pod restart, memory limit enforcement
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: memory-stress-echo-server
+  namespace: echo-server
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: memory-stress
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - echo-server
+    labelSelectors:
+      app: echo-server
+  stressors:
+    memory:
+      workers: 1
+      size: "200Mi"
+  duration: "120s"

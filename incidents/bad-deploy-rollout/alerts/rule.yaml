@@ -1,0 +1,23 @@
+# Applied by inject.sh into the monitoring namespace; the `release:
+# prometheus` label is required by kube-prometheus-stack's rule selector,
+# and the `labfault` alert label routes it to the pager.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: labfault-bad-deploy-rollout
+  labels:
+    release: prometheus
+    labfault: "true"
+spec:
+  groups:
+    - name: labfault-bad-deploy-rollout
+      rules:
+        - alert: LabFaultImagePullBackOff
+          expr: max(kube_pod_container_status_waiting_reason{reason=~"ImagePullBackOff|ErrImagePull", namespace="go-api"}) > 0
+          for: 1m
+          labels:
+            labfault: "true"
+            severity: warning
+          annotations:
+            summary: "go-api pods cannot pull their image"
+            description: "Pods in namespace go-api are stuck in ImagePullBackOff — the rollout will not complete. Check the deployment's image tag."

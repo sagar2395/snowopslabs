@@ -1,0 +1,24 @@
+# Applied by inject.sh into the monitoring namespace; the `release:
+# prometheus` label is required by kube-prometheus-stack's rule selector,
+# and the `labfault` alert label routes it to the pager (see
+# platform/monitoring/metrics/prometheus/values.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: labfault-oom-kill
+  labels:
+    release: prometheus
+    labfault: "true"
+spec:
+  groups:
+    - name: labfault-oom-kill
+      rules:
+        - alert: LabFaultOOMKill
+          expr: max(kube_pod_container_status_last_terminated_reason{reason="OOMKilled", namespace="echo-server"}) > 0
+          for: 1m
+          labels:
+            labfault: "true"
+            severity: critical
+          annotations:
+            summary: "echo-server containers are being OOMKilled"
+            description: "A container in namespace echo-server was killed by the kernel for exceeding its memory limit. Check the deployment's resources block."

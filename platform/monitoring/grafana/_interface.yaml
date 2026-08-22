@@ -1,0 +1,43 @@
+# Grafana Provider Interface
+# Visualization layer for metrics, logs, and traces.
+# Current implementations: grafana
+
+name: monitoring/grafana
+description: Dashboard and visualization platform for observability data.
+
+provides:
+  - Web-based dashboard interface
+  - Data source integration (Prometheus, Loki, Tempo)
+  - Dashboard provisioning via ConfigMap sidecar
+  - Alerting visualization
+
+requires:
+  kubernetes_resources:
+    - Namespace (monitoring)
+    - PersistentVolumeClaim (for dashboard persistence)
+  ports:
+    - 80 (HTTP web interface)
+  dependencies:
+    - monitoring/metrics (for Prometheus data source)
+
+env_variables: {}
+
+scripts:
+  install.sh: "Install Grafana via Helm with auto-provisioned datasources"
+  uninstall.sh: "Remove Grafana and clean up PVCs"
+  status.sh: "Show pods, services, ingress, and datasource status"
+
+values:
+  values.yaml: "Helm chart values including datasources and sidecar configuration"
+
+conventions:
+  - Grafana must be accessible via ingress at grafana.${DOMAIN_SUFFIX}
+  - Prometheus datasource must be auto-provisioned on install
+  - Dashboard sidecar must watch for ConfigMaps with label grafana_dashboard=1
+  - Dashboards provisioned by scenarios are wrapped in ConfigMaps by the scenario engine
+  - Internal endpoint: http://grafana.monitoring.svc.cluster.local:80
+
+implementations:
+  grafana:
+    chart: grafana/grafana
+    notes: "Default. Sidecar-based dashboard provisioning, auto-configured Prometheus datasource."

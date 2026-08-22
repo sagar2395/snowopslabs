@@ -1,0 +1,117 @@
+# Grafana Helm Chart Values
+# https://github.com/grafana/helm-charts/tree/main/charts/grafana
+
+# Admin credentials
+adminUser: admin
+# adminPassword is set via --set flag in install.sh for security
+
+# Grafana image
+image:
+  repository: grafana/grafana
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+# Persistence (for homelab, use smaller volumes)
+persistence:
+  type: pvc
+  enabled: true
+  storageClassName: local-path
+  accessModes:
+    - ReadWriteOnce
+  size: 5Gi
+
+# Datasources provisioning (correct format for Grafana Helm chart)
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        url: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+        isDefault: true
+        editable: true
+      - name: Loki
+        type: loki
+        url: http://loki-gateway.monitoring.svc.cluster.local
+        editable: true
+      - name: Tempo
+        type: tempo
+        url: http://tempo.monitoring.svc.cluster.local:3100
+        editable: true
+
+# Dashboards provisioning
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: 'default'
+        orgId: 1
+        folder: 'Kubernetes'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+
+# Dashboard downloads disabled - use local JSON files or Grafana UI instead
+dashboards: {}
+# dashboards:
+#   default:
+#     cluster-metrics:
+#       url: https://raw.githubusercontent.com/prometheus-community/grafana-dashboards/main/kubernetes-cluster/dashboard.json
+#       token: ''
+#     pod-resources:
+#       url: https://raw.githubusercontent.com/prometheus-community/grafana-dashboards/main/kubernetes-cluster-monitoring/pods.json
+#       token: ''
+
+# Grafana plugins
+plugins: []
+
+# Grafana environment variables
+env:
+  GF_SECURITY_ADMIN_USER: admin
+  GF_AUTH_ANONYMOUS_ENABLED: "false"
+  GF_USERS_ALLOW_SIGN_UP: "false"
+
+# Resource limits
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Ingress configuration (Traefik)
+ingress:
+  enabled: true
+  ingressClassName: traefik
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+  path: /
+  pathType: Prefix
+  hosts:
+    - grafana.k3d.local
+
+# RBAC
+rbac:
+  create: true
+  pspEnabled: false
+
+# Service Account
+serviceAccount:
+  create: true
+  autoMount: true
+  name: grafana
+
+# Pod annotations for Prometheus scraping
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "3000"
+  prometheus.io/path: "/metrics"

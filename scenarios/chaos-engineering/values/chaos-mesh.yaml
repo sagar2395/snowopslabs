@@ -1,0 +1,44 @@
+## Chaos Mesh values for chaos-engineering scenario
+## Optimized for k3d local environment
+
+controllerManager:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  enableFilterNamespace: false
+
+chaosDaemon:
+  runtime: containerd
+  socketPath: /run/k3s/containerd/containerd.sock
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+dashboard:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  securityMode: false
+
+dnsServer:
+  create: false
+
+prometheus:
+  create: false
+  serviceMonitor:
+    enabled: true
+    namespace: monitoring

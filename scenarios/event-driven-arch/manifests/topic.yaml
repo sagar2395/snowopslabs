@@ -1,0 +1,16 @@
+# The 'orders' topic, managed by the Strimzi topic operator (enabled on the
+# lab-kafka cluster in task 055). 3 partitions so a consumer group can scale to
+# three parallel consumers.
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: orders
+  namespace: kafka
+  labels:
+    strimzi.io/cluster: lab-kafka
+spec:
+  partitions: 3
+  replicas: 1
+  config:
+    retention.ms: "3600000"
+    segment.bytes: "10485760"

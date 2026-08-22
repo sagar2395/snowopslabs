@@ -1,0 +1,41 @@
+# Coverage exceptions — a ratchet, not an amnesty.
+#
+# Format: <package> <minimum-percent> <wave that removes this entry> <why>
+#
+# Rules enforced by scripts/coverage-gate.sh:
+#   - A listed package must stay at or above its recorded minimum. It can never
+#     regress; lowering a number here is a rejected change, not a fix.
+#   - When a listed package reaches the global 80% bar, the gate FAILS until its
+#     entry is deleted. Exceptions cannot outlive their justification.
+#   - An entry naming a package with no recorded coverage is STALE and fails.
+#   - Anything not listed must reach 80%. New packages get no exception.
+
+#
+# Every entry below exists because the package is scheduled for replacement in a
+# named wave. Writing tests today for code that W1–W6 deletes is waste; the
+# ratchet stops it rotting in the meantime.
+
+# Replaced by internal/run + internal/store in W1 (ADR-0003).
+github.com/sagar2395/snowopslabs/internal/executor    79.6   W1  superseded by the durable run engine
+github.com/sagar2395/snowopslabs/internal/k8s          0.0   W1  becomes internal/toolchain's kubectl adapter, which ships with a fake
+
+# Thin adapters today; logic moves to internal/service and they get contract
+# tests in W5 (ADR-0005, ADR-0006). cmd/labctl is permanently an entrypoint —
+# internal/cli/root_test.go asserts main() stays a single statement, so its 0%
+# stays honest rather than hiding logic.
+github.com/sagar2395/snowopslabs/cmd/labctl            0.0   W5  entrypoint only — one statement, guarded by TestMainStaysTrivial
+github.com/sagar2395/snowopslabs/internal/cli         19.5   W5  rebuilt as thin adapters with golden-file output tests
+github.com/sagar2395/snowopslabs/internal/httpapi     43.6   W5  rebuilt as /api/v2 with a full contract suite
+
+# Domain packages that become internal/service/* as their wave lands.
+github.com/sagar2395/snowopslabs/internal/scenario    43.4   W4  rebuilt on the catalog + run engine
+github.com/sagar2395/snowopslabs/internal/runtime     59.0   W3  reduced to k3d/kind/incluster and moved onto the run engine
+github.com/sagar2395/snowopslabs/internal/services    55.9   W3  moved onto the run engine
+github.com/sagar2395/snowopslabs/internal/platform    76.5   W3  moved onto the run engine
+github.com/sagar2395/snowopslabs/internal/lab         76.3   W3  moved onto the run engine
+github.com/sagar2395/snowopslabs/internal/learn       76.7   W7  reworked with the assessment UI
+github.com/sagar2395/snowopslabs/internal/config      71.1   W1  layered config resolution reworked alongside the store
+
+# Trimmed in W0 (OCI resolver removed); the remaining gap is copyTree's I/O
+# error branches, covered when the content-path loader lands.
+github.com/sagar2395/snowopslabs/pkg/extension        76.6   W2  content-root loading exercises the remaining paths

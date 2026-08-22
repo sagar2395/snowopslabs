@@ -1,0 +1,61 @@
+## ArgoCD Application CRDs
+## These Application resources tell ArgoCD which apps to manage declaratively.
+## ArgoCD will watch the referenced Git paths and keep the cluster in sync.
+---
+# Application for go-api
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: go-api
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: sagars-lab
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sagar2395/snowopslabs.git
+    targetRevision: HEAD
+    path: apps/go-api/deploy/helm
+    helm:
+      valueFiles:
+        - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: go-api
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+# Application for echo-server
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: echo-server
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: sagars-lab
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/sagar2395/snowopslabs.git
+    targetRevision: HEAD
+    path: apps/echo-server/deploy/helm
+    helm:
+      valueFiles:
+        - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: echo-server
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

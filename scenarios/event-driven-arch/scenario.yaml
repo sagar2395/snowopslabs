@@ -1,0 +1,93 @@
+apiVersion: scenario.snowops.net/v2
+name: event-driven-arch
+displayName: "Event-Driven Architecture"
+description: "A producer/consumer flow through Kafka (Strimzi): an 'orders' topic with a continuous producer and a consumer group. Stage 2 ramps producers to build consumer lag — observe it, then scale consumers (manually or with KEDA's Kafka scaler) to drain it."
+category: data
+prerequisites:
+  platform:
+    - data/kafka
+  apps:
+    - go-api
+runtimes:
+  - k3d
+  - kind
+
+objectives:
+  - "Run a producer/consumer event flow through a Kafka topic"
+  - "Create consumer lag by ramping producers past consumer throughput"
+  - "Drain the lag by scaling consumers (manually or via KEDA's Kafka lag scaler)"
+
+stages:
+  - name: event-flow
+    description: Create the topic and run one producer + one consumer
+    components:
+      - name: orders-topic
+        type: manifest
+        path: manifests/topic.yaml
+        namespace: kafka
+
+      - name: producer-consumer
+        type: manifest
+        path: manifests/producer-consumer.yaml
+        namespace: kafka
+
+  - name: build-lag
+    description: Ramp producers to 3x so the single consumer falls behind
+    components:
+      - name: ramp-producers
+        type: manifest
+        path: manifests/ramp-producers.yaml
+        namespace: kafka
+
+checks:
+  - name: kafka-cluster-ready
+    type: kubectl
+    resource: kafka/lab-kafka
+    namespace: kafka
+    jsonpath: '{.status.conditions[?(@.type=="Ready")].status}'
+    operator: "=="
+    value: "True"
+
+  - name: orders-topic-ready
+    type: kubectl
+    resource: kafkatopic/orders
+    namespace: kafka
+    jsonpath: '{.status.conditions[?(@.type=="Ready")].status}'
+    operator: "=="
+    value: "True"
+
+  - name: producer-running
+    type: kubectl
+    resource: deployment/orders-producer
+    namespace: kafka
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: consumer-running
+    type: kubectl
+    resource: deployment/orders-consumer
+    namespace: kafka
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+explore:
+  urls:
+    - label: "Grafana (Strimzi / Kafka dashboards if imported)"
+      url: "http://grafana.{{.DomainSuffix}}"
+  commands:
+    - label: "Watch consumer-group lag build and drain"
+      command: "kubectl -n kafka exec -it lab-kafka-dual-role-0 -- bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group order-processors"
+    - label: "Tail what the consumer is processing"
+      command: "kubectl -n kafka logs deploy/orders-consumer --tail=20 -f"
+    - label: "Drain the lag by scaling consumers up"
+      command: "kubectl -n kafka scale deployment/orders-consumer --replicas=3"
+    - label: "List topics"
+      command: "kubectl -n kafka exec -it lab-kafka-dual-role-0 -- bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"
+  tips:
+    - "Lag = messages produced but not yet consumed for the 'order-processors' group."
+    - "The 'orders' topic has 3 partitions, so up to 3 consumers in the group share the load."
+    - "Stage 2 ramps producers to 3x; a single consumer falls behind and lag climbs."
+    - "Scale orders-consumer to 3 to drain the lag, or install autoscaling/keda and add a Kafka-lag ScaledObject to do it automatically."
+    - "Broker pod name is lab-kafka-dual-role-0 (the KRaft node pool from task 055)."

@@ -1,0 +1,20 @@
+SnowOps Labs — the flight simulator for platform engineers
+Copyright 2026 The SnowOps Labs Authors
+
+This product includes software developed by The SnowOps Labs Authors and the
+SnowOps Labs open-source community (https://github.com/sagar2395/snowopslabs).
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this product except in compliance with the License. A copy of the License is in
+the LICENSE file at the root of this repository, or at
+http://www.apache.org/licenses/LICENSE-2.0.
+
+"SnowOps Labs" and the SnowOps Labs logo are trademarks of the project owner and are
+NOT licensed under the Apache License. See TRADEMARKS.md for the trademark usage
+policy.
+
+This repository orchestrates third-party software (kubectl, helm, k3d, Istio,
+Linkerd, Strimzi, CloudNativePG, HashiCorp Vault, External Secrets Operator,
+KEDA, Prometheus, Grafana, Loki, Tempo, ArgoCD, Chaos Mesh, and others). Those
+projects are distributed under their own licenses by their respective authors;
+SnowOps Labs installs and invokes them but does not relicense them.

@@ -1,0 +1,37 @@
+# Repository labels for SnowOps Labs (task 072). Apply with a label-sync action
+# (e.g. micnncim/action-label-syncer) or create them by hand in the GitHub UI.
+# The contributor-onboarding labels (good first issue / help wanted) are what
+# `docs/authoring/` points newcomers at; a maintainer seeds a few
+# starter issues under them (manual action).
+
+- name: "good first issue"
+  color: "7057ff"
+  description: "Good for newcomers — small, well-scoped, mentored."
+
+- name: "help wanted"
+  color: "008672"
+  description: "Extra attention is welcome from the community."
+
+- name: "area/scenario"
+  color: "0e8a16"
+  description: "Simulator content (scenarios/, incidents/, learn/, challenges/)."
+
+- name: "area/platform"
+  color: "1d76db"
+  description: "Platform components (platform/<category>/<provider>)."
+
+- name: "area/cli"
+  color: "5319e7"
+  description: "labctl CLI / API / engine."
+
+- name: "area/docs"
+  color: "c2e0c6"
+  description: "Documentation and runbooks."
+
+- name: "kind/bug"
+  color: "d73a4a"
+  description: "Something isn't working."
+
+- name: "kind/enhancement"
+  color: "a2eeef"
+  description: "New feature or improvement."

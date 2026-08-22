@@ -1,0 +1,29 @@
+# PodDisruptionBudgets for chaos-engineering scenario
+# These ensure minimum availability during chaos experiments.
+# Applied when the scenario is activated, removed when deactivated.
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: go-api-pdb
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: go-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: echo-server-pdb
+  namespace: echo-server
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: echo-server

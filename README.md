@@ -1,0 +1,211 @@
+# SnowOps Labs
+
+**SnowOps Labs is a Kubernetes platform-engineering simulator.** It stands up a
+realistic, production-shaped cluster on your laptop in minutes, breaks it in
+realistic ways, and grades you on how you fix it.
+
+Practise the things production never lets you practise: diagnosing a
+CrashLoopBackOff with a pager going off, draining a node under load without
+breaking the SLO, deciding between two service meshes with evidence instead of
+opinion.
+
+> **Early release.** The core loop — stand up a cluster, run a scenario, break
+> it, fix it, tear it down — works today; expect rapid iteration and the odd
+> rough edge, and please [file issues](https://github.com/sagar2395/snowopslabs/issues).
+> See [`docs/PRODUCT.md`](docs/PRODUCT.md) for what it is and who it is for, and
+> [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) for
+> how it works.
+>
+> Runs on **macOS (Apple Silicon and Intel) and Linux**. Local clusters
+> (`k3d`/`kind`); a `SnowOps Labs` project.
+
+## The four loops
+
+| Loop | What you do | Command |
+|---|---|---|
+| **Build** | Stand up a cluster and install a real platform stack from swappable providers | `labctl lab up` |
+| **Simulate** | Activate a declarative scenario with objectives and verifiable checks | `labctl scenario up <name>` |
+| **Break** | Inject a realistic, reversible fault while traffic flows and alerts fire | `labctl incident inject <name>` |
+| **Measure** | Grade the outcome — checks passed, time taken, hints used | `labctl scenario verify <name>` |
+
+Everything you install is the real thing: actual Prometheus, actual Istio,
+actual Kafka. Failures are injected into real systems, so the signal you debug
+is the signal you would see in production.
+
+## What's inside
+
+| Layer | What it does |
+|---|---|
+| **Runtimes** | `k3d` (the golden path), `kind` (headless, powers CI), `incluster` (shared team server) |
+| **Platform** | Ingress (Traefik/Nginx), monitoring (Prometheus + Grafana), logging (Loki), tracing (Tempo), GitOps (ArgoCD), mesh (Istio/Linkerd), data (Kafka/Postgres), secrets (Vault/ESO), autoscaling (KEDA), cost (OpenCost), security (Kyverno, cert-manager), chaos (Chaos Mesh) |
+| **Scenarios** | Declarative playgrounds with objectives and machine-verifiable checks |
+| **Incidents** | Reversible production faults with progressive hints and MTTR measurement |
+| **Learn** | Ordered paths chaining scenarios and incidents into a curriculum |
+| **Challenges** | Timed, graded runs with hidden hints |
+| **Apps** | `go-api` (HTTP + metrics + tracing), `echo-server` (HTTP + Redis) |
+| **CLI + UI** | `labctl` — one binary with the web dashboard embedded |
+
+## Prerequisites
+
+- Docker running with **at least 4 CPUs and 8 GB of memory** available to the
+  engine. `make init` runs a 3-node k3d cluster plus the full platform stack
+  (Prometheus, Grafana, Alertmanager, Loki, …); the 2 GB a fresh Docker Desktop
+  or Colima VM ships with is not enough and shows up as API-server "TLS
+  handshake timeout" errors partway through the install.
+  - **Colima:** `colima start --cpu 4 --memory 8`
+  - **Docker Desktop:** Settings → Resources → raise Memory to 8 GB
+- `kubectl`, `helm` 3, and `k3d`
+- Go 1.24+ and Node 22+ to build from source
+
+```bash
+make setup-tools              # installs tools for PROFILE (default: k3d)
+make setup-tools PROFILE=kind # headless alternative
+```
+
+Versions are pinned in [`versions.env`](versions.env).
+
+## Quickstart
+
+You always need the repo (the scenarios, platform scripts and runtimes live
+here). You can get the `labctl` binary two ways — download a release, or build
+it.
+
+```bash
+git clone <repo-url> && cd snowopslabs
+cp .env.example .env
+```
+
+**Option A — download a release (no Go/Node toolchain needed):**
+
+Grab the archive for your platform from the [Releases page][releases], verify it,
+and put `labctl` on your `PATH`:
+
+```bash
+# macOS arm64 shown; pick the archive matching your OS/arch
+tar xzf labctl_*_darwin_arm64.tar.gz
+shasum -a 256 -c checksums.txt        # verify (sha256sum -c on Linux)
+sudo mv labctl /usr/local/bin/
+labctl --version
+```
+
+**Option B — build from source** (needs Go 1.24+ and Node 22+):
+
+```bash
+make cli-build                        # build bin/labctl (UI embedded), then use ./bin/labctl
+```
+
+**Then run the loop:**
+
+```bash
+make init                             # create the cluster + install the platform
+labctl app deploy go-api
+labctl scenario list
+labctl scenario up observability-sre
+labctl scenario verify observability-sre   # did you achieve the objective?
+labctl validate                       # check all content is well-formed
+labctl ui                             # dashboard at http://localhost:3939
+make teardown                         # remove everything (never hangs)
+```
+
+[releases]: https://github.com/sagar2395/snowopslabs/releases
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| `TLS handshake timeout` / OOM-killed pods partway through `make init` | The Docker VM is too small. Give it ≥4 CPU / 8 GB (`colima start --cpu 4 --memory 8`, or Docker Desktop → Resources), then `make reset`. |
+| `make init` seems stuck | First run pulls many images. Watch progress with `kubectl get pods -A -w`. |
+| A tool is missing or too old | `labctl doctor` names each missing/outdated tool and how to fix it. |
+| Teardown left something behind | `make teardown` is safe to re-run; for k3d/kind it deletes the whole cluster. |
+| Which runtime should I use? | `k3d` (default, local), `kind` (CI parity), `incluster` (team server). See [runtime profiles](docs/runtime-profiles.md). |
+
+## Project structure
+
+```
+go.mod                    module github.com/sagar2395/snowopslabs (repo root)
+cmd/labctl/               entrypoint
+internal/cli/             cobra commands — thin adapters
+internal/httpapi/         REST/WS — thin adapters
+internal/run/             durable run engine (cancel, timeouts, locks, logs)
+internal/store/           SQLite persistence
+internal/toolchain/       kubectl/helm/k3d adapters + fakes for tests
+pkg/                      public SDK: checks, scenario types, extension seam
+ui/                       React SPA, embedded into the binary
+platform/<cat>/<prov>/    install.sh / uninstall.sh / status.sh / values.yaml
+scenarios/ incidents/     declarative content
+learn/ challenges/
+runtimes/<profile>/       k3d | kind | incluster
+apps/<name>/              sample workloads
+test/shell/               bats suites with kubectl/helm stubbed
+docs/                     PRODUCT, ROADMAP, TESTING, architecture/, adr/, runbooks/
+```
+
+
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [Product](docs/PRODUCT.md) | What SnowOps Labs is, who it's for, what's out of scope |
+| [Roadmap](docs/ROADMAP.md) | The wave plan, exit criteria, Definition of Done |
+| [Architecture](docs/architecture/ARCHITECTURE.md) | How the system fits together |
+| [Decisions](docs/adr/) | Why it was built this way, with alternatives considered |
+| [Testing](docs/TESTING.md) | The four mandatory test layers and CI gates |
+| [Runbooks](docs/runbooks/) | Hands-on validation a human performs before a wave merges |
+| [CLI Reference](docs/cli-reference.md) | Every `labctl` command and flag |
+| [Runtime profiles](docs/runtime-profiles.md) | k3d / kind / incluster and the profile contract |
+| [Releasing](RELEASING.md) | How a versioned release is cut (goreleaser) |
+| [Scenarios](docs/scenarios.md) | The scenario format and how to author one |
+| [Authoring](docs/authoring/) | Your first scenario, extension seams, stability policy |
+| [Contributing](CONTRIBUTING.md) | Golden rules and the PR bar |
+
+## Testing
+
+All four layers are mandatory for every change — see [docs/TESTING.md](docs/TESTING.md).
+
+```bash
+make test              # Go unit + shell, race detector, coverage gate
+make test-ui           # vitest component tests
+make test-e2e          # playwright journeys
+make lint              # every static-analysis gate
+```
+
+## Configuration
+
+Global settings live in `.env` (from [`.env.example`](.env.example)):
+
+```bash
+PROFILE=k3d                    # k3d | kind | incluster
+CLUSTER_NAME=snowops
+INGRESS_PROVIDER=traefik       # traefik | nginx
+METRICS_PROVIDER=prometheus
+```
+
+Per-app settings live in `apps/<name>/app.env`:
+
+```bash
+BUILD_STRATEGY=docker
+DEPLOY_STRATEGY=helm
+HELM_VALUES=values-dev.yaml    # values-dev | values-prod-like | values-test
+```
+
+Own scenarios stay in your own repository — point `SNOWOPS_CONTENT_PATH` at
+them and they appear alongside the built-in catalog. No pack format, no
+registry ([ADR-0008](docs/adr/0008-content-extensibility-seam.md)).
+
+## Key URLs (k3d)
+
+| Service | URL | Credentials |
+|---|---|---|
+| go-api | http://go-api.k3d.local | — |
+| echo-server | http://echo-server.k3d.local | — |
+| Grafana | http://grafana.k3d.local | admin / admin |
+| Prometheus | http://prometheus.k3d.local | — |
+| ArgoCD | http://argocd.k3d.local | admin / (see install output) |
+| SnowOps Labs UI | http://localhost:3939 | — |
+
+Domains follow `${DOMAIN_SUFFIX:-k3d.local}` — never hardcoded.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE), [NOTICE](NOTICE) and
+[TRADEMARKS.md](TRADEMARKS.md).

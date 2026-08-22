@@ -1,0 +1,23 @@
+# Applied by inject.sh into the monitoring namespace; the `release:
+# prometheus` label is required by kube-prometheus-stack's rule selector,
+# and the `labfault` alert label routes it to the pager.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: labfault-crashloop-bad-config
+  labels:
+    release: prometheus
+    labfault: "true"
+spec:
+  groups:
+    - name: labfault-crashloop-bad-config
+      rules:
+        - alert: LabFaultCrashLoop
+          expr: max(increase(kube_pod_container_status_restarts_total{namespace="go-api"}[5m])) > 2
+          for: 1m
+          labels:
+            labfault: "true"
+            severity: warning
+          annotations:
+            summary: "go-api pods are restarting repeatedly"
+            description: "Containers in namespace go-api restarted more than twice in 5 minutes — classic crash loop. Check pod Last State and the deployment spec."

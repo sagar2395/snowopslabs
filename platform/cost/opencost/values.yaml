@@ -1,0 +1,35 @@
+# Custom values for the opencost/opencost Helm chart.
+# Referenced by platform/cost/opencost/install.sh via -f.
+# Tuned for k3d / laptop use: small resource footprint; ingress disabled by
+# default (use port-forward or enable INGRESS_PROVIDER after installing).
+#
+# NOTE: No cloud billing API is configured. OpenCost uses on-prem pricing
+# defaults ($0.048/CPU-hour, $0.006/GB-hour) — representative for right-sizing
+# exercises even without real billing data.
+
+opencost:
+  exporter:
+    defaultClusterId: "lab-cluster"
+    resources:
+      requests:
+        cpu: 10m
+        memory: 55Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+  ui:
+    enabled: true
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+
+  # Ingress is intentionally off by default. Enable with:
+  #   COST_PROVIDER=opencost labctl platform up cost
+  # and access via port-forward, or set ingress.enabled=true with your domain.
+  ingress:
+    enabled: false

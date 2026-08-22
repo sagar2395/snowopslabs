@@ -1,0 +1,61 @@
+# Cloud runtime values (AKS / EKS)
+# Use with: HELM_VALUES=values-cloud.yaml in app.env
+# Expects nginx ingress controller and a real domain suffix.
+
+nameOverride: ""
+fullnameOverride: ""
+
+namespace:
+  create: true
+  name: echo-server
+
+deployment:
+  replicaCount: 2
+
+image:
+  # Override repository with your registry URL:
+  #   AKS: <acr-name>.azurecr.io/echo-server
+  #   EKS: <account-id>.dkr.ecr.<region>.amazonaws.com/sagars-lab/echo-server
+  repository: echo-server
+  tag: latest
+  pullPolicy: Always
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+
+ingress:
+  enabled: true
+  className: nginx
+  ingressAnnotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  hosts:
+    # Replace with your actual domain:
+    #   AKS: echo-server.aks.sagarslab.dev
+    #   EKS: echo-server.eks.sagarslab.dev
+    - host: echo-server.cloud.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+env:
+  PORT: "8080"
+  CACHE_TTL: "1h"
+  REDIS_URL: ""
+  # Set when Redis is deployed:
+  # REDIS_URL: "redis://redis-master.services.svc.cluster.local:6379"
+
+prometheus:
+  enabled: true
+  port: 8080
+  path: /metrics
+
+podAnnotations:
+  environment: "cloud"

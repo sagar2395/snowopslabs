@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labs.snowops.net/schemas/check.schema.json",
+  "title": "SnowOps Labs Check",
+  "description": "A single machine-verifiable assertion, shared by scenarios (verify), incidents (detection) and challenges (grading). The canonical HTTP status field is 'expectStatus'; 'expectedStatus' is a deprecated alias kept for learning-path content and reported by 'labctl validate'.",
+  "type": "object",
+  "required": ["name", "type"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string" },
+    "type": { "type": "string", "enum": ["http", "kubectl", "promql", "script"] },
+    "url": { "type": "string" },
+    "expectStatus": { "type": "integer", "minimum": 100, "maximum": 599 },
+    "expectedStatus": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 599,
+      "deprecated": true,
+      "description": "Deprecated alias for expectStatus."
+    },
+    "bodyContains": { "type": "string" },
+    "resource": { "type": "string" },
+    "namespace": { "type": "string" },
+    "jsonpath": { "type": "string" },
+    "query": { "type": "string" },
+    "operator": { "type": "string", "enum": ["==", "!=", "<", "<=", ">", ">=", "contains"] },
+    "value": { "type": "string" },
+    "script": { "type": "string" },
+    "timeoutSeconds": { "type": "integer", "minimum": 0 }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "http" } } }, "then": { "required": ["url"] } },
+    { "if": { "properties": { "type": { "const": "kubectl" } } }, "then": { "required": ["resource"] } },
+    { "if": { "properties": { "type": { "const": "promql" } } }, "then": { "required": ["query", "operator", "value"] } },
+    { "if": { "properties": { "type": { "const": "script" } } }, "then": { "required": ["script"] } }
+  ]
+}

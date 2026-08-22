@@ -1,0 +1,78 @@
+# ArgoCD Helm Chart Values
+# https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+
+# ArgoCD Server
+server:
+  # Run insecure (no TLS) for local dev behind ingress
+  insecure: true
+
+  # Ingress configuration (Traefik)
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: web
+    # hostname is injected at install time via DOMAIN_SUFFIX — see install.sh
+
+  # Resource limits (minimal for local dev)
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# ArgoCD configs
+configs:
+  params:
+    # Required for running behind HTTP ingress without TLS termination
+    server.insecure: "true"
+
+# Controller
+controller:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+# Repo Server
+repoServer:
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Redis
+redis:
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# ApplicationSet Controller
+applicationSet:
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 128Mi
+
+# Disable Dex (SSO not needed for local dev)
+dex:
+  enabled: false
+
+# Disable Notifications Controller (not needed yet)
+notifications:
+  enabled: false

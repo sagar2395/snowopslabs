@@ -1,0 +1,14 @@
+# Helm values for kubernetes-dashboard chart
+# https://github.com/kubernetes/dashboard/tree/master/charts/kubernetes-dashboard
+
+app:
+  scheduling:
+    nodeSelector: {}
+
+# Disable TLS on Kong proxy so Traefik can connect over plain HTTP.
+# Without this, Kong listens on HTTPS with a self-signed cert and
+# Traefik fails to proxy because it doesn't know the backend is HTTPS.
+kong:
+  proxy:
+    tls:
+      enabled: false

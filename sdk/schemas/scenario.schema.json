@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labs.snowops.net/schemas/scenario.schema.json",
+  "title": "SnowOps Labs Scenario (scenario.yaml)",
+  "description": "Schema for a SnowOps Labs scenario. apiVersion scenario.snowops.net/v2. v1 (flat 'components') remains valid; v2 adds 'stages', 'objectives', and 'checks'.",
+  "type": "object",
+  "required": ["name"],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "type": "string",
+      "description": "Scenario schema version. Empty defaults to the engine's current version.",
+      "enum": ["scenario.snowops.net/v2"]
+    },
+    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+    "displayName": { "type": "string" },
+    "description": { "type": "string" },
+    "category": { "type": "string" },
+    "prerequisites": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "platform": { "type": "array", "items": { "type": "string" } },
+        "apps": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "runtimes": { "type": "array", "items": { "type": "string", "enum": ["k3d", "kind", "incluster"] } },
+    "objectives": { "type": "array", "items": { "type": "string" } },
+    "components": { "type": "array", "items": { "$ref": "#/$defs/component" } },
+    "stages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "components"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "components": { "type": "array", "items": { "$ref": "#/$defs/component" } }
+        }
+      }
+    },
+    "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
+    "explore": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "urls": { "type": "array", "items": { "type": "object", "properties": { "label": {"type":"string"}, "url": {"type":"string"} } } },
+        "commands": { "type": "array", "items": { "type": "object", "properties": { "label": {"type":"string"}, "command": {"type":"string"} } } },
+        "tips": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "not": { "required": ["components", "stages"] },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["helm", "manifest", "grafana-dashboard", "script"] },
+        "namespace": { "type": "string" },
+        "chart": { "type": "string" },
+        "repo": { "type": "string" },
+        "version": { "type": "string" },
+        "valuesFile": { "type": "string" },
+        "path": { "type": "string" },
+        "set": { "type": "object", "additionalProperties": { "type": "string" } },
+        "script": { "type": "string" }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "helm" } } }, "then": { "required": ["chart"] } },
+        { "if": { "properties": { "type": { "const": "manifest" } } }, "then": { "required": ["path"] } },
+        { "if": { "properties": { "type": { "const": "grafana-dashboard" } } }, "then": { "required": ["path"] } },
+        { "if": { "properties": { "type": { "const": "script" } } }, "then": { "required": ["script"] } }
+      ]
+    },
+    "check": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["http", "kubectl", "promql", "script"] },
+        "url": { "type": "string" },
+        "expectStatus": { "type": "integer", "minimum": 100, "maximum": 599 },
+        "bodyContains": { "type": "string" },
+        "resource": { "type": "string" },
+        "namespace": { "type": "string" },
+        "jsonpath": { "type": "string" },
+        "query": { "type": "string" },
+        "operator": { "type": "string", "enum": ["==", "!=", "<", "<=", ">", ">=", "contains"] },
+        "value": { "type": "string" },
+        "script": { "type": "string" },
+        "timeoutSeconds": { "type": "integer", "minimum": 0 }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "http" } } }, "then": { "required": ["url"] } },
+        { "if": { "properties": { "type": { "const": "kubectl" } } }, "then": { "required": ["resource"] } },
+        { "if": { "properties": { "type": { "const": "promql" } } }, "then": { "required": ["query", "operator", "value"] } },
+        { "if": { "properties": { "type": { "const": "script" } } }, "then": { "required": ["script"] } }
+      ]
+    }
+  }
+}

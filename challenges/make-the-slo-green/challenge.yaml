@@ -1,0 +1,14 @@
+name: make-the-slo-green
+displayName: "Make the SLO green"
+description: >
+  go-api's SLO is breaching — the service selector is broken and no
+  traffic is reaching pods. The SRE dashboard shows the error rate
+  above the threshold. Fix the root cause and confirm the SLO recovers.
+category: config
+parTime: "12m"
+setup:
+  type: incident
+  ref: service-selector-broken
+grading:
+  useDetectionCheck: true
+hintPenalty: 5

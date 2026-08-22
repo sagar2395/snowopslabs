@@ -1,0 +1,47 @@
+# Metrics Provider Interface
+# Any metrics provider must satisfy this contract.
+# Current implementations: prometheus
+
+name: monitoring/metrics
+description: Metrics collection, storage, and query engine for cluster and application monitoring.
+
+provides:
+  - Metrics scraping from Kubernetes pods and nodes
+  - Query API for metrics retrieval (PromQL or compatible)
+  - Alerting rules evaluation and alert routing
+  - ServiceMonitor/PodMonitor CRDs for automatic scrape target discovery
+
+requires:
+  kubernetes_resources:
+    - Namespace (monitoring)
+    - ServiceMonitor CRD (for Prometheus Operator)
+  ports:
+    - 9090 (metrics query API)
+    - 9093 (alertmanager)
+
+env_variables:
+  METRICS_PROVIDER: "Selected metrics provider (e.g. prometheus, victoria-metrics)"
+
+scripts:
+  install.sh: "Install the metrics stack via Helm"
+  uninstall.sh: "Remove the metrics stack and clean up CRDs"
+  status.sh: "Show pods, services, and scrape targets"
+
+values:
+  values.yaml: "Helm chart values for the provider"
+
+conventions:
+  - Provider must expose a query API on port 9090 within the monitoring namespace
+  - Provider must support ServiceMonitor CRDs for scrape target discovery
+  - Provider should include node-level metrics (CPU, memory, disk, network)
+  - Provider should include kube-state-metrics for Kubernetes object metrics
+  - Provider should provision an Alertmanager for alert routing
+  - Internal endpoint: http://<release>-prometheus.monitoring.svc.cluster.local:9090
+
+implementations:
+  prometheus:
+    chart: prometheus-community/kube-prometheus-stack
+    notes: "Default. Includes Prometheus Operator, Node Exporter, Kube State Metrics, Alertmanager."
+  victoria-metrics:
+    chart: vm/victoria-metrics-k8s-stack
+    notes: "Alternative. Drop-in replacement with lower memory usage and long-term storage."

@@ -1,0 +1,60 @@
+# Service Mesh Provider Interface
+# Any mesh provider must satisfy this contract.
+# Current implementations: istio, linkerd
+
+name: mesh
+description: Service mesh providing mTLS, traffic management, and observability between meshed workloads.
+
+provides:
+  - Automatic sidecar/proxy injection for enrolled namespaces
+  - Mutual TLS between meshed pods
+  - L7 traffic telemetry (golden metrics) and traffic-shaping primitives
+
+requires:
+  kubernetes_resources:
+    - Control-plane namespace (istio-system | linkerd) created by provider
+    - Namespace label/annotation that opts a workload into the mesh
+    - Mutating admission webhook for sidecar injection
+  tools:
+    - helm
+    - kubectl
+    - openssl  # linkerd only: portable mTLS identity cert generation
+
+env_variables:
+  MESH_PROVIDER: "Active provider: istio | linkerd"
+  MESH_NAMESPACE: "Workload namespace enrolled into the mesh (default: go-api)"
+  ISTIO_VERSION: "istio: pinned chart/app version (see versions.env)"
+  LINKERD_CRDS_CHART_VERSION: "linkerd: pinned linkerd-crds chart version"
+  LINKERD_CONTROL_PLANE_CHART_VERSION: "linkerd: pinned linkerd-control-plane chart version"
+
+scripts:
+  install.sh: "Install the control plane and enrol MESH_NAMESPACE (idempotent)"
+  uninstall.sh: "Remove the control plane and un-enrol MESH_NAMESPACE (idempotent)"
+  status.sh: "Show control-plane health, meshed namespaces, and injected sidecars"
+
+values:
+  values.yaml: "Helm chart values for the provider (k3d-minimal resources)"
+
+conventions:
+  - install.sh enrols MESH_NAMESPACE via the provider's inject label/annotation
+    and restarts existing deployments so sidecars are injected.
+  - uninstall.sh removes the inject label/annotation and restarts deployments so
+    sidecars are dropped — leaving the namespace mesh-free.
+  - Both operations are idempotent and portable (no GNU-only flags).
+  - Chart versions are pinned and overridable via env (defaults in versions.env).
+
+implementations:
+  istio:
+    charts: [istio/base, istio/istiod]
+    inject_marker: "namespace label istio-injection=enabled"
+    sidecar_container: istio-proxy
+    notes: "Sidecar mode for broad demo compatibility. Control plane in istio-system."
+  linkerd:
+    charts: [linkerd/linkerd-crds, linkerd/linkerd-control-plane]
+    inject_marker: "namespace annotation linkerd.io/inject=enabled"
+    sidecar_container: linkerd-proxy
+    notes: "mTLS identity certs generated with openssl (no step CLI). Control plane in linkerd."
+
+resource_notes:
+  - "Istio (istiod + sidecars) and Linkerd both add control-plane overhead. Give
+     k3d at least 4Gi of memory; 6Gi is comfortable when a meshed app is running."

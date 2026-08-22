@@ -1,0 +1,116 @@
+apiVersion: scenario.snowops.net/v2
+name: env-promotion
+displayName: "Multi-Env Promotion (Dev → Staging → Prod)"
+description: "Simulate a real release pipeline: three environments (dev, staging, prod) each running go-api in dedicated namespaces with separate declared image tags. Promote between environments with 'labctl env promote' — no ArgoCD required in the default namespace mode."
+category: delivery
+prerequisites:
+  platform:
+    - ingress
+  apps:
+    - go-api
+runtimes:
+  - k3d
+  - kind
+
+objectives:
+  - "Understand environment separation as Kubernetes namespace isolation"
+  - "Promote go-api from dev to staging using 'labctl env promote'"
+  - "Promote go-api from staging to prod and verify the full release pipeline"
+  - "Observe how a ConfigMap-backed promotion gate models GitOps manifest changes"
+
+stages:
+  - name: dev-env
+    description: Deploy go-api into the dev environment (namespace env-dev, tag v1.2.0)
+    components:
+      - name: dev-environment
+        type: manifest
+        path: manifests/dev-env.yaml
+
+  - name: staging-env
+    description: Deploy go-api into the staging environment (namespace env-staging, tag v1.1.0)
+    components:
+      - name: staging-environment
+        type: manifest
+        path: manifests/staging-env.yaml
+
+  - name: prod-env
+    description: Deploy go-api into the prod environment (namespace env-prod, tag v1.0.0)
+    components:
+      - name: prod-environment
+        type: manifest
+        path: manifests/prod-env.yaml
+
+checks:
+  - name: env-dev-namespace-exists
+    type: kubectl
+    resource: namespace/env-dev
+
+  - name: env-staging-namespace-exists
+    type: kubectl
+    resource: namespace/env-staging
+
+  - name: env-prod-namespace-exists
+    type: kubectl
+    resource: namespace/env-prod
+
+  - name: go-api-running-in-dev
+    type: kubectl
+    resource: deployment/go-api
+    namespace: env-dev
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: go-api-running-in-staging
+    type: kubectl
+    resource: deployment/go-api
+    namespace: env-staging
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: go-api-running-in-prod
+    type: kubectl
+    resource: deployment/go-api
+    namespace: env-prod
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: env-metadata-present-dev
+    type: kubectl
+    resource: configmap/env-metadata
+    namespace: env-dev
+
+  - name: env-metadata-present-staging
+    type: kubectl
+    resource: configmap/env-metadata
+    namespace: env-staging
+
+  - name: env-metadata-present-prod
+    type: kubectl
+    resource: configmap/env-metadata
+    namespace: env-prod
+
+explore:
+  commands:
+    - label: "1. List environments and current tags"
+      command: "labctl env list"
+    - label: "2. Promote go-api from dev to staging"
+      command: "labctl env promote dev staging"
+    - label: "3. Promote go-api from staging to prod"
+      command: "labctl env promote staging prod"
+    - label: "4. Verify all environments are healthy"
+      command: "labctl scenario verify env-promotion"
+    - label: "Watch staging deployment"
+      command: "kubectl -n env-staging get deploy go-api -w"
+    - label: "Inspect dev metadata ConfigMap"
+      command: "kubectl -n env-dev get cm env-metadata -o yaml"
+    - label: "Inspect staging metadata ConfigMap"
+      command: "kubectl -n env-staging get cm env-metadata -o yaml"
+  tips:
+    - "Default mode: one cluster, three namespaces (env-dev/staging/prod). Laptop-friendly — no extra clusters needed."
+    - "The 'declared tag' in env-metadata is the promotion unit. In a real GitOps pipeline this would be a values.yaml commit."
+    - "Promotion is idempotent: re-running 'env promote dev staging' is always safe."
+    - "After promoting dev→staging, run 'labctl env list' to confirm the staging tag matches dev's."
+    - "Tear down with 'labctl scenario down env-promotion' — removes all three namespaces cleanly."

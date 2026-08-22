@@ -1,0 +1,34 @@
+# Stage 2: re-applies the canary VirtualService (same name) with a mesh-level
+# latency fault on the v2 subset — a fixed 2s delay on every request routed to
+# v2. This is injected by the sidecar proxies, not the app, demonstrating that
+# you can rehearse slow-dependency incidents without changing code.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: go-api-canary
+  namespace: go-api
+spec:
+  hosts:
+    - go-api-canary.go-api.svc.cluster.local
+  http:
+    - match:
+        - sourceLabels:
+            version: v2
+      fault:
+        delay:
+          percentage:
+            value: 100
+          fixedDelay: 2s
+      route:
+        - destination:
+            host: go-api-canary.go-api.svc.cluster.local
+            subset: v2
+    - route:
+        - destination:
+            host: go-api-canary.go-api.svc.cluster.local
+            subset: v1
+          weight: 90
+        - destination:
+            host: go-api-canary.go-api.svc.cluster.local
+            subset: v2
+          weight: 10

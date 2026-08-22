@@ -1,0 +1,44 @@
+# TLS Certificate Provider Interface
+# Automated certificate management for Kubernetes.
+# Current implementations: cert-manager
+
+name: security/tls
+description: Automated TLS certificate provisioning and renewal for Kubernetes ingress and services.
+
+provides:
+  - Certificate and Issuer CRDs for declarative TLS management
+  - Automatic certificate issuance and renewal
+  - ClusterIssuer for cluster-wide certificate authority
+  - Integration with ingress controllers for automatic TLS termination
+  - Prometheus ServiceMonitor for certificate expiry monitoring
+
+requires:
+  kubernetes_resources:
+    - Namespace (cert-manager)
+    - CRDs (certificates, issuers, clusterissuers, certificaterequests, orders, challenges)
+  ports:
+    - 9402 (Metrics)
+    - 10250 (Webhook)
+  dependencies: []
+
+env_variables: {}
+
+scripts:
+  install.sh: "Install cert-manager via Helm and create self-signed ClusterIssuer"
+  uninstall.sh: "Remove cert-manager, CRDs, and issued certificates"
+  status.sh: "Show pods, ClusterIssuers, and certificates across namespaces"
+
+values:
+  values.yaml: "Helm chart values including CRD installation and resource limits"
+
+conventions:
+  - CRDs are installed via Helm (crds.enabled=true)
+  - A self-signed ClusterIssuer is created on install for local dev (via cluster-issuer.yaml)
+  - Cloud environments should use Let's Encrypt or ACME-based issuers
+  - Ingress annotations trigger automatic certificate provisioning
+  - Prometheus ServiceMonitor must be enabled for certificate expiry alerting
+
+implementations:
+  cert-manager:
+    chart: jetstack/cert-manager
+    notes: "Default. CNCF project for X.509 certificate management. Supports self-signed, CA, ACME (Let's Encrypt), Vault, and Venafi issuers."

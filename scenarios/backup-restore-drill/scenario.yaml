@@ -1,0 +1,77 @@
+apiVersion: scenario.snowops.net/v2
+name: backup-restore-drill
+displayName: "Day-2 Drill: Namespace Backup & Restore"
+description: "Back up a namespace's resources to a manifest archive, simulate accidental data loss (delete a resource — or the whole namespace), then restore from the backup and verify the round-trip with checks. A dependency-light alternative to Velero that teaches the backup/restore loop every operator must rehearse before they need it."
+category: operations
+prerequisites:
+  apps:
+    - go-api
+runtimes:
+  - k3d
+  - kind
+
+objectives:
+  - "Capture a namespace's resources into a restorable manifest archive"
+  - "Simulate accidental loss by deleting a resource (or the namespace)"
+  - "Restore from the backup and verify the namespace round-trips intact"
+  - "Understand what a manifest-export backup covers and what it does not (PV data)"
+
+stages:
+  - name: baseline
+    description: Plant a restore marker in the go-api namespace so the round-trip is provable
+    components:
+      - name: restore-marker
+        type: manifest
+        path: manifests/baseline.yaml
+
+checks:
+  - name: go-api-namespace-exists
+    type: kubectl
+    resource: namespace/go-api
+
+  - name: go-api-running
+    type: kubectl
+    resource: deployment/go-api
+    namespace: go-api
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: restore-marker-present
+    type: kubectl
+    resource: configmap/restore-marker
+    namespace: go-api
+
+  - name: restore-marker-value-intact
+    type: kubectl
+    resource: configmap/restore-marker
+    namespace: go-api
+    jsonpath: "{.data.canary}"
+    operator: "=="
+    value: "do-not-delete"
+
+  - name: backup-archive-exists
+    type: script
+    script: scripts/check-backup-exists.sh
+
+explore:
+  commands:
+    - label: "1. Back up the go-api namespace to a manifest archive"
+      command: "bash {{.ProjectRoot}}/scenarios/backup-restore-drill/scripts/backup.sh go-api"
+    - label: "2. Simulate accidental loss (delete the restore marker)"
+      command: "kubectl -n go-api delete configmap restore-marker"
+    - label: "3. Confirm the loss — this check now fails"
+      command: "labctl scenario verify backup-restore-drill"
+    - label: "4. Restore from the backup archive"
+      command: "bash {{.ProjectRoot}}/scenarios/backup-restore-drill/scripts/restore.sh go-api"
+    - label: "5. Verify the round-trip — checks pass again"
+      command: "labctl scenario verify backup-restore-drill"
+    - label: "Inspect the backup archive"
+      command: "ls -la .labctl/backups/ && cat .labctl/backups/go-api-latest.json"
+  tips:
+    - "Run backup.sh BEFORE the destructive step — you cannot restore what you never captured."
+    - "This is a manifest-level backup: it round-trips Kubernetes objects (Deployments, Services, ConfigMaps, Secrets), NOT PersistentVolume data. For stateful data use a volume snapshot or Velero with restic."
+    - "The backup strips server-managed fields (resourceVersion, uid, status) so the manifests re-apply cleanly into the same or a fresh namespace."
+    - "Try the harder variant: 'kubectl delete namespace go-api' then restore — the archive recreates the namespace and all its objects."
+    - "Archives are written to .labctl/backups/ (gitignored runtime state). go-api-latest.json always points at the most recent backup."
+    - "Tear down with 'labctl scenario down backup-restore-drill' — removes the restore marker; go-api stays running."

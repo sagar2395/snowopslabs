@@ -1,0 +1,103 @@
+## ArgoCD Helm values — optimised for local dev (k3d / homelab)
+## Chart: argo/argo-cd  v7.8.13
+## Docs:  https://github.com/argoproj/argo-helm/tree/main/charts/argo-cd
+
+## ---------------------------------------------------------------------------
+## Global
+## ---------------------------------------------------------------------------
+global:
+  logging:
+    level: info
+
+## ---------------------------------------------------------------------------
+## Server
+## ---------------------------------------------------------------------------
+server:
+  ## Run insecure (TLS terminated at Traefik ingress)
+  extraArgs:
+    - --insecure
+
+  ## Minimal resources for local dev
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hostname: argocd.k3d.local
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: web
+
+## ---------------------------------------------------------------------------
+## Configs
+## ---------------------------------------------------------------------------
+configs:
+  params:
+    ## Required so the server doesn't redirect HTTP -> HTTPS behind the proxy
+    server.insecure: "true"
+
+## ---------------------------------------------------------------------------
+## Dex (SSO) — disabled for local dev
+## ---------------------------------------------------------------------------
+dex:
+  enabled: false
+
+## ---------------------------------------------------------------------------
+## Notifications — disabled for local dev
+## ---------------------------------------------------------------------------
+notifications:
+  enabled: false
+
+## ---------------------------------------------------------------------------
+## ApplicationSet controller — enabled for template-based app generation
+## ---------------------------------------------------------------------------
+applicationSet:
+  enabled: true
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+## ---------------------------------------------------------------------------
+## Repo server
+## ---------------------------------------------------------------------------
+repoServer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+## ---------------------------------------------------------------------------
+## Redis
+## ---------------------------------------------------------------------------
+redis:
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+## ---------------------------------------------------------------------------
+## Controller
+## ---------------------------------------------------------------------------
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

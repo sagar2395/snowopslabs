@@ -1,0 +1,233 @@
+# Prometheus Stack Values - kube-prometheus-stack
+# Helm Chart: https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack
+
+# Global settings
+global:
+  rbac:
+    create: true
+
+# Prometheus Operator
+prometheusOperator:
+  enabled: true
+  manageCrds: true
+  
+  # Operator resource requests
+  resources:
+    limits:
+      memory: 200Mi
+    requests:
+      cpu: 100m
+      memory: 100Mi
+
+# Prometheus Configuration
+prometheus:
+  enabled: true
+  
+  # Prometheus resource settings (adjust for homelab)
+  prometheusSpec:
+    image:
+      registry: quay.io
+      repository: prometheus/prometheus
+    
+    # Retention settings (homelab friendly - 24 hours)
+    retention: 24h
+    retentionSize: "2GB"
+    
+    # Resource requests/limits
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+    
+    # Service Monitor Selector - scrape all ServiceMonitor resources in cluster
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    
+    # Pod Monitor Selector - scrape all PodMonitor resources
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    
+    # Rule Selector for PrometheusRules
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
+    
+    # Scrape interval and timeout
+    scrapeInterval: 30s
+    scrapeTimeout: 10s
+    
+    # Enable admin API
+    enableAdminAPI: true
+    
+    # Storage configuration
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+    
+    # Additional scrape configs for pod annotation discovery
+    additionalScrapeConfigs:
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          # Only scrape pods with prometheus.io/scrape annotation set to true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          # Get scrape path from annotation (default /metrics)
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          # Get port from annotation
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          # Add namespace label
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          # Add pod name label
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+          # Add job label from pod label
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: replace
+            target_label: job
+  
+  # Prometheus Ingress (Traefik)
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: web
+    hosts:
+      - prometheus.k3d.local
+    paths:
+      - /
+    pathType: Prefix
+
+# Alertmanager
+alertmanager:
+  enabled: true
+
+  # Route lab-fault alerts (incidents/, task 049) to the pager webhook so
+  # on-call drills get a real page. Everything else keeps the null route.
+  # The webhook URL default targets the in-cluster pager service
+  # (services/pager); install.sh overrides it when ALERT_WEBHOOK_URL is set.
+  config:
+    route:
+      receiver: "null"
+      group_by: ['alertname']
+      routes:
+        - receiver: labfault-pager
+          matchers:
+            - labfault = "true"
+          group_wait: 10s
+          group_interval: 30s
+          repeat_interval: 5m
+    receivers:
+      - name: "null"
+      - name: labfault-pager
+        webhook_configs:
+          - url: http://pager.pager.svc.cluster.local:8080/alert
+            send_resolved: true
+
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  ingress:
+    enabled: false  # exposed via the Traefik ingress created in install.sh instead
+
+# Grafana (managed by separate Grafana install script)
+grafana:
+  enabled: false
+
+# Node Exporter
+nodeExporter:
+  enabled: true
+  resources:
+    limits:
+      memory: 64Mi
+    requests:
+      cpu: 50m
+      memory: 32Mi
+
+# Kube State Metrics
+kubeStateMetrics:
+  enabled: true
+  resources:
+    limits:
+      memory: 64Mi
+    requests:
+      cpu: 50m
+      memory: 32Mi
+
+# Prometheus Node Exporter (DaemonSet)
+prometheus-node-exporter:
+  hostNetwork: true
+  hostPID: true
+  
+  resources:
+    limits:
+      memory: 64Mi
+    requests:
+      cpu: 50m
+      memory: 32Mi
+  
+  tolerations:
+    - effect: NoSchedule
+      operator: Exists
+    - effect: NoExecute
+      operator: Exists
+
+# Default Prometheus Rules
+defaultRules:
+  create: true
+  rules:
+    alertmanager: true
+    etcd: false
+    configReloaders: true
+    general: true
+    k8s: true
+    kubeApiserver: true
+    kubeApiserverAvailability: true
+    kubeApiserverSlos: true
+    kubelet: true
+    kubeProxy: true
+    kubePrometheusGeneral: true
+    kubePrometheusNodeRecording: true
+    kubernetesApps: true
+    kubernetesResources: true
+    kubernetesStorage: true
+    kubernetesSystem: true
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+    kubeStateMetrics: true
+    network: false
+    node: true
+    prometheus: true
+    prometheusOperator: true

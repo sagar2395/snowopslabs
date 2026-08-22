@@ -1,0 +1,13 @@
+apiVersion: v2
+name: go-api
+description: A Helm chart for deploying the Go API in k3d
+type: application
+version: 0.1.0
+appVersion: "1.0"
+keywords:
+  - go
+  - api
+  - k3d
+maintainers:
+  - name: Sagar
+    email: sagar@example.com

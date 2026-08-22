@@ -1,0 +1,95 @@
+apiVersion: scenario.snowops.net/v2
+name: autoscaling-under-load
+displayName: "Autoscaling Under Load"
+description: "Watch KEDA scale go-api on Prometheus RPS: a spike drives it from 1 to several replicas, then cooldown brings it back. The flagship 'autoscaling actually works' demo, verified under traffic from the load generator."
+category: scalability
+prerequisites:
+  platform:
+    - ingress
+    - monitoring/metrics
+    - monitoring/grafana
+    - autoscaling/keda
+  apps:
+    - go-api
+runtimes:
+  - k3d
+  - kind
+
+objectives:
+  - "Declare metric-driven autoscaling for go-api with a KEDA ScaledObject"
+  - "Drive a traffic spike and watch replicas scale up on Prometheus RPS"
+  - "Confirm latency stays within SLO while scaled, then scales back on cooldown"
+
+stages:
+  - name: autoscaler
+    description: Declare the ScaledObject and the replicas-vs-RPS dashboard
+    components:
+      - name: go-api-scaledobject
+        type: manifest
+        path: manifests/scaledobject.yaml
+        namespace: go-api
+
+      - name: autoscaling-dashboard
+        type: grafana-dashboard
+        path: dashboards/
+        namespace: "{{.MonitoringNamespace}}"
+
+# These checks assert the POST-SPIKE state (run the spike profile first — see the
+# explore commands). At baseline go-api sits at 1 replica; under the spike KEDA
+# scales it up, and `scenario verify` confirms it.
+checks:
+  - name: keda-operator-ready
+    type: kubectl
+    resource: deployment/keda-operator
+    namespace: keda
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: scaledobject-present
+    type: kubectl
+    resource: scaledobject/go-api
+    namespace: go-api
+
+  - name: keda-hpa-created
+    type: kubectl
+    resource: hpa/keda-hpa-go-api
+    namespace: go-api
+
+  - name: go-api-scaled-up
+    type: kubectl
+    resource: deployment/go-api
+    namespace: go-api
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "3"
+
+  - name: latency-within-slo
+    type: promql
+    query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))'
+    operator: "<"
+    value: "1.5"
+
+explore:
+  urls:
+    - label: "Grafana — Autoscaling dashboard (replicas vs RPS)"
+      url: "http://grafana.{{.DomainSuffix}}"
+    - label: "Prometheus"
+      url: "http://prometheus.{{.DomainSuffix}}"
+  commands:
+    - label: "1. Drive the spike (baseline 10 RPS -> 10x spike for ~2m)"
+      command: "labctl traffic start --profile spike --rps 10"
+    - label: "2. Watch KEDA scale go-api up"
+      command: "kubectl -n go-api get hpa keda-hpa-go-api -w"
+    - label: "3. Watch replicas change"
+      command: "kubectl -n go-api get deploy go-api -w"
+    - label: "4. Verify the scaled-up state (run during the 2m spike hold)"
+      command: "labctl scenario verify autoscaling-under-load"
+    - label: "5. After ~3-4m cooldown, confirm it scaled back to 1"
+      command: "kubectl -n go-api get deploy go-api"
+  tips:
+    - "KEDA targets ~25 RPS/replica (ScaledObject threshold); the ~100 RPS spike pushes go-api to ~4 replicas (max 6)."
+    - "Replicas vs RPS is the dashboard story: the replica line should track the RPS line with a short lag."
+    - "cooldownPeriod is 60s — after the spike ends KEDA waits, then scales back to minReplicaCount (1)."
+    - "If go-api stays at 1, check the ScaledObject status: kubectl -n go-api describe scaledobject go-api"
+    - "The promql latency check reads http_request_duration_seconds from the go-api /metrics endpoint."

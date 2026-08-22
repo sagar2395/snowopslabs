@@ -1,0 +1,46 @@
+# Ingress Provider Interface
+# Any ingress provider must satisfy this contract.
+# Current implementations: traefik, nginx
+
+name: ingress
+description: Kubernetes ingress controller for routing external HTTP/HTTPS traffic to services.
+
+provides:
+  - IngressClass resource for use in Ingress manifests
+  - HTTP routing from external ports to cluster services
+  - TLS termination (optional, depends on cert-manager)
+
+requires:
+  kubernetes_resources:
+    - IngressClass (created by provider)
+    - LoadBalancer or NodePort Service (created by provider)
+  ports:
+    - 80 (HTTP)
+    - 443 (HTTPS)
+
+env_variables:
+  INGRESS_CLASS: "Name of the IngressClass to use in Ingress resources (e.g. traefik, nginx)"
+
+scripts:
+  install.sh: "Install the ingress controller via Helm"
+  uninstall.sh: "Remove the ingress controller and clean up"
+  status.sh: "Show pods, services, and ingress routes"
+
+values:
+  values.yaml: "Helm chart values for the provider"
+
+conventions:
+  - Provider must create an IngressClass matching the INGRESS_CLASS env variable
+  - Provider must listen on ports 80 and 443 on the host (via LoadBalancer or hostPort)
+  - Provider should support path-based and host-based routing
+  - Provider should support TLS termination when cert-manager certificates are available
+
+implementations:
+  traefik:
+    chart: traefik/traefik
+    ingress_class: traefik
+    notes: "Default for k3d (ships with k3s). API dashboard available."
+  nginx:
+    chart: ingress-nginx/ingress-nginx
+    ingress_class: nginx
+    notes: "Default for cloud runtimes (AKS, EKS). Widely used in production."

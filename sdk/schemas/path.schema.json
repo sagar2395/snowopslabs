@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labs.snowops.net/schemas/path.schema.json",
+  "title": "SnowOps Labs Learning Path (path.yaml)",
+  "description": "Schema for a SnowOps Labs learning path: an ordered list of modules, each with an intro, an action, and a completion check.",
+  "type": "object",
+  "required": ["name", "modules"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+    "displayName": { "type": "string" },
+    "description": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "estimatedMinutes": { "type": "integer", "minimum": 0 },
+    "modules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "action"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "displayName": { "type": "string" },
+          "intro": { "type": "string", "description": "Relative path to a markdown file." },
+          "action": {
+            "type": "object",
+            "required": ["type", "ref"],
+            "additionalProperties": false,
+            "properties": {
+              "type": { "type": "string", "enum": ["command", "scenario", "incident"] },
+              "ref": { "type": "string", "description": "Command string, or the name of a scenario/incident (cross-reference checked)." }
+            }
+          },
+          "check": { "$ref": "check.schema.json" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://labs.snowops.net/schemas/incident.schema.json",
+  "title": "SnowOps Labs Incident (fault.yaml)",
+  "description": "Schema for a SnowOps Labs incident/fault definition. The detection check passes if and only if the fault is RESOLVED.",
+  "type": "object",
+  "required": ["name", "category", "severity", "target", "detection"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$",
+      "description": "Must match the incident directory name."
+    },
+    "displayName": { "type": "string" },
+    "description": { "type": "string" },
+    "category": {
+      "type": "string",
+      "enum": ["workload", "network", "resources", "storage", "config"]
+    },
+    "severity": { "type": "string", "enum": ["low", "medium", "high"] },
+    "target": {
+      "type": "object",
+      "required": ["namespace", "workload"],
+      "additionalProperties": false,
+      "properties": {
+        "namespace": { "type": "string" },
+        "workload": { "type": "string" }
+      }
+    },
+    "prerequisites": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apps": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "detection": { "$ref": "check.schema.json" },
+    "expectAlert": {
+      "type": "string",
+      "description": "Alertmanager alert this fault should fire. Requires alerts/rule.yaml in the incident directory."
+    }
+  }
+}

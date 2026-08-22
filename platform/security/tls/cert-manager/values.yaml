@@ -1,0 +1,47 @@
+## cert-manager Helm Chart Values
+## https://github.com/cert-manager/cert-manager/tree/master/deploy/charts/cert-manager
+
+# Install CRDs via Helm
+crds:
+  enabled: true
+
+# Replica count (minimal for local dev)
+replicaCount: 1
+
+# Resources
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# Webhook
+webhook:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# CA injector
+cainjector:
+  replicaCount: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Prometheus monitoring
+prometheus:
+  enabled: true
+  servicemonitor:
+    enabled: true
+    namespace: monitoring

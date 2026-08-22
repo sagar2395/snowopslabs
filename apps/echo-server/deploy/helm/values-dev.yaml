@@ -1,0 +1,51 @@
+# Development values for local k3d deployment
+
+nameOverride: ""
+fullnameOverride: ""
+
+namespace:
+  create: true
+  name: echo-server
+
+deployment:
+  replicaCount: 1
+
+image:
+  repository: echo-server
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: echo-server.k3d.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+env:
+  PORT: "8080"
+  CACHE_TTL: "1h"
+  REDIS_URL: ""
+  # Set when Redis is deployed:
+  # REDIS_URL: "redis://redis-master.services.svc.cluster.local:6379"
+
+podAnnotations:
+  dev: "true"
+
+prometheus:
+  enabled: true
+  port: 8080
+  path: /metrics

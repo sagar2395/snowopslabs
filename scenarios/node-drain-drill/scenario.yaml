@@ -1,0 +1,85 @@
+apiVersion: scenario.snowops.net/v2
+name: node-drain-drill
+displayName: "Day-2 Drill: Node Drain Under Load"
+description: "Cordon and drain a worker node while go-api serves live traffic. A PodDisruptionBudget keeps a minimum number of replicas available, so the scheduler reschedules pods onto the remaining nodes without dropping requests. The grade is the measured request success rate through the drain."
+category: operations
+prerequisites:
+  platform:
+    - ingress
+    - monitoring/metrics
+  apps:
+    - go-api
+runtimes:
+  - k3d
+  - kind
+
+objectives:
+  - "Protect go-api availability during node maintenance with a PodDisruptionBudget"
+  - "Cordon and drain a worker node while traffic runs and watch pods reschedule"
+  - "Verify the PDB held and the request success rate stayed above the SLO"
+  - "Uncordon the node and confirm the cluster returns to full capacity"
+
+stages:
+  - name: baseline
+    description: Scale go-api for HA and apply a PodDisruptionBudget so a drain cannot take all replicas down at once
+    components:
+      - name: go-api-availability-budget
+        type: manifest
+        path: manifests/baseline.yaml
+
+checks:
+  - name: pdb-present
+    type: kubectl
+    resource: pdb/go-api-drill-pdb
+    namespace: go-api
+
+  - name: pdb-allows-disruptions
+    type: kubectl
+    resource: pdb/go-api-drill-pdb
+    namespace: go-api
+    jsonpath: "{.status.expectedPods}"
+    operator: ">="
+    value: "2"
+
+  - name: go-api-highly-available
+    type: kubectl
+    resource: deployment/go-api
+    namespace: go-api
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "2"
+
+  - name: availability-held-during-drain
+    type: promql
+    query: 'sum(rate(http_requests_total{app="go-api",code!~"5.."}[5m])) / sum(rate(http_requests_total{app="go-api"}[5m]))'
+    operator: ">="
+    value: "0.995"
+
+  - name: no-node-left-cordoned
+    type: script
+    script: scripts/check-no-cordon.sh
+
+explore:
+  urls:
+    - label: "Grafana — go-api availability"
+      url: "http://grafana.{{.DomainSuffix}}"
+  commands:
+    - label: "1. Start steady background traffic (keep running in another terminal)"
+      command: "labctl traffic start --profile steady --rps 20"
+    - label: "2. Drain a worker node (cordons, evicts pods respecting the PDB, then uncordons)"
+      command: "bash {{.ProjectRoot}}/scenarios/node-drain-drill/scripts/drain.sh"
+    - label: "3. Watch go-api pods reschedule onto the remaining nodes"
+      command: "kubectl -n go-api get pods -o wide -w"
+    - label: "4. Verify the PDB held and success rate stayed above SLO"
+      command: "labctl scenario verify node-drain-drill"
+    - label: "Inspect node status (look for SchedulingDisabled during the drain)"
+      command: "kubectl get nodes"
+    - label: "Inspect the PDB status"
+      command: "kubectl -n go-api get pdb go-api-drill-pdb -o yaml"
+  tips:
+    - "Start traffic FIRST — the availability check reads http_requests_total from Prometheus, which needs live requests to be meaningful."
+    - "The PDB uses maxUnavailable: 1, so at most one go-api pod can be evicted at a time; the drain blocks until a replacement is Ready elsewhere."
+    - "On single-node clusters a drain has nowhere to reschedule pods. k3d defaults to 2 agents (AGENTS env var) precisely so this drill works."
+    - "drain.sh always uncordons the node at the end, even on failure, so the cluster never gets stuck SchedulingDisabled."
+    - "If the drain hangs, a pod likely has no PDB headroom or no other node can host it — kubectl describe the pending pod."
+    - "Tear down with 'labctl scenario down node-drain-drill' — removes the PDB; go-api stays running."

@@ -1,0 +1,25 @@
+## Redis configuration for local development lab
+## Bitnami Redis chart values
+## https://github.com/bitnami/charts/tree/main/bitnami/redis
+
+# Standalone architecture (no sentinel for local dev)
+architecture: standalone
+
+# Disable authentication for local lab simplicity
+auth:
+  enabled: false
+
+master:
+  persistence:
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# No replicas in standalone mode
+replica:
+  replicaCount: 0

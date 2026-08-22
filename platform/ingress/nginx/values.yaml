@@ -1,0 +1,43 @@
+## Nginx Ingress Controller Helm Chart Values
+## https://github.com/kubernetes/ingress-nginx/tree/main/charts/ingress-nginx
+## Alternative to Traefik — commonly used in cloud environments (AKS, EKS)
+
+controller:
+  # IngressClass name
+  ingressClassResource:
+    name: nginx
+    enabled: true
+    default: false
+
+  # Service type
+  service:
+    type: LoadBalancer
+
+  # Resource limits (minimal for local dev)
+  resources:
+    limits:
+      cpu: 500m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Metrics for Prometheus
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      namespace: monitoring
+
+  # Admission webhooks (validates Ingress resources)
+  admissionWebhooks:
+    enabled: true
+
+  # Config map for custom nginx settings
+  config:
+    use-forwarded-headers: "true"
+    compute-full-forwarded-for: "true"
+
+# Default backend (optional — returns 404 for unmatched routes)
+defaultBackend:
+  enabled: false

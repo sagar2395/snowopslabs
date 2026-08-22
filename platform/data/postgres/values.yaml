@@ -1,0 +1,15 @@
+# Custom values for the cloudnative-pg operator Helm chart.
+# Referenced by platform/data/postgres/install.sh (kept minimal for k3d).
+#
+# Note: the operator chart's defaults are already lightweight; the Postgres
+# Cluster CR (instances, storage, per-pod resources) is defined inline in
+# install.sh, not here. This file exists to satisfy the provider contract and
+# to give a single place to tune the operator deployment if needed.
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 100Mi
+  limits:
+    cpu: 250m
+    memory: 200Mi

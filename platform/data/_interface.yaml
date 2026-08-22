@@ -1,0 +1,64 @@
+# Data Infrastructure Provider Interface
+# Data providers are additive sub-components (like monitoring/*): kafka and
+# postgres can coexist on the same cluster. Address them as `data/<provider>`.
+# Current implementations: kafka (Strimzi), postgres (CloudNativePG)
+
+name: data
+description: Stateful data infrastructure (event streaming, relational DB) driven by Kubernetes operators.
+
+provides:
+  - An operator that reconciles a custom resource into a running data service
+  - A small, ready-to-use cluster (Kafka broker / Postgres HA pair)
+  - Readiness reported via CR status conditions (consumable by status.sh)
+
+requires:
+  kubernetes_resources:
+    - Operator Deployment (Strimzi cluster operator / CNPG operator)
+    - Custom resource (Kafka + KafkaNodePool / Postgres Cluster)
+    - PVCs for persistent providers (postgres; kafka here is ephemeral)
+  tools:
+    - helm
+    - kubectl
+
+env_variables:
+  DATA_PROVIDER: "Optional: provider to act on when targeting the bare `data` category (kafka | postgres). Usually you address data/<provider> explicitly."
+  KAFKA_NAMESPACE: "kafka: namespace for the operator + Kafka CR (default: kafka)"
+  STRIMZI_VERSION: "kafka: pinned strimzi-kafka-operator chart version (versions.env)"
+  KAFKA_VERSION: "kafka: broker version (versions.env)"
+  POSTGRES_NAMESPACE: "postgres: namespace for the Cluster CR (default: postgres)"
+  POSTGRES_INSTANCES: "postgres: instance count (default: 2)"
+  CNPG_CHART_VERSION: "postgres: pinned cloudnative-pg chart version (versions.env)"
+
+scripts:
+  install.sh: "Install the operator and apply the cluster CR; wait for Ready (idempotent)"
+  uninstall.sh: "Delete the CR, operator, and PVCs; remove the namespace (idempotent)"
+  status.sh: "Show operator + CR readiness (via jsonpath) and a smoke-test/drill hint"
+
+values:
+  values.yaml: "Helm values for the operator chart (k3d-minimal resources)"
+
+conventions:
+  - Each provider owns its own namespace so it can be installed/removed without
+    disturbing its sibling (kafka -> kafka ns, postgres -> postgres ns; CNPG's
+    operator lives in cnpg-system).
+  - status.sh reads CR readiness from .status conditions/fields via jsonpath —
+    no text scraping.
+  - Resource requests are minimal so both can run on a laptop k3d alongside
+    monitoring. Raise them for cloud/load testing.
+  - Chart/app versions are pinned and overridable via env (defaults in versions.env).
+
+implementations:
+  kafka:
+    operator_chart: strimzi/strimzi-kafka-operator
+    cluster: "Kafka (KRaft) + KafkaNodePool, 1 dual-role node, ephemeral storage"
+    ready_signal: "kafka/<name> condition Ready=True"
+    notes: "Single broker for k3d. Produce/consume smoke test via kcat (runbook)."
+  postgres:
+    operator_chart: cnpg/cloudnative-pg
+    cluster: "postgresql.cnpg.io/Cluster, 2 instances (1 primary + 1 replica)"
+    ready_signal: "cluster/<name> readyInstances == spec.instances"
+    notes: "Built-in failover: delete the primary pod and watch a replica promote."
+
+resource_notes:
+  - "Give k3d at least 4Gi memory; running kafka + postgres + monitoring together
+     is comfortable around 6Gi."

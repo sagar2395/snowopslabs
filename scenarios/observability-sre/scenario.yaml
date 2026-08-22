@@ -1,0 +1,120 @@
+name: observability-sre
+displayName: "Observability & SRE"
+description: "Full observability stack with log aggregation, distributed tracing, alerting rules, and SLO dashboards."
+category: observability
+prerequisites:
+  platform:
+    - ingress
+    - monitoring/metrics
+    - monitoring/grafana
+  apps:
+    - go-api
+runtimes:
+  - k3d
+  - kind
+
+objectives:
+  - "Aggregate application logs in Loki and query them from Grafana"
+  - "Capture distributed traces in Tempo and correlate them with logs"
+  - "Alert on high error rate / latency and track SLOs on dashboards"
+
+stages:
+  - name: log-aggregation
+    description: Ship and store application logs
+    components:
+      - name: loki
+        type: helm
+        chart: grafana/loki
+        repo: https://grafana.github.io/helm-charts
+        version: "6.6.2"
+        namespace: "{{.MonitoringNamespace}}"
+        valuesFile: values/loki.yaml
+
+      - name: promtail
+        type: helm
+        chart: grafana/promtail
+        repo: https://grafana.github.io/helm-charts
+        version: "6.16.4"
+        namespace: "{{.MonitoringNamespace}}"
+        valuesFile: values/promtail.yaml
+
+  - name: tracing
+    description: Distributed tracing backend
+    components:
+      - name: tempo
+        type: helm
+        chart: grafana/tempo
+        repo: https://grafana.github.io/helm-charts
+        version: "1.10.3"
+        namespace: "{{.MonitoringNamespace}}"
+        valuesFile: values/tempo.yaml
+
+  - name: alerting-and-slo
+    description: Alert rules and SLO dashboards
+    components:
+      - name: alerting-rules
+        type: manifest
+        path: manifests/alerting-rules.yaml
+        namespace: "{{.MonitoringNamespace}}"
+
+      - name: slo-dashboards
+        type: grafana-dashboard
+        path: dashboards/
+        namespace: "{{.MonitoringNamespace}}"
+
+checks:
+  - name: loki-ready
+    type: kubectl
+    resource: statefulset/loki
+    namespace: "{{.MonitoringNamespace}}"
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: promtail-ready
+    type: kubectl
+    resource: daemonset/promtail
+    namespace: "{{.MonitoringNamespace}}"
+    jsonpath: "{.status.numberReady}"
+    operator: ">="
+    value: "1"
+
+  - name: tempo-ready
+    type: kubectl
+    resource: statefulset/tempo
+    namespace: "{{.MonitoringNamespace}}"
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: alerting-rules-installed
+    type: kubectl
+    resource: prometheusrules
+    namespace: "{{.MonitoringNamespace}}"
+
+  - name: grafana-reachable
+    type: http
+    url: "http://grafana.{{.DomainSuffix}}"
+    expectStatus: 200
+
+explore:
+  urls:
+    - label: "Grafana Dashboards"
+      url: "http://grafana.{{.DomainSuffix}}"
+    - label: "Prometheus"
+      url: "http://prometheus.{{.DomainSuffix}}"
+  commands:
+    - label: "Generate API traffic"
+      command: "for i in $(seq 1 100); do curl -s http://go-api.{{.DomainSuffix}}/health; done"
+    - label: "View Loki logs"
+      command: "kubectl -n {{.MonitoringNamespace}} port-forward svc/loki-gateway 3100:80 & curl -s http://localhost:3100/loki/api/v1/labels"
+    - label: "Query go-api logs in Loki"
+      command: "Open Grafana > Explore > Select Loki > Query: {app=\"go-api\"}"
+    - label: "View traces in Tempo"
+      command: "Open Grafana > Explore > Select Tempo > Search by service name: go-api"
+  tips:
+    - "Grafana Explore: Select Loki as datasource, query {namespace=\"go-api\"} to see application logs"
+    - "Grafana Explore: Select Tempo as datasource to search for distributed traces"
+    - "Check PrometheusRule alerts: kubectl -n {{.MonitoringNamespace}} get prometheusrules"
+    - "Generate failing traffic: curl http://go-api.{{.DomainSuffix}}/toggle-failure then hit /ready"
+    - "SLO dashboards appear automatically in Grafana via the sidecar ConfigMap loader"

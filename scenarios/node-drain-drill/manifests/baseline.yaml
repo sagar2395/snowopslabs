@@ -1,0 +1,19 @@
+# Baseline for the node-drain drill: a PodDisruptionBudget that keeps go-api
+# available while a node is drained. maxUnavailable: 1 means the eviction of one
+# pod blocks until a replacement is Ready on another node — the core mechanism
+# that makes a node drain non-disruptive.
+#
+# go-api itself is deployed by the app prerequisite. drain.sh scales it to 3
+# replicas before the drill so the PDB has headroom to work with.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: go-api-drill-pdb
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: node-drain-drill
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: go-api

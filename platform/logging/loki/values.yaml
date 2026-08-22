@@ -1,0 +1,81 @@
+# Loki Helm Chart Values - Single Binary Mode
+# Lightweight configuration for homelab use
+
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  limits_config:
+    retention_period: 168h
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
+  schemaConfig:
+    configs:
+      - from: "2024-01-01"
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+  # Log retention — default 7 days. Override via LOKI_RETENTION_HOURS env var.
+  # Set to 0 to disable retention (logs kept forever, PVC fills up eventually).
+  limits_config:
+    retention_period: 168h
+  compactor:
+    retention_enabled: true
+    delete_request_store: filesystem
+
+singleBinary:
+  replicas: 1
+  persistence:
+    storageClass: local-path
+    size: 5Gi
+
+# Disable components not needed in single-binary mode
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0
+
+# Gateway for service discovery
+gateway:
+  enabled: true
+  replicas: 1
+
+# Resource limits for homelab
+singleBinary:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Disable monitoring (we're the monitoring stack)
+monitoring:
+  selfMonitoring:
+    enabled: false
+    grafanaAgent:
+      installOperator: false
+  lokiCanary:
+    enabled: false
+
+# Disable test
+test:
+  enabled: false
+
+# Chunk and retention settings
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false

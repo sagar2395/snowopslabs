@@ -1,0 +1,59 @@
+name: kubernetes-foundations
+displayName: "Kubernetes Foundations"
+description: >
+  A hands-on tour of the lab: spin up a cluster, deploy the demo apps,
+  enable observability, and face your first production incident. By the end
+  you will have used kubectl, Helm, Prometheus, and the incident engine on
+  a real Kubernetes cluster.
+tags: [kubernetes, observability, incidents]
+estimatedMinutes: 45
+modules:
+  - name: init-cluster
+    displayName: "Start the cluster"
+    intro: intros/01-init-cluster.md
+    action:
+      type: command
+      ref: "labctl runtime up"
+    check:
+      name: cluster-reachable
+      type: script
+      script: checks/cluster-reachable.sh
+      timeoutSeconds: 30
+
+  - name: deploy-go-api
+    displayName: "Deploy go-api"
+    intro: intros/02-deploy-go-api.md
+    action:
+      type: command
+      ref: "labctl app deploy go-api"
+    check:
+      name: go-api-healthy
+      type: http
+      url: "http://go-api.${DOMAIN_SUFFIX:-k3d.local}/health"
+      expectStatus: 200
+      timeoutSeconds: 60
+
+  - name: enable-observability
+    displayName: "Enable observability"
+    intro: intros/03-observability.md
+    action:
+      type: scenario
+      ref: observability-sre
+    check:
+      name: prometheus-up
+      type: http
+      url: "http://prometheus.${DOMAIN_SUFFIX:-k3d.local}/-/ready"
+      expectStatus: 200
+      timeoutSeconds: 60
+
+  - name: first-incident
+    displayName: "Your first incident"
+    intro: intros/04-first-incident.md
+    action:
+      type: incident
+      ref: service-selector-broken
+    check:
+      name: incident-resolved
+      type: script
+      script: checks/incident-resolved.sh
+      timeoutSeconds: 60

@@ -1,0 +1,55 @@
+name: License scan
+
+# Fails the build if a copyleft (GPL/AGPL/LGPL...) dependency enters the
+# Apache-2.0 core, protecting against accidental license "infection".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/**'
+      - 'pkg/**'
+      - '**/go.mod'
+      - '**/go.sum'
+      - '.github/workflows/license-scan.yml'
+  pull_request:
+    paths:
+      - 'cmd/**'
+      - 'pkg/**'
+      - '**/go.mod'
+      - '**/go.sum'
+      - '.github/workflows/license-scan.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  go-deps:
+    name: Go dependency licenses
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install go-licenses
+        run: go install github.com/google/go-licenses@latest
+      - name: Check disallowed licenses
+        # forbidden + restricted == GPL/AGPL/LGPL family and similar copyleft.
+        run: go-licenses check ./... --disallowed_types=forbidden,restricted
+
+  spdx-headers:
+    name: SPDX headers (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Warn on Go files missing an SPDX header
+        run: |
+          missing=0
+          while IFS= read -r f; do
+            if ! head -5 "$f" | grep -q 'SPDX-License-Identifier'; then
+              echo "::warning file=$f::missing SPDX-License-Identifier header"
+              missing=$((missing+1))
+            fi
+          done < <(find cmd pkg -name '*.go' 2>/dev/null)
+          echo "Go files missing SPDX header: $missing (advisory; required on NEW files)"

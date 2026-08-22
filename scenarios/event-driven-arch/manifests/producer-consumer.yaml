@@ -1,0 +1,76 @@
+# A continuous producer and a consumer group for the 'orders' topic, using the
+# Apache Kafka image's console tools (no custom app needed). The producer emits
+# one order roughly every 0.5s; the consumer reads the 'order-processors' group.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-producer
+  namespace: kafka
+  labels:
+    app: orders-producer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-producer
+  template:
+    metadata:
+      labels:
+        app: orders-producer
+    spec:
+      containers:
+        - name: producer
+          image: apache/kafka:3.9.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                echo "order-$(date +%s)-${RANDOM}";
+                sleep 0.5;
+              done | /opt/kafka/bin/kafka-console-producer.sh \
+                --bootstrap-server lab-kafka-kafka-bootstrap:9092 \
+                --topic orders
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 384Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-consumer
+  namespace: kafka
+  labels:
+    app: orders-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orders-consumer
+  template:
+    metadata:
+      labels:
+        app: orders-consumer
+    spec:
+      containers:
+        - name: consumer
+          image: apache/kafka:3.9.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              /opt/kafka/bin/kafka-console-consumer.sh \
+                --bootstrap-server lab-kafka-kafka-bootstrap:9092 \
+                --topic orders \
+                --group order-processors \
+                --from-beginning
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 384Mi

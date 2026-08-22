@@ -1,0 +1,19 @@
+# Baseline for the cluster-upgrade drill: a PodDisruptionBudget that keeps
+# go-api available while worker nodes are drained and replaced one at a time.
+# maxUnavailable: 1 forces the rolling upgrade to wait for a Ready replacement
+# before evicting the next pod — the mechanism that keeps the success rate up.
+#
+# go-api itself is deployed by the app prerequisite. upgrade.sh scales it to 3
+# replicas before the drill so the PDB has headroom across the node roll.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: go-api-upgrade-pdb
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: cluster-upgrade-drill
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: go-api

@@ -1,0 +1,49 @@
+# SnowOps Labs code owners — see GOVERNANCE.md
+#
+# This file makes architectural & release authority MECHANICAL: the lead
+# maintainer is a required reviewer on the engine, CLI, public SDK, CI, and
+# licensing. Combined with branch protection (require review from code owners),
+# nothing in those paths merges without the lead maintainer.
+#
+# NOTE: area teams (@snowops/scenario-maintainers, etc.) are listed in comments
+# until the GitHub org + teams exist (manual action C3). Until then the lead
+# maintainer owns everything. Replace the comments with the teams once created.
+
+# Default owner for everything
+*                           @sagar2395
+
+# --- LOCKED: lead maintainer required (architecture, SDK, schema, CI, legal) ---
+/cmd/                       @sagar2395
+/pkg/                       @sagar2395
+/engine/                    @sagar2395
+/.github/                   @sagar2395
+/LICENSE                    @sagar2395
+/NOTICE                     @sagar2395
+/GOVERNANCE.md              @sagar2395
+/CODE_OF_CONDUCT.md         @sagar2395
+/SECURITY.md                @sagar2395
+/RELEASING.md               @sagar2395
+/TRADEMARKS.md              @sagar2395
+/DCO.md                     @sagar2395
+/versions.env               @sagar2395
+/docs/strategy/             @sagar2395
+/docs/rfcs/                 @sagar2395
+
+# Anti-lock-in extension seams (task 070): the entitlement + extension interfaces
+# and their open defaults must stay lead-maintainer-owned even if /pkg/ subpaths
+# are later opened to area teams — premium/business logic must never land here.
+/cmd/labctl/pkg/entitlement/ @sagar2395
+/cmd/labctl/pkg/extension/   @sagar2395
+
+# --- CONTENT surfaces: open to area maintainers once teams exist (C3) ---
+# /packs/                   @sagar2395 @snowops/scenario-maintainers
+# /scenarios/               @sagar2395 @snowops/scenario-maintainers
+# /incidents/               @sagar2395 @snowops/scenario-maintainers
+# /learn/                   @sagar2395 @snowops/scenario-maintainers
+# /challenges/              @sagar2395 @snowops/scenario-maintainers
+# /platform/                @sagar2395 @snowops/platform-maintainers
+# /docs/                    @sagar2395 @snowops/docs-maintainers
+/packs/                     @sagar2395
+/scenarios/                 @sagar2395
+/platform/                  @sagar2395
+/docs/                      @sagar2395

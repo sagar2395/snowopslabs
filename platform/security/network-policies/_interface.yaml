@@ -1,0 +1,43 @@
+# Network Policy Provider Interface
+# Kubernetes-native network segmentation and microsegmentation.
+# Current implementations: kubernetes-native (uses built-in NetworkPolicy API)
+
+name: security/network-policies
+description: Network segmentation using Kubernetes NetworkPolicy resources for namespace isolation and traffic control.
+
+provides:
+  - Default-deny ingress and egress policies for app namespaces
+  - DNS resolution allowance (port 53 UDP/TCP)
+  - Ingress controller traffic allowance (from ingress namespace)
+  - Prometheus scraping allowance (from monitoring namespace)
+  - Cross-namespace service access rules (e.g., echo-server to Redis)
+
+requires:
+  kubernetes_resources:
+    - NetworkPolicy resources in target namespaces
+  ports: []
+  dependencies:
+    - CNI plugin with NetworkPolicy support (Calico, Cilium, or k3s default)
+
+env_variables: {}
+
+scripts:
+  install.sh: "Apply network policy manifests to app namespaces"
+  uninstall.sh: "Remove network policies from app namespaces"
+  status.sh: "Show network policies across all namespaces"
+
+values: {}
+
+conventions:
+  - Default-deny is applied to namespaces labeled network-policy=enforced
+  - Explicit allow rules open specific traffic paths on top of default-deny
+  - DNS egress (port 53) must always be allowed for service discovery
+  - Ingress from ingress controller namespace must be explicitly allowed
+  - Prometheus scraping from monitoring namespace must be explicitly allowed
+  - Policies are plain Kubernetes manifests (no Helm chart needed)
+  - k3d uses kube-router/klipper for NetworkPolicy enforcement by default
+
+implementations:
+  kubernetes-native:
+    chart: null
+    notes: "Default. Uses built-in Kubernetes NetworkPolicy API. No additional controller needed if CNI supports it. Manifests applied directly via kubectl."

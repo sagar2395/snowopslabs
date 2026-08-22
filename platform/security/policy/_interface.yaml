@@ -1,0 +1,44 @@
+# Policy Engine Provider Interface
+# Kubernetes admission control and policy enforcement.
+# Current implementations: kyverno
+
+name: security/policy
+description: Policy engine for enforcing compliance rules on Kubernetes resources via admission webhooks.
+
+provides:
+  - Admission webhook for validating and mutating Kubernetes resources
+  - ClusterPolicy and Policy CRDs for declarative rule definition
+  - PolicyReport CRDs for audit and compliance visibility
+  - Policy exception support for controlled exemptions
+  - Background scanning of existing resources
+
+requires:
+  kubernetes_resources:
+    - Namespace (kyverno)
+    - CRDs (clusterpolicies, policies, policyreports, clusterpolicyreports, policyexceptions)
+    - ValidatingWebhookConfiguration / MutatingWebhookConfiguration
+  ports:
+    - 9443 (Webhook server)
+  dependencies: []
+
+env_variables: {}
+
+scripts:
+  install.sh: "Install policy engine via Helm"
+  uninstall.sh: "Remove policy engine, CRDs, and webhook configurations"
+  status.sh: "Show pods, policies, and policy reports"
+
+values:
+  values.yaml: "Helm chart values including replica counts and resource limits"
+
+conventions:
+  - Policies are applied as ClusterPolicy CRDs (cluster-wide) or Policy CRDs (namespaced)
+  - Starter policies enforce best practices (require labels, disallow latest tag, require resource limits, require non-root)
+  - Policy exceptions must be explicitly enabled for controlled bypasses
+  - PolicyReports provide audit trail of enforcement decisions
+  - Webhook must not block system namespaces (kube-system, kube-public)
+
+implementations:
+  kyverno:
+    chart: kyverno/kyverno
+    notes: "Default. Admission controller with 4 sub-controllers (admission, background, cleanup, reports). Supports validate, mutate, generate, and verifyImages rules."

@@ -1,0 +1,89 @@
+# Cloud runtime values (AKS / EKS)
+# Use with: HELM_VALUES=values-cloud.yaml in app.env
+# Expects nginx ingress controller and a real domain suffix.
+
+nameOverride: ""
+fullnameOverride: ""
+
+namespace:
+  create: true
+  name: go-api
+
+deployment:
+  replicaCount: 2
+
+image:
+  # Override repository with your registry URL:
+  #   AKS: <acr-name>.azurecr.io/go-api
+  #   EKS: <account-id>.dkr.ecr.<region>.amazonaws.com/sagars-lab/go-api
+  repository: go-api
+  tag: latest
+  pullPolicy: Always
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+
+ingress:
+  enabled: true
+  className: nginx
+  ingressAnnotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  hosts:
+    # Replace with your actual domain:
+    #   AKS: go-api.aks.sagarslab.dev
+    #   EKS: go-api.eks.sagarslab.dev
+    - host: go-api.cloud.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+env:
+  PORT: "8080"
+  READINESS_FAILURE: "false"
+  SHUTDOWN_TIMEOUT: "15s"
+
+probes:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - go-api
+          topologyKey: kubernetes.io/hostname
+
+prometheus:
+  enabled: true
+  port: 8080
+  path: /metrics
+
+podAnnotations:
+  environment: "cloud"

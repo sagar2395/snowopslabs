@@ -1,0 +1,55 @@
+## Kyverno Helm Chart Values
+## https://github.com/kyverno/kyverno/tree/main/charts/kyverno
+
+# Admission controller
+admissionController:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 384Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# Background controller (processes policy reports)
+backgroundController:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Cleanup controller
+cleanupController:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Reports controller
+reportsController:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# Enable policy reports for visibility
+features:
+  policyExceptions:
+    enabled: true
+
+# Webhooks configuration
+webhooksCleanup:
+  enabled: true

@@ -1,0 +1,28 @@
+# Custom values for linkerd-control-plane.
+# Referenced by platform/mesh/linkerd/install.sh via -f.
+# Trust anchor + issuer certs are injected at install time via --set-file.
+# Tuned minimal for k3d resource reality — raise for cloud/load testing.
+
+# Single replica control plane components on a laptop cluster.
+controllerReplicas: 1
+enablePodAntiAffinity: false
+
+# High-availability off (default), keep proxy + control-plane footprints small.
+proxy:
+  resources:
+    cpu:
+      request: 50m
+      limit: 200m
+    memory:
+      request: 64Mi
+      limit: 256Mi
+
+destinationResources: &cpres
+  cpu:
+    request: 50m
+    limit: 250m
+  memory:
+    request: 64Mi
+    limit: 256Mi
+identityResources: *cpres
+proxyInjectorResources: *cpres

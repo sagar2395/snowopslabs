@@ -1,0 +1,57 @@
+# golangci-lint configuration.
+#
+# The linter set is chosen for the failure modes this codebase actually has:
+# unchecked errors around cluster operations, contexts that get dropped between
+# layers, leaked HTTP bodies, and error comparisons that break when a wrapped
+# error is introduced.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck        # unchecked errors — the #1 source of silent failure here
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - revive          # style + exported-symbol documentation
+    - bodyclose       # leaked HTTP response bodies
+    - contextcheck    # a context must not be dropped between layers (ADR-0003)
+    - errorlint       # use errors.Is/As, not == and type assertions
+    - noctx           # no HTTP requests without a context
+    - nilerr          # returning nil after a non-nil error
+    - unconvert
+    - misspell
+    - gosec
+
+  settings:
+    errcheck:
+      # Deferred Close on a read-only handle is the one idiomatic exception.
+      exclude-functions:
+        - (io.Closer).Close
+    revive:
+      rules:
+        - name: exported
+          arguments: [checkPrivateReceivers]
+        - name: context-as-argument
+        - name: error-strings
+        - name: error-return
+    gosec:
+      excludes:
+        # G204: this tool's entire job is running shell scripts. Command
+        # construction is argv-only and paths are containment-checked in
+        # internal/toolchain (W1-T03), which is where that risk is handled.
+        - G204
+
+  exclusions:
+    rules:
+      # Tests may take shortcuts that production code may not.
+      - path: _test\.go
+        linters: [errcheck, gosec, noctx, revive]
+
+formatters:
+  enable:
+    - gofmt

@@ -1,0 +1,155 @@
+# Default values for go-api Helm chart
+
+# Override the name of the chart
+nameOverride: ""
+
+# Override the full name of the release
+fullnameOverride: ""
+
+# Global settings
+global:
+  environment: k3d
+
+# Namespace configuration
+namespace:
+  create: true
+  name: go-api
+
+# Deployment configuration
+deployment:
+  name: go-api
+  replicaCount: 2
+
+# Container image configuration
+image:
+  repository: go-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Container port
+port: 8080
+
+# Service configuration
+service:
+  name: go-api
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: traefik
+  ingressAnnotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+  hosts:
+    - host: go-api.k3d.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    enabled: false
+
+# Resource limits and requests
+resources:
+  requests:
+    cpu: 100m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Probes configuration
+probes:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# Pod configuration
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Environment variables
+env:
+  PORT: "8080"
+  READINESS_FAILURE: "false"
+  SHUTDOWN_TIMEOUT: "30s"
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - go-api
+          topologyKey: kubernetes.io/hostname
+
+# Autoscaling configuration
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+# Monitoring/Prometheus configuration
+prometheus:
+  enabled: true
+  port: 8080
+  path: /metrics
+
+# ServiceMonitor for Prometheus Operator
+serviceMonitor:
+  enabled: false
+  namespace: monitoring
+  interval: 30s
+  scrapeTimeout: 10s
+
+# ConfigMap for additional configuration
+configMap:
+  enabled: false
+  data: {}
+
+# Secret management
+secrets:
+  enabled: false
+  data: {}
+
+# PodDisruptionBudget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1

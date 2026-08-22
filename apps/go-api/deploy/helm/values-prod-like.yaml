@@ -1,0 +1,91 @@
+# Production-like values for k3d testing
+
+nameOverride: ""
+fullnameOverride: ""
+
+namespace:
+  create: true
+  name: go-api
+
+deployment:
+  replicaCount: 3
+
+image:
+  repository: go-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+ingress:
+  enabled: true
+  className: traefik
+  ingressAnnotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+  hosts:
+    - host: go-api.k3d.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+env:
+  PORT: "8080"
+  READINESS_FAILURE: "false"
+  SHUTDOWN_TIMEOUT: "30s"
+
+probes:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - go-api
+          topologyKey: kubernetes.io/hostname
+
+prometheus:
+  enabled: true
+  port: 8080
+  path: /metrics
+
+serviceMonitor:
+  enabled: false  # Enable if Prometheus Operator is installed
+
+configMap:
+  enabled: false
+
+secrets:
+  enabled: false
+
+podAnnotations:
+  environment: "production-like"

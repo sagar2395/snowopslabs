@@ -1,0 +1,26 @@
+# Custom values for the kedacore/keda Helm chart.
+# Referenced by platform/autoscaling/keda/install.sh via -f.
+# Keep the operator, metrics apiserver, and admission webhook small for k3d.
+
+resources:
+  operator:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  metricServer:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  webhooks:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

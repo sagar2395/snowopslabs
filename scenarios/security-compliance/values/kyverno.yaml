@@ -1,0 +1,32 @@
+## Kyverno values for security-compliance scenario
+## Minimal overrides — most settings inherited from platform provider
+
+admissionController:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 384Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+backgroundController:
+  replicas: 1
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+cleanupController:
+  replicas: 1
+
+reportsController:
+  replicas: 1
+
+features:
+  policyExceptions:
+    enabled: true

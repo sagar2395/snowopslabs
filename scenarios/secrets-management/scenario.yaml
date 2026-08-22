@@ -1,0 +1,88 @@
+apiVersion: scenario.snowops.net/v2
+name: secrets-management
+displayName: "Secrets Management & Rotation"
+description: "go-api consumes a Vault-backed secret synced by External Secrets. Stage 1 wires the sync and seeds a baseline value; stage 2 rotates it in Vault. A check verifies the new value propagated to the Kubernetes Secret with no redeploy."
+category: security
+prerequisites:
+  platform:
+    - secrets/vault
+    - secrets/external-secrets
+  apps:
+    - go-api
+runtimes:
+  - k3d
+  - kind
+
+objectives:
+  - "Sync a Vault KV secret into a Kubernetes Secret via External Secrets"
+  - "Rotate the secret in Vault and watch it propagate without a redeploy"
+  - "Treat rotation, not redeploy, as the way secrets change"
+
+stages:
+  - name: consume
+    description: Wire the Vault->ESO->Secret sync and seed a baseline value
+    components:
+      - name: es-wiring
+        type: manifest
+        path: manifests/es-wiring.yaml
+        namespace: go-api
+
+      - name: seed-baseline
+        type: script
+        script: scripts/seed-baseline.sh
+
+  - name: rotate
+    description: Rotate the value in Vault and let ESO propagate it
+    components:
+      - name: rotate-secret
+        type: script
+        script: scripts/rotate.sh
+
+checks:
+  - name: vault-running
+    type: kubectl
+    resource: pod/vault-0
+    namespace: vault
+    jsonpath: "{.status.phase}"
+    operator: "=="
+    value: "Running"
+
+  - name: eso-controller-ready
+    type: kubectl
+    resource: deployment/external-secrets
+    namespace: external-secrets
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: externalsecret-ready
+    type: kubectl
+    resource: externalsecret/go-api-secret
+    namespace: go-api
+    jsonpath: '{.status.conditions[?(@.type=="Ready")].status}'
+    operator: "=="
+    value: "True"
+
+  - name: rotation-propagated
+    type: script
+    script: checks/verify-rotation.sh
+
+explore:
+  urls:
+    - label: "Vault UI"
+      url: "http://vault.{{.DomainSuffix}}"
+  commands:
+    - label: "Read the synced Kubernetes Secret (should be the rotated value)"
+      command: "kubectl -n go-api get secret go-api-secrets -o go-template='{{index .data \"api-key\" | base64decode}}{{\"\\n\"}}'"
+    - label: "Read the source of truth in Vault"
+      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN:-root} vault kv get secret/go-api'"
+    - label: "Rotate again and watch it propagate (within refreshInterval)"
+      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN:-root} vault kv put secret/go-api api-key=my-new-value'"
+    - label: "Inspect ExternalSecret sync status"
+      command: "kubectl -n go-api describe externalsecret go-api-secret"
+  tips:
+    - "The ExternalSecret refreshInterval is 10s — rotations show up within that window."
+    - "Nothing redeploys: ESO updates the Secret in place; mount it via envFrom and restart only to pick up env changes."
+    - "The rotation-propagated check decodes go-api-secrets and asserts it equals the value stage 2 wrote."
+    - "Dev-mode Vault keeps data in memory; a Vault pod restart wipes it — re-run the scenario to reseed."
+    - "Never commit tokens: the dev root token comes from VAULT_DEV_ROOT_TOKEN (default 'root')."

@@ -1,0 +1,45 @@
+# Chaos Engineering Provider Interface
+# Fault injection and resilience testing framework for Kubernetes.
+# Current implementations: chaos-mesh
+
+name: chaos
+description: Chaos engineering platform for injecting failures and testing resilience.
+
+provides:
+  - Fault injection via Kubernetes CRDs (PodChaos, NetworkChaos, StressChaos, IOChaos, etc.)
+  - Web dashboard for experiment management
+  - Scheduled and workflow-based experiment orchestration
+  - ServiceMonitor for Prometheus metrics integration
+
+requires:
+  kubernetes_resources:
+    - Namespace (chaos-mesh)
+    - CRDs (podchaos, networkchaos, stresschaos, iochaos, timechaos, dnschaos, httpchaos)
+    - DaemonSet (chaos-daemon on every node)
+  ports:
+    - 2333 (Dashboard web interface)
+  dependencies:
+    - Container runtime socket access (containerd/docker)
+
+env_variables: {}
+
+scripts:
+  install.sh: "Install Chaos Mesh via Helm with configured runtime socket"
+  uninstall.sh: "Remove Chaos Mesh, CRDs, and clean up experiments"
+  status.sh: "Show pods, active experiments, schedules, and workflows"
+
+values:
+  values.yaml: "Helm chart values including runtime socket path and resource limits"
+
+conventions:
+  - Chaos daemon must have access to the container runtime socket
+  - k3d/k3s uses containerd socket at /run/k3s/containerd/containerd.sock
+  - Cloud runtimes need different socket paths (e.g., /run/containerd/containerd.sock)
+  - Dashboard runs in insecure mode for local dev (no token auth)
+  - Prometheus ServiceMonitor must be enabled for observability integration
+  - Experiments are defined as CRDs and can be managed via dashboard or kubectl
+
+implementations:
+  chaos-mesh:
+    chart: chaos-mesh/chaos-mesh
+    notes: "Default. CRD-based fault injection with web dashboard. Supports pod, network, stress, IO, time, DNS, and HTTP chaos types."

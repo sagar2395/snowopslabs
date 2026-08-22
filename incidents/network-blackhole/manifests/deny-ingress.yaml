@@ -1,0 +1,13 @@
+# Deny-all-ingress policy: selects every pod in the namespace and allows
+# no ingress peers — the kube-router netpol controller in k3s enforces it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: labfault-network-blackhole
+  namespace: go-api
+  labels:
+    labfault: network-blackhole
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

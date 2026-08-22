@@ -1,0 +1,39 @@
+# Stage 2: re-apply the producer Deployment (same name) at 3 replicas so the
+# single consumer can't keep up — consumer-group lag climbs. Drain it by scaling
+# orders-consumer up (see the explore commands) or with a KEDA Kafka-lag scaler.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-producer
+  namespace: kafka
+  labels:
+    app: orders-producer
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: orders-producer
+  template:
+    metadata:
+      labels:
+        app: orders-producer
+    spec:
+      containers:
+        - name: producer
+          image: apache/kafka:3.9.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              while true; do
+                echo "order-$(date +%s)-${RANDOM}";
+                sleep 0.1;
+              done | /opt/kafka/bin/kafka-console-producer.sh \
+                --bootstrap-server lab-kafka-kafka-bootstrap:9092 \
+                --topic orders
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 384Mi

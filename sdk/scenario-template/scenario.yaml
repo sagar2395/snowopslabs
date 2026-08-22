@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=https://labs.snowops.net/schemas/scenario.schema.json
+apiVersion: scenario.snowops.net/v2
+name: example-scenario
+displayName: Example Scenario
+description: TODO — describe what this scenario demonstrates.
+category: custom
+objectives:
+  - TODO — what the learner should take away
+stages:
+  - name: setup
+    description: Deploy the scenario's components here.
+    components: []
+checks:
+  - name: ready
+    type: script
+    script: checks/ready.sh

@@ -1,0 +1,44 @@
+# Deliberately over-provisioned resource requests for the cost-right-sizing scenario.
+# These values represent the 'before' state: 80x the CPU and 32x the memory
+# that go-api actually needs at idle. In a real cluster this wastes node capacity
+# and inflates the per-namespace cost visible in OpenCost.
+#
+# The exercise: observe the inflated cost in OpenCost, then right-size the
+# requests using 'kubectl set resources' or helm upgrade, and run
+# 'labctl scenario verify cost-right-sizing' to confirm the fix.
+
+namespace:
+  create: true
+  name: go-api
+
+deployment:
+  replicaCount: 1
+
+image:
+  repository: go-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 4000m    # 10× over-provisioned vs the 50m baseline (~$4.61/pod/day at on-prem rates)
+    memory: 1Gi   # 32× over-provisioned vs the 32Mi baseline
+  limits:
+    cpu: 4000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: false
+
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: go-api.k3d.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+env:
+  PORT: "8080"
+  READINESS_FAILURE: "false"

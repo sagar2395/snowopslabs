@@ -1,0 +1,71 @@
+name: security-compliance
+displayName: "Security & Compliance"
+description: "Policy enforcement with Kyverno, TLS certificates via cert-manager, encrypted secrets with Sealed Secrets, namespace network isolation, and security best-practice policies."
+category: security
+prerequisites:
+  platform:
+    - ingress
+    - monitoring/metrics
+    - monitoring/grafana
+  apps:
+    - go-api
+runtimes:
+  - k3d
+  - kind
+components:
+  - name: kyverno
+    type: helm
+    chart: kyverno/kyverno
+    repo: https://kyverno.github.io/kyverno/
+    version: "3.3.4"
+    namespace: kyverno
+    valuesFile: values/kyverno.yaml
+
+  - name: cert-manager
+    type: helm
+    chart: jetstack/cert-manager
+    repo: https://charts.jetstack.io
+    version: "1.16.3"
+    namespace: cert-manager
+    valuesFile: values/cert-manager.yaml
+
+  - name: kyverno-policies
+    type: manifest
+    path: manifests/kyverno-policies.yaml
+    namespace: kyverno
+
+  - name: network-policies
+    type: manifest
+    path: manifests/network-policies.yaml
+
+  - name: security-dashboards
+    type: grafana-dashboard
+    path: dashboards/
+    namespace: "{{.MonitoringNamespace}}"
+
+explore:
+  urls:
+    - label: "Grafana Security Dashboard"
+      url: "http://grafana.{{.DomainSuffix}}"
+  commands:
+    - label: "List Kyverno cluster policies"
+      command: "kubectl get clusterpolicies"
+    - label: "View policy reports"
+      command: "kubectl get policyreports -A"
+    - label: "View cluster policy reports"
+      command: "kubectl get clusterpolicyreports"
+    - label: "Test policy audit — create non-compliant pod"
+      command: "kubectl run test-privileged --image=nginx --restart=Never --overrides='{\"spec\":{\"containers\":[{\"name\":\"test\",\"image\":\"nginx\",\"securityContext\":{\"allowPrivilegeEscalation\":true}}]}}' && kubectl get clusterpolicyreports"
+    - label: "List certificates"
+      command: "kubectl get certificates -A"
+    - label: "View network policies"
+      command: "kubectl get networkpolicies -A"
+    - label: "Test network isolation"
+      command: "kubectl run test-curl --image=curlimages/curl --restart=Never --rm -it -- curl -s --connect-timeout 3 http://go-api.go-api.svc.cluster.local:8080/health 2>&1 || echo 'Network policy blocked cross-namespace traffic'"
+  tips:
+    - "Kyverno policies run in Audit mode for this lab — non-compliant resources appear in policy reports without disrupting workloads"
+    - "Policy reports show compliance status for existing resources (not just new ones)"
+    - "Test with: kubectl run test --image=nginx -- Kyverno should enforce require-labels and disallow-privileged policies"
+    - "cert-manager creates a self-signed CA, then a CA issuer — use lab-ca-issuer for certificates"
+    - "Network policies deny all traffic by default, then allow DNS, monitoring, and ingress specifically"
+    - "Try accessing echo-server from go-api namespace — should be blocked by network policies"

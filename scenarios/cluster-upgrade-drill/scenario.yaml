@@ -1,0 +1,74 @@
+apiVersion: scenario.snowops.net/v2
+name: cluster-upgrade-drill
+displayName: "Day-2 Drill: Rolling Cluster Upgrade Under Load"
+description: "Roll the cluster's worker nodes to a newer Kubernetes version one at a time while go-api serves live traffic. Each node is drained (respecting the PodDisruptionBudget) before it is replaced, so the application stays available throughout. The grade is the measured request success rate across the upgrade window."
+category: operations
+prerequisites:
+  platform:
+    - ingress
+    - monitoring/metrics
+  apps:
+    - go-api
+runtimes:
+  - k3d
+
+objectives:
+  - "Protect go-api during a Kubernetes version upgrade with a PodDisruptionBudget"
+  - "Roll worker nodes to a newer k3s version one at a time, draining each first"
+  - "Verify the request success rate stayed above the SLO across the upgrade"
+  - "Understand what k3d simulates faithfully vs. what a managed control-plane upgrade does"
+
+stages:
+  - name: baseline
+    description: Scale go-api for HA and apply a PodDisruptionBudget so the rolling upgrade cannot take all replicas down at once
+    components:
+      - name: go-api-availability-budget
+        type: manifest
+        path: manifests/baseline.yaml
+
+checks:
+  - name: pdb-present
+    type: kubectl
+    resource: pdb/go-api-upgrade-pdb
+    namespace: go-api
+
+  - name: go-api-highly-available
+    type: kubectl
+    resource: deployment/go-api
+    namespace: go-api
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "2"
+
+  - name: all-nodes-ready
+    type: script
+    script: scripts/check-nodes-ready.sh
+
+  - name: availability-held-during-upgrade
+    type: promql
+    query: 'sum(rate(http_requests_total{app="go-api",code!~"5.."}[10m])) / sum(rate(http_requests_total{app="go-api"}[10m]))'
+    operator: ">="
+    value: "0.99"
+
+explore:
+  urls:
+    - label: "Grafana — go-api availability"
+      url: "http://grafana.{{.DomainSuffix}}"
+  commands:
+    - label: "1. Start steady background traffic (keep running in another terminal)"
+      command: "labctl traffic start --profile steady --rps 20"
+    - label: "2. Roll the worker nodes to the target k3s version (drains each first)"
+      command: "TARGET_K3S_VERSION=v1.29.4-k3s1 bash {{.ProjectRoot}}/scenarios/cluster-upgrade-drill/scripts/upgrade.sh"
+    - label: "3. Watch the node versions change one at a time"
+      command: "kubectl get nodes -o wide -w"
+    - label: "4. Verify availability held across the upgrade"
+      command: "labctl scenario verify cluster-upgrade-drill"
+    - label: "Confirm all nodes report the new version"
+      command: "kubectl get nodes -o custom-columns=NAME:.metadata.name,VERSION:.status.nodeInfo.kubeletVersion"
+  tips:
+    - "Start traffic FIRST — the availability check reads http_requests_total from Prometheus over a 10m window covering the upgrade."
+    - "HONEST SCOPE: k3d cannot upgrade a node in place. upgrade.sh deletes each agent node and recreates it on the target k3s image — a faithful simulation of a rolling WORKER upgrade. The server/control-plane node is left as-is; on a managed cluster (EKS/AKS) the provider upgrades the control plane first, then the nodes."
+    - "The PDB (maxUnavailable: 1) makes each node's drain block until go-api has a Ready replica elsewhere — that is what keeps the success rate up."
+    - "Roll one node at a time. Recreating all agents at once would briefly leave nowhere to run go-api and tank availability — that is the anti-pattern this drill teaches against."
+    - "Set TARGET_K3S_VERSION to a version newer than the cluster's current one. Check the current version with: kubectl get nodes."
+    - "Tear down with 'labctl scenario down cluster-upgrade-drill' — removes the PDB; go-api stays running."

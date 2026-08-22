@@ -1,0 +1,42 @@
+name: gitops-cicd
+displayName: "GitOps & CI/CD"
+description: "ArgoCD-based GitOps deployment with Application CRDs for declarative app management."
+category: delivery
+prerequisites:
+  platform:
+    - ingress
+  apps: []
+runtimes:
+  - k3d
+  - kind
+components:
+  - name: argocd
+    type: helm
+    chart: argo/argo-cd
+    repo: https://argoproj.github.io/argo-helm
+    version: "7.8.13"
+    namespace: argocd
+    valuesFile: values/argocd.yaml
+
+  - name: argocd-apps
+    type: manifest
+    path: manifests/argocd-applications.yaml
+    namespace: argocd
+
+explore:
+  urls:
+    - label: "ArgoCD Dashboard"
+      url: "http://argocd.{{.DomainSuffix}}"
+  commands:
+    - label: "Get ArgoCD admin password"
+      command: "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo"
+    - label: "List ArgoCD applications"
+      command: "kubectl -n argocd get applications"
+    - label: "Sync go-api application"
+      command: "kubectl -n argocd patch application go-api --type merge -p '{\"operation\":{\"initiatedBy\":{\"username\":\"admin\"},\"sync\":{\"revision\":\"HEAD\"}}}'"
+  tips:
+    - "Login: username 'admin', password from the command above"
+    - "ArgoCD watches the local git repo for changes to Helm values"
+    - "Modify apps/go-api/deploy/helm/values-dev.yaml and watch ArgoCD detect drift"
+    - "Use 'kubectl -n argocd get applications' to see sync status"
+    - "ArgoCD Applications are defined in manifests/argocd-applications.yaml"
