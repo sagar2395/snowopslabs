@@ -1,0 +1,84 @@
+# Default values for the labctl-server chart (team mode, task 063).
+
+image:
+  # Build with: docker build -f Dockerfile.labctl-server -t <repo>/labctl-server:<tag> .
+  repository: labctl-server
+  tag: dev
+  pullPolicy: IfNotPresent
+
+# Number of replicas. Keep at 1: sessions are in-memory and the lab is a single
+# shared environment, so a second replica would not share login state.
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 3939
+
+ingress:
+  enabled: false
+  className: ""
+  host: labctl.example.com
+  annotations: {}
+  tls: false
+
+# Authentication (task 062). Strongly recommended ON for any shared deployment.
+auth:
+  enabled: true
+  # Pre-generated users rendered into a Secret mounted at /etc/labctl/users.yaml.
+  # Generate passwordHash values locally with:
+  #   labctl users add <name> --role <operator|participant> --password <pw>
+  # then copy the resulting hash from .labctl/users.yaml.
+  #
+  # users:
+  #   - name: alice
+  #     role: operator
+  #     passwordHash: "pbkdf2-sha256$210000$...$..."
+  #   - name: bob
+  #     role: participant
+  #     passwordHash: "pbkdf2-sha256$210000$...$..."
+  users: []
+  # Or reference an existing Secret (key: users.yaml) instead of inlining users:
+  existingSecret: ""
+
+# Persist .labctl/ (history, scores, snapshots) so a pod restart keeps results.
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  accessMode: ReadWriteOnce
+
+# RBAC for the server's ServiceAccount.
+#   namespaced (default): a Role in the release namespace — enough to run
+#     scenarios/incidents that deploy into that namespace.
+#   clusterWide=true: binds a broad ClusterRole so the server can install
+#     platform components cluster-wide (CRDs, namespaces). REVIEW BEFORE USE —
+#     this grants the server wide control of the cluster.
+rbac:
+  create: true
+  clusterWide: false
+
+serviceAccount:
+  create: true
+  name: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+# Extra environment variables passed to the server (e.g. DOMAIN_SUFFIX,
+# MONITORING_NAMESPACE, INGRESS_CLASS) to match the hosting cluster.
+env: {}
+  # DOMAIN_SUFFIX: apps.example.com
+  # MONITORING_NAMESPACE: monitoring
+
+podSecurityContext:
+  # fsGroup makes the mounted PVC writable by the non-root container user.
+  fsGroup: 1000
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

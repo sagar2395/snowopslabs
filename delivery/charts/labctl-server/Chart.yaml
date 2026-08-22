@@ -1,0 +1,17 @@
+apiVersion: v2
+name: labctl-server
+description: >
+  Run the SnowOps Labs (labctl) simulator server inside a Kubernetes cluster for
+  team game days — shared web UI/API, authenticated users, and a leaderboard,
+  with history persisted on a PVC.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - snowops
+  - labctl
+  - platform-engineering
+  - simulator
+  - team-mode
+maintainers:
+  - name: SnowOps Labs maintainers

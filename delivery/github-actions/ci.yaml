@@ -1,0 +1,76 @@
+# CI Pipeline Template for Lab Apps
+# Copy this to .github/workflows/ and customize for your app
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, feature/*]
+    paths:
+      - 'apps/go-api/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/go-api/**'
+
+env:
+  APP_NAME: go-api
+  GO_VERSION: '1.24'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run Go vet
+        working-directory: apps/${{ env.APP_NAME }}
+        run: go vet ./...
+      - name: Run staticcheck
+        uses: dominikh/staticcheck-action@v1
+        with:
+          working-directory: apps/${{ env.APP_NAME }}
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run tests
+        working-directory: apps/${{ env.APP_NAME }}
+        run: go test -v -race -coverprofile=coverage.out ./...
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: apps/${{ env.APP_NAME }}/coverage.out
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        working-directory: apps/${{ env.APP_NAME }}
+        run: |
+          docker build -t ${{ env.APP_NAME }}:${{ github.sha }} .
+          docker tag ${{ env.APP_NAME }}:${{ github.sha }} ${{ env.APP_NAME }}:latest
+      - name: Verify image
+        run: docker images ${{ env.APP_NAME }}
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+      - name: Lint Helm chart
+        run: helm lint apps/${{ env.APP_NAME }}/deploy/helm -f apps/${{ env.APP_NAME }}/deploy/helm/values-dev.yaml
+      - name: Template validation
+        run: |
+          helm template ${{ env.APP_NAME }} apps/${{ env.APP_NAME }}/deploy/helm \
+            -f apps/${{ env.APP_NAME }}/deploy/helm/values-dev.yaml \
+            --namespace ${{ env.APP_NAME }}

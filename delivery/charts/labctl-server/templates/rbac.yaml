@@ -1,0 +1,63 @@
+{{- if .Values.rbac.create -}}
+{{- if .Values.rbac.clusterWide }}
+# WARNING: clusterWide grants the server broad control of the cluster so it can
+# install platform components (CRDs, namespaces) the way the CLI does locally.
+# Review before using on any cluster you care about.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "labctl-server.fullname" . }}
+  labels:
+    {{- include "labctl-server.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "labctl-server.fullname" . }}
+  labels:
+    {{- include "labctl-server.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "labctl-server.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "labctl-server.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- else }}
+# Namespaced default: enough to run scenarios/incidents that deploy workloads
+# into the release namespace. For cluster-wide platform installs set
+# rbac.clusterWide=true (see the warning above).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "labctl-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "labctl-server.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["", "apps", "batch", "policy", "autoscaling", "networking.k8s.io"]
+    resources: ["*"]
+    verbs: ["*"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "labctl-server.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "labctl-server.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "labctl-server.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "labctl-server.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- end }}

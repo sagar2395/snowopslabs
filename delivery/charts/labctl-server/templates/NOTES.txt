@@ -1,0 +1,36 @@
+labctl-server ({{ .Chart.AppVersion }}) deployed as {{ include "labctl-server.fullname" . }}.
+
+Access the UI:
+{{- if .Values.ingress.enabled }}
+  http{{ if .Values.ingress.tls }}s{{ end }}://{{ .Values.ingress.host }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "labctl-server.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  then open http://localhost:{{ .Values.service.port }}
+{{- end }}
+
+{{- if .Values.auth.enabled }}
+
+Authentication is ENABLED.
+{{- if and (not .Values.auth.existingSecret) (not .Values.auth.users) }}
+
+  ⚠ No users are defined — nobody can log in. Add users via:
+    --set-file is not supported for hashes; instead set auth.users in values
+    with pre-generated passwordHash values:
+      labctl users add alice --role operator --password '...'   # locally
+      # copy the hash from .labctl/users.yaml into values.yaml auth.users
+{{- end }}
+{{- else }}
+
+⚠ Authentication is DISABLED. Anyone who can reach the service has full control.
+  Enable it for shared deployments: --set auth.enabled=true and define auth.users.
+{{- end }}
+
+{{- if not .Values.rbac.clusterWide }}
+
+RBAC is namespaced to {{ .Release.Namespace }}. To install platform components
+cluster-wide from the UI, redeploy with --set rbac.clusterWide=true (review the
+warning in values.yaml first).
+{{- end }}
+
+Leaderboard: open the UI → Leaderboard tab, or GET /api/leaderboard.
+Game-day walkthrough: docs/runbooks/12-team-mode.md.

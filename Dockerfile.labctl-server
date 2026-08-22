@@ -1,0 +1,62 @@
+# Dockerfile for the labctl server (team mode, task 063).
+#
+# Build context MUST be the repository root:
+#   docker build -f Dockerfile.labctl-server -t labctl-server:dev .
+#
+# HONEST SIZE NOTE: labctl orchestrates by shelling out to helm/kubectl and the
+# repo's shell scripts (golden rule: "the CLI wraps scripts"). The server image
+# therefore bundles the whole repo plus those tools, so it is intentionally
+# larger than a typical single-binary image (~300-400 MB). This is the price of
+# in-cluster mode running the same scripts the CLI does locally.
+
+# ---- Stage 1: build the labctl binary -------------------------------------
+FROM golang:1.24-alpine AS builder
+WORKDIR /src
+# The Go module lives in cmd/labctl and embeds cmd/labctl/ui/dist.
+COPY cmd/labctl/go.mod cmd/labctl/go.sum* ./cmd/labctl/
+RUN cd cmd/labctl && go mod download 2>/dev/null || true
+COPY cmd/labctl ./cmd/labctl
+RUN cd cmd/labctl && CGO_ENABLED=0 GOOS=linux go build -o /out/labctl .
+
+# ---- Stage 2: runtime image (repo + tools) --------------------------------
+FROM alpine:3.20
+
+# Tools the orchestration scripts shell out to. Versions are pinned by the
+# package manager; for reproducible pins use the cloud runtimes instead.
+RUN apk add --no-cache \
+        bash \
+        curl \
+        git \
+        jq \
+        ca-certificates \
+        coreutils \
+    && curl -fsSL https://get.helm.sh/helm-v3.14.0-linux-amd64.tar.gz \
+        | tar -xz -C /tmp \
+    && mv /tmp/linux-amd64/helm /usr/local/bin/helm \
+    && rm -rf /tmp/linux-amd64 \
+    && curl -fsSLo /usr/local/bin/kubectl \
+        https://dl.k8s.io/release/v1.29.4/bin/linux/amd64/kubectl \
+    && chmod +x /usr/local/bin/kubectl
+
+# Non-root user; the PVC mount (.labctl) is chowned to it by the chart's
+# fsGroup so history/scores are writable.
+RUN addgroup -S labctl && adduser -S labctl -G labctl
+
+WORKDIR /app
+# The repo content the server orchestrates. Build artifacts and local state are
+# excluded via .dockerignore.
+COPY --chown=labctl:labctl . /app
+COPY --from=builder --chown=labctl:labctl /out/labctl /usr/local/bin/labctl
+
+# Project root is /app; persisted runtime state lives under /app/.labctl (PVC).
+RUN mkdir -p /app/.labctl && chown -R labctl:labctl /app/.labctl
+
+USER labctl
+ENV PROFILE=incluster \
+    LABCTL_AUTH=true
+EXPOSE 3939
+
+# Serve the UI/API. In a pod, kubectl/helm auto-detect the in-cluster config via
+# the mounted ServiceAccount token, so the server manages its hosting cluster.
+ENTRYPOINT ["labctl"]
+CMD ["ui", "--port", "3939", "--project-dir", "/app"]
