@@ -14,16 +14,5 @@ spec:
   selector:
     matchLabels:
       app: go-api
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: echo-server-pdb
-  namespace: echo-server
-  labels:
-    app.kubernetes.io/part-of: chaos-engineering
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels:
-      app: echo-server
+# (echo-server PDB omitted: echo-server is not a prerequisite of this scenario,
+# so applying a PDB to its namespace fails when the app isn't deployed.)

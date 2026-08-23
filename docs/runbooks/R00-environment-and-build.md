@@ -123,8 +123,11 @@ until removed, and a stale entry fails.
 $ make test-shell
 ```
 
-**Expect:** `1..39`, all `ok` across three files (`harness.bats`,
-`coverage_gate.bats`, `portability_gate.bats`).
+**Expect:** every test `ok` — currently `1..64` across the files under
+`test/shell/` (`harness.bats`, `coverage_gate.bats`, `portability_gate.bats`,
+`runtime_lifecycle.bats`, `platform_install.bats`, `platform_uninstall.bats`,
+`setup_tools_versions.bats`). The exact total grows as suites are added; what
+matters is that none fail.
 
 ```bash
 $ bash scripts/lint-portability.sh
@@ -176,8 +179,12 @@ $ npm run typecheck
 $ npm run test:coverage
 ```
 
-**Expect:** `Test Files 2 passed`, `Tests 17 passed`, followed by a coverage
-table.
+**Expect:** all test files pass (currently `Test Files 2 passed`,
+`Tests 50 passed`), followed by a coverage table that meets the gate. The exact
+count grows as tests are added; what matters is that none fail and coverage
+holds. Coverage is gated on the actively-tested modules; pre-rebuild views and
+hooks are excluded via the ratchet in `vitest.config.ts` (the UI analogue of
+`.coverage-exceptions`), so the gate stays green without hiding real gaps.
 
 ```bash
 $ npm run build

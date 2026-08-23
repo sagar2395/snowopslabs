@@ -80,3 +80,27 @@ spec:
   ports:
     - port: 80
       targetPort: 8080
+---
+# Per-environment ingress so each env's go-api is reachable at its own URL:
+#   http://go-api-dev.<DOMAIN_SUFFIX>   (add hosts with `labctl hosts add`)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: go-api
+  namespace: env-dev
+  labels:
+    snowops.net/env: dev
+    snowops.net/scenario: env-promotion
+spec:
+  ingressClassName: {{.IngressClass}}
+  rules:
+    - host: go-api-dev.{{.DomainSuffix}}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: go-api
+                port:
+                  number: 80

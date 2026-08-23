@@ -73,7 +73,7 @@ func (e *Exec) Run(ctx context.Context, cmd Command) (Result, error) {
 	// Deliberately not exec.CommandContext: its cancellation kills only the
 	// direct child, leaving helm's descendants running. We manage the signal
 	// sequence ourselves against the process group.
-	//nolint:gosec // G204: running scripts is this tool's purpose; the path is
+	//nolint:gosec,noctx // G204: running scripts is this tool's purpose; the path is
 	// containment-checked by Resolver and args are an argv array, never a shell string.
 	c := exec.Command(cmd.Path, cmd.Args...)
 	c.Dir = cmd.Dir

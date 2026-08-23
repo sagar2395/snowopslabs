@@ -80,3 +80,26 @@ spec:
   ports:
     - port: 80
       targetPort: 8080
+---
+# Per-environment ingress: http://go-api-prod.<DOMAIN_SUFFIX>
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: go-api
+  namespace: env-prod
+  labels:
+    snowops.net/env: prod
+    snowops.net/scenario: env-promotion
+spec:
+  ingressClassName: {{.IngressClass}}
+  rules:
+    - host: go-api-prod.{{.DomainSuffix}}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: go-api
+                port:
+                  number: 80

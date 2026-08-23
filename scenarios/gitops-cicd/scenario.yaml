@@ -23,6 +23,33 @@ components:
     path: manifests/argocd-applications.yaml
     namespace: argocd
 
+checks:
+  - name: argocd-server-ready
+    type: kubectl
+    resource: deployment/argocd-server
+    namespace: argocd
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: argocd-repo-server-ready
+    type: kubectl
+    resource: deployment/argocd-repo-server
+    namespace: argocd
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: go-api-application-present
+    type: kubectl
+    resource: application/go-api
+    namespace: argocd
+
+  - name: echo-server-application-present
+    type: kubectl
+    resource: application/echo-server
+    namespace: argocd
+
 explore:
   urls:
     - label: "ArgoCD Dashboard"

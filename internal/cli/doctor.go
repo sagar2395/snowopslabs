@@ -93,6 +93,12 @@ func runDoctor(ctx context.Context, out io.Writer, runner toolchain.Runner) erro
 		return fmt.Errorf("%d required tool(s) missing or out of date", len(problems))
 	}
 
+	if !hostsBlockPresent() {
+		fmt.Fprintln(out, "\nNotes:")
+		fmt.Fprintln(out, "  - Ingress hostnames (e.g. http://grafana.k3d.local) won't resolve until you")
+		fmt.Fprintln(out, "    run 'labctl hosts add' (one-time, needs sudo). Not needed for the UI at :3939.")
+	}
+
 	fmt.Fprintln(out, "\n✓ Everything SnowOps Labs needs is installed and current.")
 	return nil
 }

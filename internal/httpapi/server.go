@@ -150,10 +150,14 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/results/{kind}", s.handleResultsByKind).Methods("GET", "OPTIONS")
 	api.HandleFunc("/progress", s.handleProgress).Methods("GET", "OPTIONS")
 	api.HandleFunc("/challenges", s.handleListChallenges).Methods("GET", "OPTIONS")
-	api.HandleFunc("/challenges/{name}", s.handleChallengeInfo).Methods("GET", "OPTIONS")
+	// Literal paths MUST be registered before the "/{name}" wildcard: gorilla/mux
+	// matches in registration order, so "/challenges/status" and
+	// "/challenges/history" would otherwise be swallowed by "/{name}" (name=
+	// "status"/"history") and 404 when the lookup fails.
 	api.HandleFunc("/challenges/status", s.handleChallengeStatus).Methods("GET", "OPTIONS")
 	api.HandleFunc("/challenges/history", s.handleChallengeHistory).Methods("GET", "OPTIONS")
 	api.HandleFunc("/challenges/complete", s.handleChallengeMarkComplete).Methods("POST", "OPTIONS")
+	api.HandleFunc("/challenges/{name}", s.handleChallengeInfo).Methods("GET", "OPTIONS")
 	api.HandleFunc("/learn/paths", s.handleLearnPaths).Methods("GET", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}", s.handleLearnPath).Methods("GET", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}/start", s.handleLearnStart).Methods("POST", "OPTIONS")
@@ -244,7 +248,7 @@ type ErrorResponse struct {
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func respondError(w http.ResponseWriter, status int, code, msg string) {

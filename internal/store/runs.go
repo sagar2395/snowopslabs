@@ -221,7 +221,7 @@ func (s *Store) ListRuns(ctx context.Context, f RunFilter) ([]Run, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Run
 	for rows.Next() {
@@ -270,7 +270,7 @@ func (s *Store) RecoverOrphanedRuns(ctx context.Context, at time.Time) ([]string
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {

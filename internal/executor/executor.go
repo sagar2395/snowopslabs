@@ -3,6 +3,7 @@ package executor
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -50,7 +51,7 @@ func (e *Executor) RunScript(scriptPath string, args ...string) error {
 	}
 
 	slog.Debug("script start", "script", scriptPath, "args", args)
-	cmd := exec.Command("bash", append([]string{absPath}, args...)...)
+	cmd := exec.Command("bash", append([]string{absPath}, args...)...) //nolint:noctx // provisioning command; process lifecycle handled via streamed Wait, not context
 	cmd.Dir = e.ProjectRoot
 	cmd.Stdout = e.Stdout
 	cmd.Stderr = e.Stderr
@@ -145,7 +146,7 @@ func (e *Executor) runStreamedWith(actionID, actionLabel, cmdStr, name string, a
 		Timestamp: time.Now(),
 	})
 
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(name, args...) //nolint:noctx // provisioning command; process lifecycle handled via streamed Wait, not context
 	cmd.Dir = e.ProjectRoot
 	cmd.Env = e.buildEnv()
 
@@ -175,7 +176,8 @@ func (e *Executor) runStreamedWith(actionID, actionLabel, cmdStr, name string, a
 	exitCode := 0
 	errStr := ""
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
 			exitCode = exitErr.ExitCode()
 		} else {
 			exitCode = 1
@@ -244,7 +246,7 @@ func (e *Executor) broadcastEndError(actionID, actionLabel, cmdStr string, err e
 
 // RunCommand executes an arbitrary command in the project root.
 func (e *Executor) RunCommand(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(name, args...) //nolint:noctx // provisioning command; process lifecycle handled via streamed Wait, not context
 	cmd.Dir = e.ProjectRoot
 	cmd.Stdout = e.Stdout
 	cmd.Stderr = e.Stderr
@@ -277,14 +279,15 @@ func (e *Executor) SetEnv(key, value string) {
 
 // CaptureOutput runs a command and returns its stdout as a string.
 func (e *Executor) CaptureOutput(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
+	cmd := exec.Command(name, args...) //nolint:noctx // provisioning command; process lifecycle handled via streamed Wait, not context
 	cmd.Dir = e.ProjectRoot
 	cmd.Env = e.buildEnv()
 
 	out, err := cmd.Output()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return "", fmt.Errorf("%s: %s", err, string(exitErr.Stderr))
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			return "", fmt.Errorf("%w: %s", err, string(exitErr.Stderr))
 		}
 		return "", err
 	}

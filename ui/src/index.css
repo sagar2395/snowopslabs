@@ -56,8 +56,22 @@ a:hover { text-decoration: underline; }
   z-index: 100;
 }
 
-.app-header h1 { font-size: 20px; font-weight: 700; }
-.app-header h1 .accent { color: var(--accent); }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--bg);
+  background: linear-gradient(135deg, var(--accent), #818cf8);
+  box-shadow: 0 2px 8px rgba(56, 189, 248, .35);
+}
+.brand-name { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+.brand-name .accent { color: var(--accent); }
 
 .header-right { margin-left: auto; display: flex; gap: 14px; align-items: center; }
 
@@ -265,6 +279,16 @@ a:hover { text-decoration: underline; }
 }
 .main-content .banner-warn {
   border: 1px solid rgba(251,191,36,.3);
+  border-radius: var(--radius-md);
+  margin-bottom: 16px;
+}
+.banner-info {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--muted);
+}
+.main-content .banner-info {
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
   border-radius: var(--radius-md);
   margin-bottom: 16px;
 }

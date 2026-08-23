@@ -41,6 +41,15 @@ write:
 backend:
   replicas: 0
 
+# Memcached caches are enabled by default in the Loki chart and each requests
+# ~9.6Gi of memory — larger than a laptop lab cluster, so the chunks-cache pod
+# stays permanently Pending and the whole scenario never converges. They add
+# nothing to a single-binary, filesystem-backed lab, so turn them off.
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+
 # Gateway
 gateway:
   enabled: true

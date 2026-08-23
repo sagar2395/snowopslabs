@@ -21,10 +21,10 @@ image:
 
 resources:
   requests:
-    cpu: 4000m    # 10× over-provisioned vs the 50m baseline (~$4.61/pod/day at on-prem rates)
+    cpu: 2000m    # 40× over-provisioned vs the 50m baseline (still fits a 4-CPU k3d node)
     memory: 1Gi   # 32× over-provisioned vs the 32Mi baseline
   limits:
-    cpu: 4000m
+    cpu: 2000m
     memory: 1Gi
 
 autoscaling:

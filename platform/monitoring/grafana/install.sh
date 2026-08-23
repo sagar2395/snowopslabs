@@ -15,6 +15,15 @@ sed "s/\\.monitoring\\.svc/.$NAMESPACE.svc/g" "$SCRIPT_DIR/values.yaml" >"$VALUE
 # Create namespace if it doesn't exist
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
+# Package the curated dashboards as a ConfigMap so the grafana chart can mount
+# them (via dashboardsConfigMaps in values.yaml). This must exist before the
+# chart install so the volume mount resolves. Idempotent via apply.
+echo "Packaging Grafana dashboards..."
+kubectl create configmap grafana-dashboards \
+  --namespace "$NAMESPACE" \
+  --from-file="$SCRIPT_DIR/provisioning/dashboards/" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 # Add Helm repo and update
 echo "Adding Grafana Helm repository..."
 helm repo add grafana https://grafana.github.io/helm-charts --force-update

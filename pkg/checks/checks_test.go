@@ -151,6 +151,11 @@ func TestCompare(t *testing.T) {
 		{"hello", "contains", "world", false, false},
 		{"abc", "<", "1", false, true}, // ordering needs numbers
 		{"1", "~", "1", false, true},   // unknown operator
+		// Empty left operand (absent .status.readyReplicas) is treated as 0 for
+		// ordering ops, so the check fails cleanly instead of erroring.
+		{"", ">=", "1", false, false},
+		{"", "<", "1", true, false},
+		{"", ">=", "abc", false, true}, // still errors if the want side isn't numeric
 	}
 
 	for _, tt := range tests {

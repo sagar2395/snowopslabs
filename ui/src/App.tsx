@@ -73,7 +73,9 @@ function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void })
   const notify = useCallback((level: NotifLevel, title: string, detail?: string) => {
     const id = ++notifSeq
     setNotifications(prev => [...prev, { id, level, title, detail }])
-    if (level !== 'error') setTimeout(() => dismiss(id), 8000)
+    // Errors linger longer (they matter more) but still auto-dismiss so failed
+    // popups don't pile up on screen; other toasts clear quickly.
+    setTimeout(() => dismiss(id), level === 'error' ? 18000 : 8000)
   }, [])
 
   function dismiss(id: number) {
@@ -214,7 +216,10 @@ function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void })
 
       {/* Header */}
       <header className="app-header">
-        <h1><span className="accent">labctl</span> Dashboard</h1>
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">❄</span>
+          <h1 className="brand-name"><span className="accent">SnowOps</span> Labs</h1>
+        </div>
         <div className="header-right">
           {runtimes.length > 0 && (
             <select

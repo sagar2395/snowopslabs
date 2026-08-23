@@ -293,6 +293,13 @@ func compare(got, op, want string) (bool, error) {
 		}
 		return got != want, nil
 	case "<", "<=", ">", ">=":
+		// kubectl jsonpath returns "" for an absent numeric status field — e.g.
+		// .status.readyReplicas is unset (not 0) until at least one replica is
+		// ready. Treat an empty left operand as 0 so the check fails cleanly
+		// ("0 >= 1" is false) instead of erroring with "needs numeric operands".
+		if got == "" && werr == nil {
+			gf, numeric = 0, true
+		}
 		if !numeric {
 			return false, fmt.Errorf("operator %q needs numeric operands, got %q and %q", op, got, want)
 		}

@@ -59,7 +59,7 @@ func runsListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer st.Close()
+			defer func() { _ = st.Close() }()
 
 			filter := store.RunFilter{Limit: limit, Kind: kindFlag}
 			if statusFlag != "" {
@@ -113,7 +113,7 @@ func runsLogsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer st.Close()
+			defer func() { _ = st.Close() }()
 
 			return streamRunLogs(ctx, cmd.OutOrStdout(), st, args[0], follow)
 		},
@@ -224,7 +224,7 @@ a server you are not attached to), use the API or the UI instead.`,
 			if err != nil {
 				return err
 			}
-			defer st.Close()
+			defer func() { _ = st.Close() }()
 
 			id := args[0]
 			rec, err := st.GetRun(ctx, id)

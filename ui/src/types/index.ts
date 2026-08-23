@@ -44,6 +44,10 @@ export interface PlatformProviderEntry {
   name: string
   category: string
   installed: boolean
+  /** True when the category's providers are mutually exclusive (pick one, e.g.
+   *  ingress/mesh). False/absent means they're complementary and installed
+   *  together (e.g. secrets: vault + external-secrets). */
+  exclusive?: boolean
 }
 
 /** GET /api/platform response: category key → providers.

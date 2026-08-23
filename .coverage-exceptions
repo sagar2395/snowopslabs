@@ -16,7 +16,6 @@
 # ratchet stops it rotting in the meantime.
 
 # Replaced by internal/run + internal/store in W1 (ADR-0003).
-github.com/sagar2395/snowopslabs/internal/executor    79.6   W1  superseded by the durable run engine
 github.com/sagar2395/snowopslabs/internal/k8s          0.0   W1  becomes internal/toolchain's kubectl adapter, which ships with a fake
 
 # Thin adapters today; logic moves to internal/service and they get contract

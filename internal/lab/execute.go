@@ -75,7 +75,7 @@ func executeOne(a Action, d Deps) error {
 	case "app-destroy":
 		return d.Exec.RunScript("engine/deploy.sh", "destroy", a.Target)
 	case "scenario-up":
-		err := d.Scenes.Up(a.Target, d.Exec)
+		err := d.Scenes.Up(a.Target, d.Exec, false)
 		if errors.Is(err, scenario.ErrAlreadyActive) {
 			return nil // idempotent restore over a converged lab
 		}

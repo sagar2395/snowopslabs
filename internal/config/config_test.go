@@ -8,6 +8,33 @@ import (
 	"testing"
 )
 
+// findProjectRoot must detect a make-free checkout — the release binary dropped
+// next to a git clone that has no Makefile. It keys on engine/ + scenarios/.
+func TestFindProjectRoot_NoMakefile(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"engine", "scenarios"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sub := filepath.Join(root, "a", "b")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(sub)
+
+	got, err := findProjectRoot()
+	if err != nil {
+		t.Fatalf("findProjectRoot (no Makefile): %v", err)
+	}
+	// t.TempDir under /var is a symlink to /private/var on macOS; compare resolved.
+	gotResolved, _ := filepath.EvalSymlinks(got)
+	wantResolved, _ := filepath.EvalSymlinks(root)
+	if gotResolved != wantResolved {
+		t.Errorf("findProjectRoot = %q, want %q", gotResolved, wantResolved)
+	}
+}
+
 func TestListApps(t *testing.T) {
 	// Create temp project structure
 	root := t.TempDir()

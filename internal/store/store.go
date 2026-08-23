@@ -96,7 +96,7 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	db.SetConnMaxLifetime(0)
 
 	if err := db.PingContext(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("connecting to %s: %w", path, err)
 	}
 
@@ -106,7 +106,7 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	}
 
 	if err := s.migrate(ctx); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return s, nil

@@ -21,7 +21,12 @@ function formatDate(iso: string) {
   try { return new Date(iso).toLocaleString() } catch { return iso }
 }
 
-export function Challenges({ notify, refreshTick, requestConfirm }: ChallengesProps) {
+// Challenges are timed, scored, interactive runs. Playing one (start/hint/submit/
+// abort) is a CLI-only workflow today — the HTTP API exposes only the read
+// endpoints — so this view is intentionally read-only: it lists challenges,
+// shows any active run and past results, and points to the exact `labctl`
+// command to play. See docs / `labctl challenge --help`.
+export function Challenges({ refreshTick }: ChallengesProps) {
   const [challenges, setChallenges] = useState<ChallengeSummary[]>([])
   const [status, setStatus] = useState<ChallengeStatus | null>(null)
   const [history, setHistory] = useState<ChallengeRunRecord[]>([])
@@ -29,7 +34,6 @@ export function Challenges({ notify, refreshTick, requestConfirm }: ChallengesPr
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [busy, setBusy] = useState(false)
   const [elapsed, setElapsed] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -119,6 +123,13 @@ export function Challenges({ notify, refreshTick, requestConfirm }: ChallengesPr
         </div>
       )}
 
+      {/* Challenges are played from the CLI; the UI is a read-only scoreboard. */}
+      <div className="banner banner-info" role="note">
+        Challenges are timed and played from the command line. Start one with{' '}
+        <code>labctl challenge start &lt;name&gt;</code>, then{' '}
+        <code>labctl challenge submit</code> to grade it. This view tracks progress and results.
+      </div>
+
       {/* Active challenge banner */}
       {status?.active && (
         <div className="card" style={{ borderColor: 'var(--accent)', marginBottom: 16 }}>
@@ -135,61 +146,14 @@ export function Challenges({ notify, refreshTick, requestConfirm }: ChallengesPr
               )}
             </span>
           </div>
-          <div style={{ padding: '0 16px 16px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ padding: '0 16px 16px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
             {status.hintsUsed != null && status.hintsUsed > 0 && (
               <Badge variant="category">{status.hintsUsed} hint{status.hintsUsed !== 1 ? 's' : ''} used</Badge>
             )}
-            <div style={{ flex: 1 }} />
-            <button
-              className="btn btn-sm btn-danger"
-              disabled={busy}
-              onClick={() => requestConfirm({
-                title: 'Abort challenge?',
-                message: 'Aborting marks this attempt as failed with score 0. Your progress cannot be recovered.',
-                confirmLabel: 'Abort',
-                danger: true,
-                onConfirm: async () => {
-                  setBusy(true)
-                  try {
-                    await fetch('/api/challenges/abort', { method: 'POST' })
-                    notify('info', 'Challenge aborted', '')
-                    load()
-                  } catch (e) {
-                    notify('error', 'Abort failed', e instanceof Error ? e.message : String(e))
-                  } finally {
-                    setBusy(false)
-                  }
-                },
-              })}
-            >
-              Abort
-            </button>
-            <button
-              className="btn btn-sm btn-primary"
-              disabled={busy}
-              onClick={() => requestConfirm({
-                title: 'Submit challenge?',
-                message: 'Submitting runs the grading checks and records your score. Make sure you\'ve completed the task first.',
-                confirmLabel: 'Submit',
-                danger: false,
-                onConfirm: async () => {
-                  setBusy(true)
-                  try {
-                    const res = await fetch('/api/challenges/submit', { method: 'POST' })
-                    const body = await res.json() as { score?: number; outcome?: string; error?: string }
-                    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-                    notify('success', `Challenge complete — score ${body.score ?? 0}`, body.outcome ?? '')
-                    load()
-                  } catch (e) {
-                    notify('error', 'Submit failed', e instanceof Error ? e.message : String(e))
-                  } finally {
-                    setBusy(false)
-                  }
-                },
-              })}
-            >
-              Submit
-            </button>
+            <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+              Grade or stop from the CLI: <code>labctl challenge submit</code> ·{' '}
+              <code>labctl challenge hint</code> · <code>labctl challenge abort</code>
+            </span>
           </div>
         </div>
       )}
@@ -232,65 +196,15 @@ export function Challenges({ notify, refreshTick, requestConfirm }: ChallengesPr
                       </span>
                     )}
                   </div>
+                  {!isActive && (
+                    <div style={{ marginTop: 6 }}>
+                      <code style={{ fontSize: 12 }}>labctl challenge start {c.name}</code>
+                    </div>
+                  )}
                 </div>
                 <Badge variant={isActive ? 'running' : best ? 'category' : 'stopped'}>
                   {isActive ? 'Active' : best ? 'Attempted' : 'Not Started'}
                 </Badge>
-                <div className="scenario-actions">
-                  <button
-                    className="btn btn-sm btn-primary"
-                    disabled={!!status?.active || busy}
-                    title={status?.active ? 'Finish or abort the current challenge first' : ''}
-                    onClick={() => requestConfirm({
-                      title: `Start "${c.displayName || c.name}"?`,
-                      message: `This starts the timer. Hints cost points (–10 each). You have until you submit — going over par costs up to 20 points. Ready?`,
-                      confirmLabel: 'Start challenge',
-                      danger: false,
-                      onConfirm: async () => {
-                        setBusy(true)
-                        try {
-                          await fetch(`/api/challenges/${encodeURIComponent(c.name)}/start`, { method: 'POST' })
-                          notify('info', `Challenge "${c.displayName || c.name}" started`, 'Timer is running. Good luck!')
-                          load()
-                        } catch (e) {
-                          notify('error', 'Failed to start challenge', e instanceof Error ? e.message : String(e))
-                        } finally {
-                          setBusy(false)
-                        }
-                      },
-                    })}
-                  >
-                    Start
-                  </button>
-                  {isActive && (
-                    <button
-                      className="btn btn-sm"
-                      disabled={busy}
-                      onClick={() => requestConfirm({
-                        title: 'Use a hint?',
-                        message: 'Each hint costs 10 points from your final score. Use it?',
-                        confirmLabel: 'Get hint',
-                        danger: false,
-                        onConfirm: async () => {
-                          setBusy(true)
-                          try {
-                            const res = await fetch('/api/challenges/hint', { method: 'POST' })
-                            const body = await res.json() as { hint?: string; index?: number; total?: number; error?: string }
-                            if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-                            notify('info', `Hint ${body.index ?? ''}/${body.total ?? ''}`, body.hint ?? '')
-                            load()
-                          } catch (e) {
-                            notify('error', 'Hint failed', e instanceof Error ? e.message : String(e))
-                          } finally {
-                            setBusy(false)
-                          }
-                        },
-                      })}
-                    >
-                      Hint (–10pts)
-                    </button>
-                  )}
-                </div>
               </div>
             )
           })

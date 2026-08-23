@@ -169,7 +169,7 @@ func (s *Server) handleAppDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Deploy %s", name), "engine/deploy.sh", "deploy", name)
+		_ = s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Deploy %s", name), "engine/deploy.sh", "deploy", name)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -182,7 +182,7 @@ func (s *Server) handleAppDestroy(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Destroy %s", name), "engine/deploy.sh", "destroy", name)
+		_ = s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Destroy %s", name), "engine/deploy.sh", "destroy", name)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -195,7 +195,7 @@ func (s *Server) handleAppBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Build %s", name), "engine/build.sh", name)
+		_ = s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Build %s", name), "engine/build.sh", name)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -209,11 +209,13 @@ func (s *Server) handlePlatformStatus(w http.ResponseWriter, r *http.Request) {
 
 	for _, cat := range categories {
 		providers := s.registry.GetProviders(cat)
+		exclusive := s.registry.IsExclusive(cat)
 		for _, p := range providers {
 			entry := map[string]interface{}{
 				"name":      p.Name,
 				"category":  cat,
 				"installed": k8s.NamespaceExists(ctx, p.Namespace()),
+				"exclusive": exclusive,
 			}
 			result[cat] = append(result[cat], entry)
 		}
@@ -394,7 +396,7 @@ func (s *Server) handleScenarioUp(w http.ResponseWriter, r *http.Request) {
 	label := fmt.Sprintf("Activate scenario: %s", name)
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
-		s.exec.BroadcastEnd(jobID, label, s.scenes.Up(name, s.exec))
+		s.exec.BroadcastEnd(jobID, label, s.scenes.Up(name, s.exec, false))
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -594,7 +596,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Subscribe to action events
 	actionCh := s.exec.Broadcast.Subscribe()
@@ -676,7 +678,7 @@ func (s *Server) handleRuntimeActivate(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.runtimes.ActivateWith(jobID, name, s.exec)
+		_ = s.runtimes.ActivateWith(jobID, name, s.exec)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -689,7 +691,7 @@ func (s *Server) handleRuntimeDeactivate(w http.ResponseWriter, r *http.Request)
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.runtimes.DeactivateWith(jobID, name, s.exec)
+		_ = s.runtimes.DeactivateWith(jobID, name, s.exec)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }

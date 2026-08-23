@@ -23,7 +23,7 @@ opinion.
 
 | Loop | What you do | Command |
 |---|---|---|
-| **Build** | Stand up a cluster and install a real platform stack from swappable providers | `labctl lab up` |
+| **Build** | Stand up a cluster and install a real platform stack from swappable providers | `labctl init` |
 | **Simulate** | Activate a declarative scenario with objectives and verifiable checks | `labctl scenario up <name>` |
 | **Break** | Inject a realistic, reversible fault while traffic flows and alerts fire | `labctl incident inject <name>` |
 | **Measure** | Grade the outcome — checks passed, time taken, hints used | `labctl scenario verify <name>` |
@@ -66,16 +66,18 @@ Versions are pinned in [`versions.env`](versions.env).
 
 ## Quickstart
 
-You always need the repo (the scenarios, platform scripts and runtimes live
-here). You can get the `labctl` binary two ways — download a release, or build
-it.
+**You always need the repo checked out** — `labctl` runs the scripts under
+`scenarios/ platform/ runtimes/ engine/ bootstrap/` at runtime, so the release
+archive (which ships only the binary) is not standalone. Clone the repo, then get
+`labctl` on your `PATH` one of two ways. **`make` is optional** — everything below
+runs through `labctl` itself.
 
 ```bash
 git clone <repo-url> && cd snowopslabs
 cp .env.example .env
 ```
 
-**Option A — download a release (no Go/Node toolchain needed):**
+**Option A — download a release (no Go/Node toolchain, no `make`):**
 
 Grab the archive for your platform from the [Releases page][releases], verify it,
 and put `labctl` on your `PATH`:
@@ -84,28 +86,48 @@ and put `labctl` on your `PATH`:
 # macOS arm64 shown; pick the archive matching your OS/arch
 tar xzf labctl_*_darwin_arm64.tar.gz
 shasum -a 256 -c checksums.txt        # verify (sha256sum -c on Linux)
-sudo mv labctl /usr/local/bin/
+sudo mv labctl /usr/local/bin/        # now `labctl` runs from anywhere
 labctl --version
 ```
 
 **Option B — build from source** (needs Go 1.24+ and Node 22+):
 
 ```bash
-make cli-build                        # build bin/labctl (UI embedded), then use ./bin/labctl
+make cli-build          # builds bin/labctl (UI embedded); run it as ./bin/labctl
+make cli-install        # …or install onto PATH: copies to $(go env GOPATH)/bin/labctl
 ```
 
-**Then run the loop:**
+> `bin/` is just the build-output directory, so `make cli-build` alone leaves the
+> binary at `./bin/labctl`. Use `make cli-install` (ensure `$(go env GOPATH)/bin`
+> is on your `PATH`) or the release `mv` above to get a plain `labctl`. Run
+> `labctl` from inside the repo (it auto-detects the project root), or from
+> anywhere with `--project-dir /path/to/snowopslabs`.
+
+**Then run the loop — no `make` required:**
 
 ```bash
-make init                             # create the cluster + install the platform
-labctl app deploy go-api
-labctl scenario list
+labctl setup-tools                    # install kubectl/helm/k3d for your OS (or skip; init does it)
+labctl init                           # setup-tools + create the cluster + install the platform
+labctl hosts add                      # map *.${DOMAIN_SUFFIX:-k3d.local} -> 127.0.0.1 (needs sudo; one-time)
+labctl app build go-api               # build the image and import it into the cluster
+labctl app deploy go-api              # deploy it (needs the image built first)
+labctl scenario list                  # then: labctl scenario info <name> for details
 labctl scenario up observability-sre
 labctl scenario verify observability-sre   # did you achieve the objective?
 labctl validate                       # check all content is well-formed
 labctl ui                             # dashboard at http://localhost:3939
-make teardown                         # remove everything (never hangs)
+labctl teardown                       # remove everything (never hangs)
 ```
+
+> Prefer `make`? `make init` / `make teardown` / `make reset` are equivalent to
+> the `labctl init` / `labctl teardown` / `labctl reset` commands.
+>
+> `labctl app deploy` installs the Helm release but does **not** build the image —
+> run `labctl app build <name>` first (it builds and imports into k3d), or the pod
+> lands in `ImagePullBackOff`. `labctl hosts add` writes a managed block to
+> `/etc/hosts` so the ingress hostnames below resolve; skip it and URL-based
+> access (and the `grafana-reachable` scenario check) will fail with
+> `no such host`. It is **not** needed for the labctl UI itself (a direct port).
 
 [releases]: https://github.com/sagar2395/snowopslabs/releases
 
@@ -113,10 +135,13 @@ make teardown                         # remove everything (never hangs)
 
 | Symptom | Fix |
 |---|---|
-| `TLS handshake timeout` / OOM-killed pods partway through `make init` | The Docker VM is too small. Give it ≥4 CPU / 8 GB (`colima start --cpu 4 --memory 8`, or Docker Desktop → Resources), then `make reset`. |
-| `make init` seems stuck | First run pulls many images. Watch progress with `kubectl get pods -A -w`. |
+| Browser can't reach `*.k3d.local` URLs (`no such host`) | Ingress routes by hostname, which needs a local DNS entry. Run `labctl hosts add` once (sudo). The labctl UI at `http://localhost:3939` never needs this. No sudo? Set `DOMAIN_SUFFIX=127.0.0.1.nip.io` in `.env` (a wildcard DNS that resolves to localhost, needs internet) and re-run `labctl platform up`. |
+| `required app(s) not deployed` when starting a scenario/challenge | The scenario needs an app that isn't running. Deploy it (`labctl app build <name> && labctl app deploy <name>`) or re-run with `--deploy-prereqs` to do it automatically. |
+| Something is wedged and you want a clean slate | `labctl reset` (teardown + init) rebuilds the lab; `labctl scenario down <name>` / `labctl incident resolve` undo a single activation. |
+| `TLS handshake timeout` / OOM-killed pods partway through init | The Docker VM is too small. Give it ≥4 CPU / 8 GB (`colima start --cpu 4 --memory 8`, or Docker Desktop → Resources), then `labctl reset`. |
+| `init` seems stuck | First run pulls many images. Watch progress with `kubectl get pods -A -w`. |
 | A tool is missing or too old | `labctl doctor` names each missing/outdated tool and how to fix it. |
-| Teardown left something behind | `make teardown` is safe to re-run; for k3d/kind it deletes the whole cluster. |
+| Teardown left something behind | `labctl teardown` is safe to re-run; for k3d/kind it deletes the whole cluster. |
 | Which runtime should I use? | `k3d` (default, local), `kind` (CI parity), `incluster` (team server). See [runtime profiles](docs/runtime-profiles.md). |
 
 ## Project structure
@@ -192,6 +217,17 @@ Own scenarios stay in your own repository — point `SNOWOPS_CONTENT_PATH` at
 them and they appear alongside the built-in catalog. No pack format, no
 registry ([ADR-0008](docs/adr/0008-content-extensibility-seam.md)).
 
+**Bring your own app.** Drop a directory under `apps/<name>/` with an `app.env`
+(as above) and, for the Helm strategy, a chart under `apps/<name>/deploy/helm/`.
+It shows up in `labctl app list` and builds/deploys/destroys like the samples:
+
+```bash
+labctl app build <name> && labctl app deploy <name>
+```
+
+Reference it from a scenario's `prerequisites.apps` and `labctl scenario up`
+will check it's deployed (and, with `--deploy-prereqs`, deploy it for you).
+
 ## Key URLs (k3d)
 
 | Service | URL | Credentials |
@@ -203,7 +239,9 @@ registry ([ADR-0008](docs/adr/0008-content-extensibility-seam.md)).
 | ArgoCD | http://argocd.k3d.local | admin / (see install output) |
 | SnowOps Labs UI | http://localhost:3939 | — |
 
-Domains follow `${DOMAIN_SUFFIX:-k3d.local}` — never hardcoded.
+Domains follow `${DOMAIN_SUFFIX:-k3d.local}` — never hardcoded. Run
+`labctl hosts add` once (it needs sudo) so these hostnames resolve to
+`127.0.0.1`; `labctl hosts remove` cleans the managed block back out.
 
 ## License
 

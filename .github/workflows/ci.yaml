@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 env:
-  GO_VERSION: '1.24'
+  GO_VERSION: '1.26'
   NODE_VERSION: '22'
 
 jobs:
@@ -78,9 +78,12 @@ jobs:
       - name: gofmt
         run: make fmt-check
 
-      - uses: golangci/golangci-lint-action@v6
+      # golangci-lint v2: the repo's .golangci.yml is v2 schema, which requires
+      # action v7+/golangci-lint v2 (v6 installs a v1 binary and fails `config
+      # verify`). Pinned so the linter set does not drift under the branch.
+      - uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
+          version: v2.13.1
           args: --timeout=5m
 
       - name: go mod tidy is clean
@@ -98,11 +101,10 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: gosec
-        run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec -quiet ./...
-
+      # gosec (SAST) runs as part of golangci-lint (the go-lint job) so its
+      # findings share the repo's .golangci.yml suppressions — running it again
+      # standalone here would re-flag every justified //nolint. This job keeps
+      # dependency-vulnerability scanning, which golangci-lint does not do.
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest

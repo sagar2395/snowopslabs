@@ -19,14 +19,12 @@ import (
 // harness wires an engine to a temp store, a fake runner and a scratch content
 // root. Every test is hermetic: no cluster, no network, no real binaries.
 type harness struct {
-	t        *testing.T
-	engine   *Engine
-	store    *store.Store
-	fake     *toolchain.Fake
-	root     string
-	scripts  map[string]string
-	unstuck  context.CancelFunc
-	shutdown func()
+	t       *testing.T
+	engine  *Engine
+	store   *store.Store
+	fake    *toolchain.Fake
+	root    string
+	scripts map[string]string
 }
 
 func newHarness(t *testing.T, opts ...Option) *harness {

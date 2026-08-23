@@ -41,12 +41,12 @@ func TestUp_AlreadyActiveReturnsErrAlreadyActive(t *testing.T) {
 	engine := NewEngine(root, "k3d.local", "k3d")
 
 	// First Up should succeed (no components, no executor needed).
-	if err := engine.Up("minimal-scenario", nil); err != nil {
+	if err := engine.Up("minimal-scenario", nil, false); err != nil {
 		t.Fatalf("first Up: %v", err)
 	}
 
 	// Second Up should return ErrAlreadyActive.
-	err := engine.Up("minimal-scenario", nil)
+	err := engine.Up("minimal-scenario", nil, false)
 	if err == nil {
 		t.Fatal("expected ErrAlreadyActive on second Up, got nil")
 	}
@@ -90,7 +90,7 @@ func TestUp_HookDenied_ReturnsError(t *testing.T) {
 	engine := NewEngine(root, "k3d.local", "k3d")
 	engine.Hooks = errHookDenied{}
 
-	err := engine.Up("minimal-scenario", nil)
+	err := engine.Up("minimal-scenario", nil, false)
 	if err == nil {
 		t.Fatal("expected error from hook denial, got nil")
 	}

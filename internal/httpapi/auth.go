@@ -111,7 +111,10 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "session_error", "could not create session")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
+	// Secure is intentionally omitted: the lab UI is served over plain HTTP on
+	// localhost, where a browser would never send a Secure cookie. HttpOnly and
+	// SameSite=Strict are the meaningful protections in this transport.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see note above
 		Name:     auth.CookieName,
 		Value:    sess.Token,
 		Path:     "/",
@@ -134,7 +137,8 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sessions.Delete(auth.TokenFromRequest(r))
-	http.SetCookie(w, &http.Cookie{
+	// Secure omitted for the same localhost-HTTP reason as the login handler.
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see login handler note
 		Name:     auth.CookieName,
 		Value:    "",
 		Path:     "/",

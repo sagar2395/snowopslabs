@@ -184,15 +184,19 @@ func findProjectRoot() (string, error) {
 		return "", err
 	}
 
+	// Identify the repo root by content the CLI actually depends on at runtime:
+	// engine/ (build/deploy scripts) plus scenarios/ (declarative content). We key
+	// on these rather than Makefile so a make-free checkout — the release binary
+	// dropped next to a git clone — is still auto-detected. --project-dir overrides.
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "Makefile")); err == nil {
-			if _, err := os.Stat(filepath.Join(dir, "engine")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, "engine")); err == nil {
+			if _, err := os.Stat(filepath.Join(dir, "scenarios")); err == nil {
 				return dir, nil
 			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("could not find project root (looked for Makefile + engine/)")
+			return "", fmt.Errorf("could not find project root (looked for engine/ + scenarios/)")
 		}
 		dir = parent
 	}
@@ -220,7 +224,7 @@ func loadEnvFile(path string) {
 		}
 		// Don't override existing env vars
 		if _, exists := os.LookupEnv(key); !exists {
-			os.Setenv(key, val)
+			_ = os.Setenv(key, val)
 		}
 	}
 }

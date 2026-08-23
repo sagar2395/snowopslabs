@@ -257,7 +257,7 @@ func (e *Engine) saveActive(a *Active) error {
 }
 
 func (e *Engine) clearActive() {
-	os.Remove(e.activeFile())
+	_ = os.Remove(e.activeFile())
 }
 
 // --- operations ----------------------------------------------------------------

@@ -19,6 +19,9 @@ const (
 // knownSubdomains are the ingress hostnames managed in /etc/hosts.
 var knownSubdomains = []string{
 	"go-api",
+	"go-api-dev",     // env-promotion: dev environment ingress
+	"go-api-staging", // env-promotion: staging environment ingress
+	"go-api-prod",    // env-promotion: prod environment ingress
 	"echo-server",
 	"grafana",
 	"prometheus",
@@ -61,6 +64,16 @@ func init() {
 	rootCmd.AddCommand(hostsCmd)
 }
 
+// hostsBlockPresent reports whether the managed block is already in /etc/hosts.
+// Reading the file needs no privileges, so init/doctor can advise without sudo.
+func hostsBlockPresent() bool {
+	data, err := os.ReadFile(hostsFile)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), hostsBegin)
+}
+
 func buildHostList(domainSuffix string) []string {
 	hosts := make([]string, len(knownSubdomains))
 	for i, sub := range knownSubdomains {
@@ -78,7 +91,7 @@ func buildBlock(hosts []string) string {
 // reexecWithSudo re-runs the current invocation under sudo, preserving all flags.
 func reexecWithSudo() error {
 	fmt.Fprintln(os.Stderr, "Root required — re-running with sudo...")
-	c := osexec.Command("sudo", append([]string{os.Args[0]}, os.Args[1:]...)...) //nolint:gosec
+	c := osexec.Command("sudo", append([]string{os.Args[0]}, os.Args[1:]...)...) //nolint:gosec,noctx // re-exec of this same CLI under sudo; a context would not manage the replacement process
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -125,7 +138,7 @@ func writeHostsBlock(block string) error {
 		result += "\n"
 	}
 
-	if err := os.WriteFile(hostsFile, []byte(result), 0644); err != nil {
+	if err := os.WriteFile(hostsFile, []byte(result), 0644); err != nil { //nolint:gosec // G703: hostsFile is the fixed /etc/hosts constant; this runs under sudo by design
 		return fmt.Errorf("writing %s: %w", hostsFile, err)
 	}
 

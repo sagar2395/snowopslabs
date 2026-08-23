@@ -35,7 +35,7 @@ func resolveRoots(projectRoot, contentPath string) []string {
 		if seen[key] {
 			continue
 		}
-		info, err := os.Stat(entry)
+		info, err := os.Stat(entry) //nolint:gosec // G703: entry is a catalog root the operator configured, not untrusted input
 		if err != nil || !info.IsDir() {
 			continue
 		}
