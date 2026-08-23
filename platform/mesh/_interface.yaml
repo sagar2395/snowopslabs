@@ -4,6 +4,8 @@
 
 name: mesh
 description: Service mesh providing mTLS, traffic management, and observability between meshed workloads.
+# Pick exactly one provider: two meshes injecting sidecars into the same workloads conflict.
+selection: exclusive
 
 provides:
   - Automatic sidecar/proxy injection for enrolled namespaces

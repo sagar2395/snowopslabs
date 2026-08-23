@@ -125,7 +125,7 @@ func TestResolveTemplate(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "scenarios"), 0755)
 
-	engine := NewEngine(root, "k3d.local", "k3d")
+	engine := NewEngine(root, "k3d.local", "k3d", "monitoring")
 
 	tests := []struct {
 		input    string
@@ -135,6 +135,18 @@ func TestResolveTemplate(t *testing.T) {
 		{"{{.ProjectRoot}}/apps", root + "/apps"},
 		{"no templates here", "no templates here"},
 		{"{{.DomainSuffix}} and {{.DomainSuffix}}", "k3d.local and k3d.local"},
+		// Whitespace inside the braces is tolerated.
+		{"ns: {{ .MonitoringNamespace }}", "ns: monitoring"},
+		// Foreign templating languages must be left untouched: a manifest can mix
+		// labctl's {{.MonitoringNamespace}} with Prometheus rule annotations and
+		// Grafana legends. Rendering the whole file as one Go template used to
+		// choke on these and leak {{.MonitoringNamespace}} through unrendered.
+		{
+			`namespace: {{.MonitoringNamespace}} value: {{ $value | humanizePercentage }} pod: {{ $labels.pod }} legend: {{namespace}}`,
+			`namespace: monitoring value: {{ $value | humanizePercentage }} pod: {{ $labels.pod }} legend: {{namespace}}`,
+		},
+		// An unknown labctl-style var is left as-is rather than erroring.
+		{"{{.NotAVar}}", "{{.NotAVar}}"},
 	}
 
 	for _, tt := range tests {
@@ -142,6 +154,35 @@ func TestResolveTemplate(t *testing.T) {
 		if got != tt.expected {
 			t.Errorf("ResolveTemplate(%q): got %q, want %q", tt.input, got, tt.expected)
 		}
+	}
+}
+
+// componentNamespace must resolve template vars the same way for install and
+// uninstall. uninstallHelm once used the raw comp.Namespace ("{{.MonitoringNamespace}}")
+// and so uninstalled from the wrong namespace, leaking the release while
+// `scenario down` reported success. Both paths now go through componentNamespace.
+func TestComponentNamespace_ResolvesTemplate(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "scenarios"), 0755)
+	engine := NewEngine(root, "k3d.local", "k3d", "observability")
+
+	cases := []struct {
+		name     string
+		comp     Component
+		fallback string
+		want     string
+	}{
+		{"templated namespace resolves", Component{Namespace: "{{.MonitoringNamespace}}"}, "default", "observability"},
+		{"literal namespace passes through", Component{Namespace: "go-api"}, "default", "go-api"},
+		{"empty namespace uses fallback", Component{Namespace: ""}, "default", "default"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			comp := tc.comp
+			if got := engine.componentNamespace(&comp, tc.fallback); got != tc.want {
+				t.Errorf("componentNamespace(%q) = %q, want %q", tc.comp.Namespace, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -432,7 +473,7 @@ func TestUp_AlreadyActive_ReturnsErrAlreadyActive(t *testing.T) {
 		t.Fatalf("markActive: %v", err)
 	}
 
-	err := engine.Up("minimal-scenario", nil)
+	err := engine.Up("minimal-scenario", nil, false)
 	if err == nil {
 		t.Fatal("expected ErrAlreadyActive, got nil")
 	}
@@ -448,7 +489,7 @@ func TestUp_NotActive_RunsNormally(t *testing.T) {
 	engine := NewEngine(root, "k3d.local", "k3d")
 
 	// No components → Up should succeed without needing an executor
-	err := engine.Up("minimal-scenario", nil)
+	err := engine.Up("minimal-scenario", nil, false)
 	if err != nil {
 		t.Errorf("expected nil error for no-component scenario, got: %v", err)
 	}

@@ -93,7 +93,16 @@ checks:
     namespace: env-prod
 
 explore:
+  urls:
+    - label: "go-api — dev environment"
+      url: "http://go-api-dev.{{.DomainSuffix}}/health"
+    - label: "go-api — staging environment"
+      url: "http://go-api-staging.{{.DomainSuffix}}/health"
+    - label: "go-api — prod environment"
+      url: "http://go-api-prod.{{.DomainSuffix}}/health"
   commands:
+    - label: "0. Add env hostnames to /etc/hosts (once, needs sudo)"
+      command: "labctl hosts add"
     - label: "1. List environments and current tags"
       command: "labctl env list"
     - label: "2. Promote go-api from dev to staging"

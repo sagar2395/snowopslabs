@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/sagar2395/snowopslabs/internal/executor"
+	"gopkg.in/yaml.v3"
 )
 
 // Provider represents a platform component provider (e.g., traefik, nginx).
@@ -135,6 +136,31 @@ func (r *Registry) GetProvider(category, name string) (*Provider, error) {
 		}
 	}
 	return nil, fmt.Errorf("provider %s/%s not found", category, name)
+}
+
+// IsExclusive reports whether a category's providers are mutually exclusive
+// (pick exactly one, e.g. ingress or mesh) versus complementary (install several
+// together, e.g. secrets: vault + external-secrets). Exclusivity is declared by
+// `selection: exclusive` in the category's platform/<category>/_interface.yaml;
+// the default (missing file or any other value) is complementary.
+func (r *Registry) IsExclusive(category string) bool {
+	// Exclusivity is a property of the top-level category (e.g. "monitoring"
+	// for "monitoring/metrics").
+	top := category
+	if i := strings.Index(top, "/"); i >= 0 {
+		top = top[:i]
+	}
+	data, err := os.ReadFile(filepath.Join(r.ProjectRoot, "platform", top, "_interface.yaml"))
+	if err != nil {
+		return false
+	}
+	var iface struct {
+		Selection string `yaml:"selection"`
+	}
+	if err := yaml.Unmarshal(data, &iface); err != nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(iface.Selection), "exclusive")
 }
 
 // Categories returns all discovered categories.

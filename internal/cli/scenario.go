@@ -16,6 +16,8 @@ import (
 )
 
 var scenarioNewForce bool
+var scenarioUpForce bool
+var scenarioDeployPrereqs bool
 
 var scenarioNewCmd = &cobra.Command{
 	Use:   "new <name>",
@@ -65,6 +67,9 @@ var scenarioListCmd = &cobra.Command{
 		}
 		w.Flush()
 
+		fmt.Println("\nSee what a scenario installs, its objectives and checks:")
+		fmt.Println("  labctl scenario info <name>")
+
 		if errs := scenes.LoadErrors(); len(errs) > 0 {
 			fmt.Fprintf(os.Stderr, "\nWarning: %d scenario(s) failed to load (run with -v for details):\n", len(errs))
 			for key, err := range errs {
@@ -80,9 +85,17 @@ var scenarioUpCmd = &cobra.Command{
 	Short: "Activate a scenario",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		err := scenes.Up(args[0], exec)
+		// Make sure the scenario's prerequisite apps are actually running before
+		// we install into them. Without --deploy-prereqs this returns an error
+		// naming the exact commands to fix it.
+		if s, err := scenes.Get(args[0]); err == nil {
+			if err := ensureAppsDeployed(cmd.Context(), s.Prerequisites.Apps, scenarioDeployPrereqs); err != nil {
+				return err
+			}
+		}
+		err := scenes.Up(args[0], exec, scenarioUpForce)
 		if errors.Is(err, scenariopkg.ErrAlreadyActive) {
-			fmt.Fprintf(os.Stderr, "Scenario %s is already active. Use --force to reinstall.\n", args[0])
+			fmt.Fprintf(os.Stderr, "Scenario %s is already active. Re-run with --force to reinstall.\n", args[0])
 			return nil
 		}
 		return err
@@ -130,6 +143,7 @@ var scenarioStatusCmd = &cobra.Command{
 			}
 		}
 		w.Flush()
+		fmt.Println("\nInspect a scenario: labctl scenario info <name>")
 		return nil
 	},
 }
@@ -174,6 +188,10 @@ With --watch, checks are re-run every --interval until they all pass or
 				}
 			}
 			if !verifyWatch || time.Now().After(deadline) {
+				if !verifyWatch {
+					fmt.Fprintln(os.Stderr, "\nChecks can fail while pods are still starting. Re-run with --watch to wait,")
+					fmt.Fprintln(os.Stderr, "or inspect with: kubectl get pods -A")
+				}
 				return fmt.Errorf("%d of %d checks failed", failed, len(results))
 			}
 			fmt.Printf("\n%d of %d checks failing — retrying in %s (until %s)...\n\n",
@@ -302,13 +320,16 @@ var scenarioInfoCmd = &cobra.Command{
 			}
 		}
 
-		if len(s.Explore.URLs) > 0 || len(s.Explore.Commands) > 0 {
+		if len(s.Explore.URLs) > 0 || len(s.Explore.Commands) > 0 || len(s.Explore.Tips) > 0 {
 			fmt.Println("\nExplore:")
 			for _, u := range s.Explore.URLs {
 				fmt.Printf("  URL: %-25s %s\n", u.Label, scenes.ResolveTemplate(u.URL))
 			}
 			for _, c := range s.Explore.Commands {
 				fmt.Printf("  CMD: %s\n       %s\n", c.Label, scenes.ResolveTemplate(c.Command))
+			}
+			for _, t := range s.Explore.Tips {
+				fmt.Printf("  TIP: %s\n", scenes.ResolveTemplate(t))
 			}
 		}
 
@@ -323,6 +344,8 @@ func init() {
 	scenarioVerifyCmd.Flags().DurationVar(&verifyCheckTimeout, "check-timeout", 30*time.Second, "per-check timeout")
 
 	scenarioNewCmd.Flags().BoolVar(&scenarioNewForce, "force", false, "overwrite the scenario if it already exists")
+	scenarioUpCmd.Flags().BoolVar(&scenarioUpForce, "force", false, "reinstall even if the scenario is already active")
+	scenarioUpCmd.Flags().BoolVar(&scenarioDeployPrereqs, "deploy-prereqs", false, "build and deploy any prerequisite apps that are not yet running")
 
 	scenarioCmd.AddCommand(scenarioNewCmd)
 	scenarioCmd.AddCommand(scenarioListCmd)

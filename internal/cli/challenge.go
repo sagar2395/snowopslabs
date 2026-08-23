@@ -99,6 +99,7 @@ func challengeInfoCmd() *cobra.Command {
 
 func challengeStartCmd() *cobra.Command {
 	var force bool
+	var deployPrereqs bool
 	cmd := &cobra.Command{
 		Use:   "start <name>",
 		Short: "Start a challenge (injects/activates + starts timer)",
@@ -108,6 +109,13 @@ func challengeStartCmd() *cobra.Command {
 			eng := challengeEngine()
 			c, err := eng.Load(name)
 			if err != nil {
+				return err
+			}
+
+			// The challenge's setup breaks a running app; make sure that app is
+			// actually deployed first (or --deploy-prereqs deploys it), so start
+			// fails fast with guidance instead of deep inside the setup action.
+			if err := ensureAppsDeployed(cmd.Context(), challengeRequiredApps(c), deployPrereqs); err != nil {
 				return err
 			}
 
@@ -130,7 +138,25 @@ func challengeStartCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Override an already-active challenge")
+	cmd.Flags().BoolVar(&deployPrereqs, "deploy-prereqs", false, "build and deploy the app this challenge needs if it is not already running")
 	return cmd
+}
+
+// challengeRequiredApps returns the repo apps a challenge's setup depends on, so
+// `start` can verify they are deployed. Incident targets that are not repo apps
+// (synthetic namespaces the fault script creates) are intentionally excluded.
+func challengeRequiredApps(c *challenge.Challenge) []string {
+	switch c.Setup.Type {
+	case "scenario":
+		if s, err := scenes.Get(c.Setup.Ref); err == nil {
+			return s.Prerequisites.Apps
+		}
+	case "incident":
+		if f, err := incEng.Get(c.Setup.Ref); err == nil && appExists(f.Target.Namespace) {
+			return []string{f.Target.Namespace}
+		}
+	}
+	return nil
 }
 
 func challengeStatusCmd() *cobra.Command {
@@ -329,7 +355,7 @@ func runChallengeSetup(_ context.Context, c *challenge.Challenge, ex *executor.E
 		_, err := incEng.Inject(c.Setup.Ref, ex, false, false)
 		return err
 	case "scenario":
-		return scenes.Up(c.Setup.Ref, ex)
+		return scenes.Up(c.Setup.Ref, ex, false)
 	default:
 		return fmt.Errorf("unknown setup type %q", c.Setup.Type)
 	}

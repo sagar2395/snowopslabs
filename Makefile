@@ -1,5 +1,14 @@
 ifneq (,$(wildcard .env))
 	include .env
+	# .env values keep any whitespace between the value and an inline
+	# "# comment": Make strips the comment text but not the spaces before it, so
+	# `PROFILE=k3d   # ...` becomes "k3d   ". Left as-is, that whitespace flows
+	# into recipes (bash runtimes/k3d   /up.sh) and into the exported environment
+	# the Go tools read, breaking cluster names, ports and profile lookups.
+	# Normalise every variable the file defines with $(strip). This keeps any
+	# existing .env working, including ones copied from an older, inline-commented
+	# .env.example.
+$(foreach v,$(shell sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*=.*/\1/p' .env),$(eval $(v) := $(strip $($(v)))))
 	export
 endif
 

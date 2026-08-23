@@ -4,6 +4,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -137,7 +138,7 @@ After completing the task, run this again to verify the check and advance.`,
 
 			// Run the completion check.
 			fmt.Fprintf(out, "Verifying check %q...\n", m.Check.Name)
-			c := checksCheck(m.Check, p.Dir())
+			c := checksCheck(m.Check, p.Dir(), cfg.DomainSuffix)
 			runner := checks.NewRunner()
 			runner.ScriptDir = cfg.ProjectRoot
 			res := runner.Run(cmd.Context(), c)
@@ -260,8 +261,32 @@ func progressSummary(p *learn.Path, prog *learn.Progress) string {
 	return fmt.Sprintf("%d/%d", len(prog.CompletedIdxs), len(p.Modules))
 }
 
+// expandVars resolves shell-style variable references in learning-path check
+// fields — both ${VAR} and the ${VAR:-default} default form — using the
+// configured DOMAIN_SUFFIX first and then the process environment. This lets
+// path authors write portable URLs like http://go-api.${DOMAIN_SUFFIX:-k3d.local}
+// without the raw ${...} leaking into url.Parse (which rejects the ":-" as a port).
+func expandVars(s, domainSuffix string) string {
+	return os.Expand(s, func(name string) string {
+		key, def := name, ""
+		if i := strings.Index(name, ":-"); i >= 0 {
+			key, def = name[:i], name[i+2:]
+		}
+		v := ""
+		if key == "DOMAIN_SUFFIX" {
+			v = domainSuffix
+		} else {
+			v = os.Getenv(key)
+		}
+		if v == "" {
+			return def
+		}
+		return v
+	})
+}
+
 // checksCheck converts a learn.Check to a checks.Check for the runner.
-func checksCheck(c learn.Check, pathDir string) checks.Check {
+func checksCheck(c learn.Check, pathDir, domainSuffix string) checks.Check {
 	result := checks.Check{
 		Name:           c.Name,
 		Type:           c.Type,
@@ -269,8 +294,8 @@ func checksCheck(c learn.Check, pathDir string) checks.Check {
 	}
 	switch c.Type {
 	case "http":
-		result.URL = c.URL
-		result.ExpectStatus = c.ExpectedStatus
+		result.URL = expandVars(c.URL, domainSuffix)
+		result.ExpectStatus = c.Status()
 	case "promql":
 		result.Query = c.Query
 	case "script":

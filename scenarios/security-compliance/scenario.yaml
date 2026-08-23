@@ -43,6 +43,33 @@ components:
     path: dashboards/
     namespace: "{{.MonitoringNamespace}}"
 
+checks:
+  - name: kyverno-ready
+    type: kubectl
+    resource: deployment/kyverno-admission-controller
+    namespace: kyverno
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: cert-manager-ready
+    type: kubectl
+    resource: deployment/cert-manager
+    namespace: cert-manager
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: kyverno-policy-installed
+    type: kubectl
+    resource: clusterpolicy/require-non-root-user
+    namespace: ""
+
+  - name: network-policy-default-deny
+    type: kubectl
+    resource: networkpolicy/default-deny-all
+    namespace: go-api
+
 explore:
   urls:
     - label: "Grafana Security Dashboard"

@@ -19,6 +19,9 @@ const (
 // knownSubdomains are the ingress hostnames managed in /etc/hosts.
 var knownSubdomains = []string{
 	"go-api",
+	"go-api-dev",     // env-promotion: dev environment ingress
+	"go-api-staging", // env-promotion: staging environment ingress
+	"go-api-prod",    // env-promotion: prod environment ingress
 	"echo-server",
 	"grafana",
 	"prometheus",
@@ -59,6 +62,16 @@ func init() {
 	hostsCmd.AddCommand(hostsAddCmd)
 	hostsCmd.AddCommand(hostsRemoveCmd)
 	rootCmd.AddCommand(hostsCmd)
+}
+
+// hostsBlockPresent reports whether the managed block is already in /etc/hosts.
+// Reading the file needs no privileges, so init/doctor can advise without sudo.
+func hostsBlockPresent() bool {
+	data, err := os.ReadFile(hostsFile)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), hostsBegin)
 }
 
 func buildHostList(domainSuffix string) []string {

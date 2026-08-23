@@ -16,11 +16,12 @@ import (
 )
 
 var (
-	injectRandom   bool
-	injectSilent   bool
-	injectForce    bool
-	injectSeed     int64
-	injectCategory string
+	injectRandom        bool
+	injectSilent        bool
+	injectForce         bool
+	injectDeployPrereqs bool
+	injectSeed          int64
+	injectCategory      string
 )
 
 var incidentCmd = &cobra.Command{
@@ -83,6 +84,15 @@ a reproducible pick across a team.`,
 				return err
 			}
 			name = f.Name
+		}
+
+		// A fault breaks a running workload; if its target is one of our apps and
+		// it isn't deployed, inject would fail cryptically. Check first (or deploy
+		// it with --deploy-prereqs).
+		if tgt, err := incEng.Get(name); err == nil && appExists(tgt.Target.Namespace) {
+			if err := ensureAppsDeployed(cmd.Context(), []string{tgt.Target.Namespace}, injectDeployPrereqs); err != nil {
+				return err
+			}
 		}
 
 		f, err := incEng.Inject(name, exec, injectForce, injectSilent)
@@ -253,6 +263,7 @@ var incidentHistoryCmd = &cobra.Command{
 
 func init() {
 	incidentSolutionCmd.Flags().BoolVar(&solutionYes, "yes", false, "skip the spoiler confirmation")
+	incidentInjectCmd.Flags().BoolVar(&injectDeployPrereqs, "deploy-prereqs", false, "build and deploy the target app if it is not already running")
 	incidentInjectCmd.Flags().BoolVar(&injectRandom, "random", false, "pick a random eligible fault")
 	incidentInjectCmd.Flags().BoolVar(&injectSilent, "silent", false, "don't reveal which fault was injected")
 	incidentInjectCmd.Flags().BoolVar(&injectForce, "force", false, "inject even if another incident is active")

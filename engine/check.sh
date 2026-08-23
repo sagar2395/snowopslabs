@@ -48,12 +48,25 @@ case "$cmd" in
     echo "Current context: $(kubectl config current-context)"
     ;;
   ingress)
-    echo "Checking platform ingress controller..."
-    if ! kubectl get pods --all-namespaces -l app=traefik 2>/dev/null | grep -q Running; then
-      echo "Traefik pods are not running" >&2
-      exit 1
-    fi
-    echo "Traefik appears to be running."
+    provider="${INGRESS_PROVIDER:-traefik}"
+    echo "Checking platform ingress controller (${provider})..."
+    # Helm charts label pods with app.kubernetes.io/name; older/k3d-bundled
+    # installs may use the legacy app= label. Try the known selectors for the
+    # configured provider and pass if any controller pod is Running.
+    case "$provider" in
+      traefik) selectors="app.kubernetes.io/name=traefik app=traefik" ;;
+      nginx)   selectors="app.kubernetes.io/name=ingress-nginx app.kubernetes.io/component=controller" ;;
+      *)       selectors="app.kubernetes.io/name=${provider} app=${provider}" ;;
+    esac
+    for sel in $selectors; do
+      if kubectl get pods --all-namespaces -l "$sel" --no-headers 2>/dev/null | grep -q Running; then
+        echo "Ingress controller '${provider}' is running."
+        exit 0
+      fi
+    done
+    echo "Ingress controller '${provider}' pods are not running" >&2
+    echo "  Install it with: labctl platform up ingress/${provider}" >&2
+    exit 1
     ;;
   *)
     echo "Usage: $0 {tools|cluster|ingress}" >&2

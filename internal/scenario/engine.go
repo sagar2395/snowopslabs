@@ -7,16 +7,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
-	"text/template"
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 	"github.com/sagar2395/snowopslabs/pkg/extension"
 	schema "github.com/sagar2395/snowopslabs/pkg/scenario"
 )
+
+// CommandExecutor is the slice of *executor.Executor that the scenario engine
+// needs to run helm/kubectl and scenario scripts. Defining it here (a
+// consumer-side interface) lets tests substitute a recorder and assert the exact
+// commands the engine would run — namespaces, flags, ordering — without a real
+// cluster. *executor.Executor satisfies it, so production callers are unchanged.
+type CommandExecutor interface {
+	RunCommandStreamed(actionLabel, name string, args ...string) (string, error)
+	RunScriptStreamed(actionLabel, scriptPath string, args ...string) (string, error)
+}
 
 // ErrAlreadyActive is returned by Up when the scenario is already active.
 // Callers should treat this as a no-op, not a failure.
@@ -44,6 +53,7 @@ type Engine struct {
 	DomainSuffix        string
 	Profile             string // active runtime profile (k3d|kind|incluster), used for preflight
 	MonitoringNamespace string // namespace for monitoring/logging/tracing (default: "monitoring")
+	IngressClass        string // ingress class for scenario Ingress manifests (default: "traefik")
 
 	// Extension seam (ADR-0008). Defaults to the open no-op implementation, so
 	// the engine behaves identically unless a build injects custom hooks.
@@ -119,7 +129,9 @@ func (e *Engine) Preflight(s *Scenario) error {
 	for _, app := range s.Prerequisites.Apps {
 		appEnv := filepath.Join(e.ProjectRoot, "apps", app, "app.env")
 		if _, err := os.Stat(appEnv); err != nil {
-			errs = append(errs, fmt.Sprintf("prerequisite app %q not found (expected %s)", app, appEnv))
+			errs = append(errs, fmt.Sprintf(
+				"prerequisite app %q not found — run 'labctl app build %s && labctl app deploy %s' (expected %s)",
+				app, app, app, appEnv))
 		}
 	}
 
@@ -127,7 +139,9 @@ func (e *Engine) Preflight(s *Scenario) error {
 	for _, p := range s.Prerequisites.Platform {
 		platformDir := filepath.Join(e.ProjectRoot, "platform", p)
 		if _, err := os.Stat(platformDir); err != nil {
-			errs = append(errs, fmt.Sprintf("prerequisite platform %q not found (expected %s)", p, platformDir))
+			errs = append(errs, fmt.Sprintf(
+				"prerequisite platform %q not found — run 'labctl platform up' (expected %s)",
+				p, platformDir))
 		}
 	}
 
@@ -169,14 +183,17 @@ func (e *Engine) Preflight(s *Scenario) error {
 	return nil
 }
 
-// Up activates a scenario by installing all its components.
-func (e *Engine) Up(name string, exec *executor.Executor) error {
+// Up activates a scenario by installing all its components. When force is true
+// an already-active scenario is reinstalled (components are helm upgrade
+// --install / kubectl apply, so this converges) instead of returning
+// ErrAlreadyActive.
+func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 	s, err := e.Get(name)
 	if err != nil {
 		return err
 	}
 
-	if e.isActive(name) {
+	if e.isActive(name) && !force {
 		return fmt.Errorf("%w: %s", ErrAlreadyActive, name)
 	}
 
@@ -228,6 +245,7 @@ func (e *Engine) Up(name string, exec *executor.Executor) error {
 
 	if len(s.Checks) > 0 {
 		fmt.Printf("\nThis scenario has %d verifiable checks. Run: labctl scenario verify %s\n", len(s.Checks), s.Name)
+		fmt.Printf("Pods may still be starting — add --watch to wait for them:\n  labctl scenario verify %s --watch\n", s.Name)
 	}
 
 	// Print explore hints
@@ -292,7 +310,7 @@ func (e *Engine) resolveCheck(c checks.Check) checks.Check {
 }
 
 // Down deactivates a scenario by uninstalling all its components in reverse order.
-func (e *Engine) Down(name string, exec *executor.Executor) error {
+func (e *Engine) Down(name string, exec CommandExecutor) error {
 	s, err := e.Get(name)
 	if err != nil {
 		return err
@@ -423,7 +441,7 @@ func loadScenarioFile(path string) (*Scenario, error) {
 	return &s, nil
 }
 
-func (e *Engine) installComponent(s *Scenario, comp *Component, exec *executor.Executor) error {
+func (e *Engine) installComponent(s *Scenario, comp *Component, exec CommandExecutor) error {
 	switch comp.Type {
 	case "helm":
 		return e.installHelm(s, comp, exec)
@@ -438,7 +456,7 @@ func (e *Engine) installComponent(s *Scenario, comp *Component, exec *executor.E
 	}
 }
 
-func (e *Engine) uninstallComponent(s *Scenario, comp *Component, exec *executor.Executor) error {
+func (e *Engine) uninstallComponent(s *Scenario, comp *Component, exec CommandExecutor) error {
 	switch comp.Type {
 	case "helm":
 		return e.uninstallHelm(comp, exec)
@@ -455,24 +473,32 @@ func (e *Engine) uninstallComponent(s *Scenario, comp *Component, exec *executor
 	}
 }
 
-func (e *Engine) installHelm(s *Scenario, comp *Component, exec *executor.Executor) error {
+func (e *Engine) installHelm(s *Scenario, comp *Component, exec CommandExecutor) error {
 	ns := e.componentNamespace(comp, "default")
 
+	// Resolve template vars in chart/repo/version — a local-chart component uses
+	// chart: {{.ProjectRoot}}/apps/.../helm, and without resolving it helm sees
+	// the literal "{{.ProjectRoot}}" and fails with "repo {{.ProjectRoot}} not
+	// found". Set values and the values file are already resolved below.
+	chart := e.resolveTemplate(comp.Chart)
+	repo := e.resolveTemplate(comp.Repo)
+	version := e.resolveTemplate(comp.Version)
+
 	// Add helm repo if specified
-	if comp.Repo != "" {
-		repoName := strings.Split(comp.Chart, "/")[0]
-		exec.RunCommandStreamed("Helm repo add "+repoName, "helm", "repo", "add", repoName, comp.Repo, "--force-update")
+	if repo != "" {
+		repoName := strings.Split(chart, "/")[0]
+		exec.RunCommandStreamed("Helm repo add "+repoName, "helm", "repo", "add", repoName, repo, "--force-update")
 		exec.RunCommandStreamed("Helm repo update", "helm", "repo", "update")
 	}
 
 	args := []string{
-		"upgrade", "--install", comp.Name, comp.Chart,
+		"upgrade", "--install", comp.Name, chart,
 		"--namespace", ns, "--create-namespace",
 		"--wait", "--timeout", "5m",
 	}
 
-	if comp.Version != "" {
-		args = append(args, "--version", comp.Version)
+	if version != "" {
+		args = append(args, "--version", version)
 	}
 
 	if comp.ValuesFile != "" {
@@ -496,16 +522,17 @@ func (e *Engine) installHelm(s *Scenario, comp *Component, exec *executor.Execut
 	return err
 }
 
-func (e *Engine) uninstallHelm(comp *Component, exec *executor.Executor) error {
-	ns := comp.Namespace
-	if ns == "" {
-		ns = "default"
-	}
+func (e *Engine) uninstallHelm(comp *Component, exec CommandExecutor) error {
+	// Resolve the namespace exactly as installHelm does. Using the raw
+	// comp.Namespace here (e.g. the literal "{{.MonitoringNamespace}}") sent the
+	// uninstall to the wrong namespace, so `helm uninstall` reported "release not
+	// found" and the chart was left running while `scenario down` claimed success.
+	ns := e.componentNamespace(comp, "default")
 	_, err := exec.RunCommandStreamed("Helm uninstall "+comp.Name, "helm", "uninstall", comp.Name, "--namespace", ns)
 	return err
 }
 
-func (e *Engine) installManifest(s *Scenario, comp *Component, exec *executor.Executor) error {
+func (e *Engine) installManifest(s *Scenario, comp *Component, exec CommandExecutor) error {
 	manifestPath := filepath.Join(s.Dir, comp.Path)
 
 	// Template the manifest
@@ -539,7 +566,7 @@ func (e *Engine) installManifest(s *Scenario, comp *Component, exec *executor.Ex
 	return err
 }
 
-func (e *Engine) uninstallManifest(s *Scenario, comp *Component, exec *executor.Executor) error {
+func (e *Engine) uninstallManifest(s *Scenario, comp *Component, exec CommandExecutor) error {
 	manifestPath := filepath.Join(s.Dir, comp.Path)
 
 	data, err := os.ReadFile(manifestPath)
@@ -568,7 +595,7 @@ func (e *Engine) uninstallManifest(s *Scenario, comp *Component, exec *executor.
 	return err
 }
 
-func (e *Engine) installGrafanaDashboard(s *Scenario, comp *Component, exec *executor.Executor) error {
+func (e *Engine) installGrafanaDashboard(s *Scenario, comp *Component, exec CommandExecutor) error {
 	dashDir := filepath.Join(s.Dir, comp.Path)
 	entries, err := os.ReadDir(dashDir)
 	if err != nil {
@@ -619,7 +646,7 @@ data:
 	return nil
 }
 
-func (e *Engine) uninstallGrafanaDashboard(s *Scenario, comp *Component, exec *executor.Executor) error {
+func (e *Engine) uninstallGrafanaDashboard(s *Scenario, comp *Component, exec CommandExecutor) error {
 	dashDir := filepath.Join(s.Dir, comp.Path)
 	entries, err := os.ReadDir(dashDir)
 	if err != nil {
@@ -642,7 +669,7 @@ func (e *Engine) uninstallGrafanaDashboard(s *Scenario, comp *Component, exec *e
 	return nil
 }
 
-func (e *Engine) runScript(s *Scenario, comp *Component, exec *executor.Executor) error {
+func (e *Engine) runScript(s *Scenario, comp *Component, exec CommandExecutor) error {
 	// Compute the path relative to the project root for RunScriptStreamed
 	relPath, err := filepath.Rel(e.ProjectRoot, filepath.Join(s.Dir, comp.Script))
 	if err != nil {
@@ -694,24 +721,41 @@ func (e *Engine) ResolveTemplate(input string) string {
 	return e.resolveTemplate(input)
 }
 
-func (e *Engine) resolveTemplate(input string) string {
-	tmpl, err := template.New("scenario").Parse(input)
-	if err != nil {
-		return input
-	}
+// labctlVar matches labctl's own template placeholders: a single dotted
+// identifier like {{.DomainSuffix}} or {{ .MonitoringNamespace }}. It is
+// deliberately narrow so it never touches the OTHER templating languages that
+// legitimately share the file: Prometheus rule annotations ({{ $value }},
+// {{ $labels.pod }}), Grafana legends ({{namespace}}), and Helm/sprig
+// expressions ({{ index .data "x" | base64decode }}). Parsing the whole
+// document as one Go template used to choke on those and silently return the
+// input unrendered, so a manifest's {{.MonitoringNamespace}} reached kubectl
+// verbatim and the apply failed.
+var labctlVar = regexp.MustCompile(`{{\s*\.(\w+)\s*}}`)
 
+func (e *Engine) resolveTemplate(input string) string {
 	data := map[string]string{
 		"DomainSuffix":        e.DomainSuffix,
 		"ProjectRoot":         e.ProjectRoot,
 		"MonitoringNamespace": e.MonitoringNamespace,
 		"LokiRetentionPeriod": lokiRetentionPeriod(),
+		"IngressClass":        ingressClassOr(e.IngressClass),
 	}
+	return labctlVar.ReplaceAllStringFunc(input, func(match string) string {
+		key := labctlVar.FindStringSubmatch(match)[1]
+		if v, ok := data[key]; ok {
+			return v
+		}
+		return match // unknown {{.Var}} — leave it for whoever else consumes it
+	})
+}
 
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, data); err != nil {
-		return input
+// ingressClassOr falls back to traefik (the k3d default) when no class is set,
+// so scenario Ingress manifests always resolve to a usable class.
+func ingressClassOr(class string) string {
+	if strings.TrimSpace(class) == "" {
+		return "traefik"
 	}
-	return buf.String()
+	return class
 }
 
 func lokiRetentionPeriod() string {

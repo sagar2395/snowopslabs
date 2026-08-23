@@ -130,7 +130,10 @@ export function Platform({ notify, refreshTick, requestConfirm }: PlatformProps)
                 <div className="platform-category-name">{categoryLabel(cat)}</div>
                 {entries.map(entry => {
                   const key = `${entry.category}/${entry.name}`
-                  const sibling = installed && installed.name !== entry.name ? installed : undefined
+                  // Only warn about swapping when providers are mutually exclusive
+                  // (e.g. ingress, mesh). Complementary providers such as
+                  // secrets/vault + secrets/external-secrets install side by side.
+                  const sibling = entry.exclusive && installed && installed.name !== entry.name ? installed : undefined
                   return (
                     <div key={key} className="platform-row">
                       <div className="platform-name truncate" title={entry.name}>{entry.name}</div>

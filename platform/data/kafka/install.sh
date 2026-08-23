@@ -14,7 +14,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NAMESPACE="${KAFKA_NAMESPACE:-kafka}"
 CLUSTER="${KAFKA_CLUSTER:-lab-kafka}"
-STRIMZI_VERSION="${STRIMZI_VERSION:-0.45.0}"
+# 0.47.0+ ships a fabric8 kubernetes-client that understands Kubernetes 1.33's
+# version payload (the new emulationMajor/Minor fields). Strimzi 0.45.0 fails on
+# 1.33 with "Unrecognized field emulationMajor ... Failed to gather environment
+# facts", crash-looping the operator. Keep the CRs (already KRaft + KafkaNodePool)
+# unchanged.
+STRIMZI_VERSION="${STRIMZI_VERSION:-0.47.0}"
 KAFKA_VERSION="${KAFKA_VERSION:-3.9.0}"
 
 echo "Installing Strimzi Kafka operator ${STRIMZI_VERSION} (Kafka ${KAFKA_VERSION}, namespace=${NAMESPACE})..."

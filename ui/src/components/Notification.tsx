@@ -5,8 +5,8 @@ interface NotificationListProps {
   onDismiss: (id: number) => void
 }
 
-/** Cap how many toasts stack up at once — older ones are hidden, not lost,
- *  because errors require explicit dismissal anyway. */
+/** Cap how many toasts stack up at once — older ones are collapsed into a
+ *  "+N earlier" row rather than crowding the screen. */
 const MAX_VISIBLE = 5
 
 export function NotificationList({ items, onDismiss }: NotificationListProps) {

@@ -25,14 +25,35 @@ components:
     type: manifest
     path: manifests/pod-disruption-budgets.yaml
 
-  - name: chaos-experiments
-    type: manifest
-    path: manifests/chaos-experiments.yaml
+  # NOTE: the chaos experiments in manifests/chaos-experiments.yaml are NOT
+  # applied at `up` on purpose — applying them all at once immediately kills,
+  # partitions, and stresses go-api. They are applied on demand from the explore
+  # commands (e.g. `kubectl apply -f ... -l experiment=pod-kill`) so learners run
+  # one failure mode at a time and observe recovery.
 
   - name: chaos-dashboards
     type: grafana-dashboard
     path: dashboards/
     namespace: monitoring
+
+checks:
+  - name: chaos-controller-ready
+    type: kubectl
+    resource: deployment/chaos-controller-manager
+    namespace: chaos-mesh
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: go-api-pdb-present
+    type: kubectl
+    resource: poddisruptionbudget/go-api-pdb
+    namespace: go-api
+
+  - name: go-api-healthy
+    type: http
+    url: "http://go-api.{{.DomainSuffix}}/health"
+    expectStatus: 200
 
 explore:
   urls:

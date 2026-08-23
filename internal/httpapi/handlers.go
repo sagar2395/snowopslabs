@@ -209,11 +209,13 @@ func (s *Server) handlePlatformStatus(w http.ResponseWriter, r *http.Request) {
 
 	for _, cat := range categories {
 		providers := s.registry.GetProviders(cat)
+		exclusive := s.registry.IsExclusive(cat)
 		for _, p := range providers {
 			entry := map[string]interface{}{
 				"name":      p.Name,
 				"category":  cat,
 				"installed": k8s.NamespaceExists(ctx, p.Namespace()),
+				"exclusive": exclusive,
 			}
 			result[cat] = append(result[cat], entry)
 		}
@@ -394,7 +396,7 @@ func (s *Server) handleScenarioUp(w http.ResponseWriter, r *http.Request) {
 	label := fmt.Sprintf("Activate scenario: %s", name)
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
-		s.exec.BroadcastEnd(jobID, label, s.scenes.Up(name, s.exec))
+		s.exec.BroadcastEnd(jobID, label, s.scenes.Up(name, s.exec, false))
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }

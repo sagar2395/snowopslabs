@@ -4,6 +4,8 @@
 
 name: ingress
 description: Kubernetes ingress controller for routing external HTTP/HTTPS traffic to services.
+# Pick exactly one provider: running two ingress controllers fights over ports 80/443.
+selection: exclusive
 
 provides:
   - IngressClass resource for use in Ingress manifests

@@ -33,11 +33,61 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-# Skip if the cluster already exists (idempotent).
+# port_free <port> — 0 if nothing is listening on the host TCP port, non-zero if
+# it is already taken. Uses bash's /dev/tcp so it needs no nc/lsof/ss (which
+# differ across macOS and Linux — golden rule 1). The subshell scopes fd 3.
+port_free() {
+  ! (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
+# pick_port <preferred> <fallback-base> — echo <preferred> if it is free, else
+# the first free port at or above <fallback-base>. Lets a second cluster come up
+# on one host without colliding on the ingress host ports.
+pick_port() {
+  local preferred=$1 base=$2 p
+  if port_free "$preferred"; then
+    printf '%s' "$preferred"
+    return 0
+  fi
+  p=$base
+  while ! port_free "$p"; do
+    p=$((p + 1))
+    if [ "$p" -gt $((base + 100)) ]; then
+      echo "ERROR: no free host port found near ${base} for ingress." >&2
+      return 1
+    fi
+  done
+  printf '%s' "$p"
+}
+
+# An existing cluster is only usable if its kubeconfig entry is present and its
+# API answers. A cluster whose containers linger but whose context was removed
+# (e.g. a kubeconfig reset) would make `kubectl config use-context` abort the
+# whole run under `set -e`. Heal the kubeconfig, skip creation only when the API
+# is reachable, and recreate a broken cluster rather than failing every later
+# step (mirrors runtimes/k3d/up.sh).
 if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
-  echo "Cluster '$CLUSTER_NAME' already exists, skipping creation."
-  kubectl config use-context "kind-$CLUSTER_NAME"
-  exit 0
+  echo "Cluster '$CLUSTER_NAME' already exists — verifying it is reachable."
+  kind export kubeconfig --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
+  if kubectl config use-context "kind-$CLUSTER_NAME" >/dev/null 2>&1 &&
+    kubectl --request-timeout=20s get --raw=/healthz >/dev/null 2>&1; then
+    echo "Cluster '$CLUSTER_NAME' is healthy; skipping creation."
+    exit 0
+  fi
+  echo "Cluster '$CLUSTER_NAME' exists but its API is not reachable — recreating it."
+  kind delete cluster --name "$CLUSTER_NAME" >/dev/null 2>&1 || true
+fi
+
+# Fall back to free host ports when the defaults are already bound (e.g. another
+# cluster is running). Keeps the golden path on 80/443 untouched.
+http_port="$(pick_port "$HTTP_PORT" 8080)" || exit 1
+https_port="$(pick_port "$HTTPS_PORT" 8443)" || exit 1
+if [ "$http_port" != "$HTTP_PORT" ] || [ "$https_port" != "$HTTPS_PORT" ]; then
+  echo "Host ports ${HTTP_PORT}/${HTTPS_PORT} are already in use (another cluster or service)."
+  echo "Exposing ingress on ${http_port}/${https_port} instead — reach services at" \
+    "http://<name>.${DOMAIN_SUFFIX:-k3d.local}:${http_port}"
+  HTTP_PORT="$http_port"
+  HTTPS_PORT="$https_port"
 fi
 
 # Build the kind config. The control-plane node carries the ingress-ready label
