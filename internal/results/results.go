@@ -61,7 +61,7 @@ func (s *Store) Append(r Record) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = fmt.Fprintf(f, "%s\n", data)
 	return err
 }

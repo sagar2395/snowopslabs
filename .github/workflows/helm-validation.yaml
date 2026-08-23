@@ -1,0 +1,47 @@
+# Helm Chart Validation — runs on PRs touching Helm charts
+name: Helm Validation
+
+on:
+  pull_request:
+    paths:
+      - 'apps/*/deploy/helm/**'
+      - 'platform/**'
+      - 'scenarios/*/values/**'
+
+jobs:
+  discover-charts:
+    name: Discover charts
+    runs-on: ubuntu-latest
+    outputs:
+      charts: ${{ steps.find.outputs.charts }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        name: Find Helm charts
+        run: |
+          charts=$(find apps/*/deploy/helm -name Chart.yaml -exec dirname {} \; | jq -R -s -c 'split("\n")[:-1]')
+          echo "charts=$charts" >> $GITHUB_OUTPUT
+
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    needs: discover-charts
+    strategy:
+      matrix:
+        chart: ${{ fromJson(needs.discover-charts.outputs.charts) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+
+      - name: Lint chart
+        run: helm lint ${{ matrix.chart }}
+
+      - name: Template chart
+        run: |
+          CHART_DIR="${{ matrix.chart }}"
+          CHART_NAME=$(basename $(dirname "$CHART_DIR"))
+          VALUES_FILE="$CHART_DIR/values-dev.yaml"
+          if [ ! -f "$VALUES_FILE" ]; then
+            VALUES_FILE="$CHART_DIR/values.yaml"
+          fi
+          helm template "$CHART_NAME" "$CHART_DIR" -f "$VALUES_FILE"

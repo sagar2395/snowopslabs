@@ -400,13 +400,6 @@ func (e *Engine) loadInto(dir, source, key string) {
 	e.scenarios[s.Name] = s
 }
 
-// rescan rebuilds the scenario index from disk (used after pack changes).
-func (e *Engine) rescan() {
-	e.scenarios = make(map[string]*Scenario)
-	e.loadErrors = make(map[string]error)
-	e.scan()
-}
-
 // LoadErrors returns scenarios that were discovered but failed to load or
 // validate, keyed by directory name.
 func (e *Engine) LoadErrors() map[string]error {
@@ -484,11 +477,13 @@ func (e *Engine) installHelm(s *Scenario, comp *Component, exec CommandExecutor)
 	repo := e.resolveTemplate(comp.Repo)
 	version := e.resolveTemplate(comp.Version)
 
-	// Add helm repo if specified
+	// Add helm repo if specified. Errors here are non-fatal: the subsequent
+	// `helm upgrade --install` surfaces a clear failure if the repo/chart is
+	// genuinely unreachable, and repo add/update is idempotent.
 	if repo != "" {
 		repoName := strings.Split(chart, "/")[0]
-		exec.RunCommandStreamed("Helm repo add "+repoName, "helm", "repo", "add", repoName, repo, "--force-update")
-		exec.RunCommandStreamed("Helm repo update", "helm", "repo", "update")
+		_, _ = exec.RunCommandStreamed("Helm repo add "+repoName, "helm", "repo", "add", repoName, repo, "--force-update")
+		_, _ = exec.RunCommandStreamed("Helm repo update", "helm", "repo", "update")
 	}
 
 	args := []string{
@@ -532,6 +527,28 @@ func (e *Engine) uninstallHelm(comp *Component, exec CommandExecutor) error {
 	return err
 }
 
+// writeTempManifest writes content to a temp YAML file and returns its path and
+// a cleanup func that removes it. It centralises the create/write/close/remove
+// dance (and its error handling) shared by the manifest and dashboard installers.
+func writeTempManifest(content string) (path string, cleanup func(), err error) {
+	f, err := os.CreateTemp("", "labctl-manifest-*.yaml")
+	if err != nil {
+		return "", func() {}, err
+	}
+	name := f.Name()
+	remove := func() { _ = os.Remove(name) }
+	if _, err := f.WriteString(content); err != nil {
+		_ = f.Close()
+		remove()
+		return "", func() {}, err
+	}
+	if err := f.Close(); err != nil {
+		remove()
+		return "", func() {}, err
+	}
+	return name, remove, nil
+}
+
 func (e *Engine) installManifest(s *Scenario, comp *Component, exec CommandExecutor) error {
 	manifestPath := filepath.Join(s.Dir, comp.Path)
 
@@ -544,19 +561,13 @@ func (e *Engine) installManifest(s *Scenario, comp *Component, exec CommandExecu
 	resolved := e.resolveTemplate(string(data))
 
 	// Write to temp file and apply
-	tmpFile, err := os.CreateTemp("", "labctl-manifest-*.yaml")
+	tmpPath, cleanup, err := writeTempManifest(resolved)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmpFile.Name())
+	defer cleanup()
 
-	if _, err := tmpFile.WriteString(resolved); err != nil {
-		tmpFile.Close()
-		return err
-	}
-	tmpFile.Close()
-
-	args := []string{"apply", "-f", tmpFile.Name()}
+	args := []string{"apply", "-f", tmpPath}
 	ns := e.componentNamespace(comp, "")
 	if ns != "" && !manifestHasExplicitNamespace(resolved) {
 		args = append(args, "--namespace", ns)
@@ -576,16 +587,13 @@ func (e *Engine) uninstallManifest(s *Scenario, comp *Component, exec CommandExe
 
 	resolved := e.resolveTemplate(string(data))
 
-	tmpFile, err := os.CreateTemp("", "labctl-manifest-*.yaml")
+	tmpPath, cleanup, err := writeTempManifest(resolved)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmpFile.Name())
+	defer cleanup()
 
-	tmpFile.WriteString(resolved)
-	tmpFile.Close()
-
-	args := []string{"delete", "-f", tmpFile.Name(), "--ignore-not-found"}
+	args := []string{"delete", "-f", tmpPath, "--ignore-not-found"}
 	ns := e.componentNamespace(comp, "")
 	if ns != "" && !manifestHasExplicitNamespace(resolved) {
 		args = append(args, "--namespace", ns)
@@ -632,15 +640,12 @@ data:
 %s`,
 			cmName, ns, entry.Name(), indentJSON(string(data), "    "))
 
-		tmpFile, err := os.CreateTemp("", "labctl-dashboard-*.yaml")
+		tmpPath, cleanup, err := writeTempManifest(cm)
 		if err != nil {
 			continue
 		}
-
-		tmpFile.WriteString(cm)
-		tmpFile.Close()
-		exec.RunCommandStreamed("Apply dashboard "+entry.Name(), "kubectl", "apply", "-f", tmpFile.Name())
-		os.Remove(tmpFile.Name())
+		_, _ = exec.RunCommandStreamed("Apply dashboard "+entry.Name(), "kubectl", "apply", "-f", tmpPath)
+		cleanup()
 	}
 
 	return nil
@@ -650,7 +655,7 @@ func (e *Engine) uninstallGrafanaDashboard(s *Scenario, comp *Component, exec Co
 	dashDir := filepath.Join(s.Dir, comp.Path)
 	entries, err := os.ReadDir(dashDir)
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // no dashboard dir means nothing to delete — uninstall is a no-op
 	}
 
 	ns := comp.Namespace
@@ -663,7 +668,8 @@ func (e *Engine) uninstallGrafanaDashboard(s *Scenario, comp *Component, exec Co
 			continue
 		}
 		cmName := fmt.Sprintf("scenario-%s-%s", s.Name, strings.TrimSuffix(entry.Name(), ".json"))
-		exec.RunCommandStreamed("Delete dashboard "+entry.Name(), "kubectl", "delete", "configmap", cmName, "--namespace", ns, "--ignore-not-found")
+		// Best-effort delete; --ignore-not-found makes a missing ConfigMap a no-op.
+		_, _ = exec.RunCommandStreamed("Delete dashboard "+entry.Name(), "kubectl", "delete", "configmap", cmName, "--namespace", ns, "--ignore-not-found")
 	}
 
 	return nil
@@ -704,16 +710,17 @@ func (e *Engine) resolveFileTemplate(path, pattern string) (string, func(), erro
 	}
 	if _, err := tmpFile.WriteString(resolved); err != nil {
 		name := tmpFile.Name()
-		tmpFile.Close()
-		os.Remove(name)
+		_ = tmpFile.Close()
+		_ = os.Remove(name)
 		return "", func() {}, err
 	}
 	if err := tmpFile.Close(); err != nil {
 		name := tmpFile.Name()
-		os.Remove(name)
+		_ = os.Remove(name)
 		return "", func() {}, err
 	}
-	return tmpFile.Name(), func() { os.Remove(tmpFile.Name()) }, nil
+	name := tmpFile.Name()
+	return name, func() { _ = os.Remove(name) }, nil
 }
 
 // ResolveTemplate resolves Go template variables in a string (e.g., {{.DomainSuffix}}).
@@ -780,7 +787,8 @@ func (e *Engine) markActive(name string) error {
 }
 
 func (e *Engine) markInactive(name string) {
-	os.Remove(filepath.Join(e.stateDir, name+".active"))
+	// Best-effort: a missing marker already means inactive.
+	_ = os.Remove(filepath.Join(e.stateDir, name+".active"))
 }
 
 func (e *Engine) printExploreHints(s *Scenario) {

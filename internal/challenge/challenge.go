@@ -369,7 +369,7 @@ func (e *Engine) appendHistory(rec *RunRecord) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, err = fmt.Fprintf(f, "%s\n", data)
 	return err
 }

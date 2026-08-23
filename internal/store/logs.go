@@ -64,7 +64,7 @@ func (s *Store) AppendLogs(ctx context.Context, runID string, lines []LogLine) (
 		if err != nil {
 			return err
 		}
-		defer stmt.Close()
+		defer func() { _ = stmt.Close() }()
 
 		for _, l := range lines {
 			stream := l.Stream
@@ -109,7 +109,7 @@ func (s *Store) ReadLogs(ctx context.Context, runID string, after int64, limit i
 	if err != nil {
 		return nil, fmt.Errorf("reading logs for run %s: %w", runID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []LogLine
 	for rows.Next() {
@@ -225,7 +225,7 @@ func (s *Store) ListSteps(ctx context.Context, runID string) ([]Step, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing steps for run %s: %w", runID, err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []Step
 	for rows.Next() {
@@ -295,7 +295,7 @@ func (s *Store) ListAudit(ctx context.Context, limit int) ([]AuditEntry, error) 
 	if err != nil {
 		return nil, fmt.Errorf("listing audit entries: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []AuditEntry
 	for rows.Next() {

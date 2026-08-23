@@ -94,7 +94,7 @@ func render(path, tmpl string, v vars, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return t.Execute(f, v)
 }
 

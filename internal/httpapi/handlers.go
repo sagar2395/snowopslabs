@@ -169,7 +169,7 @@ func (s *Server) handleAppDeploy(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Deploy %s", name), "engine/deploy.sh", "deploy", name)
+		_ = s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Deploy %s", name), "engine/deploy.sh", "deploy", name)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -182,7 +182,7 @@ func (s *Server) handleAppDestroy(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Destroy %s", name), "engine/deploy.sh", "destroy", name)
+		_ = s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Destroy %s", name), "engine/deploy.sh", "destroy", name)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -195,7 +195,7 @@ func (s *Server) handleAppBuild(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Build %s", name), "engine/build.sh", name)
+		_ = s.exec.RunScriptStreamedWith(jobID, fmt.Sprintf("Build %s", name), "engine/build.sh", name)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -596,7 +596,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Subscribe to action events
 	actionCh := s.exec.Broadcast.Subscribe()
@@ -678,7 +678,7 @@ func (s *Server) handleRuntimeActivate(w http.ResponseWriter, r *http.Request) {
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.runtimes.ActivateWith(jobID, name, s.exec)
+		_ = s.runtimes.ActivateWith(jobID, name, s.exec)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -691,7 +691,7 @@ func (s *Server) handleRuntimeDeactivate(w http.ResponseWriter, r *http.Request)
 	}
 	jobID := s.exec.NextActionID()
 	go func() {
-		s.runtimes.DeactivateWith(jobID, name, s.exec)
+		_ = s.runtimes.DeactivateWith(jobID, name, s.exec)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }

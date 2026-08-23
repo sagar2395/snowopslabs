@@ -65,7 +65,7 @@ var scenarioListCmd = &cobra.Command{
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", s.Name, s.DisplayName, s.Category, source, status)
 		}
-		w.Flush()
+		_ = w.Flush()
 
 		fmt.Println("\nSee what a scenario installs, its objectives and checks:")
 		fmt.Println("  labctl scenario info <name>")
@@ -142,7 +142,7 @@ var scenarioStatusCmd = &cobra.Command{
 				fmt.Fprintf(w, "%s\t%s\tactive\n", s.Name, s.Category)
 			}
 		}
-		w.Flush()
+		_ = w.Flush()
 		fmt.Println("\nInspect a scenario: labctl scenario info <name>")
 		return nil
 	},
@@ -236,7 +236,7 @@ func printCheckResults(results []checks.Result) {
 		}
 		fmt.Fprintf(w, "%s\t%s\t(%s)\t%s\t%dms\n", mark, r.Name, r.Type, detail, r.DurationMS)
 	}
-	w.Flush()
+	_ = w.Flush()
 }
 
 func orDash(s string) string {

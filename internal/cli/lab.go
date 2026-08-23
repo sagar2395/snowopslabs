@@ -95,7 +95,7 @@ var labSnapshotsCmd = &cobra.Command{
 			fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%d\n",
 				s.Name, s.TakenAt.Format("2006-01-02 15:04"), len(s.Platform), len(s.Apps), len(s.Scenarios))
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }

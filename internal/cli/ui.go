@@ -37,13 +37,15 @@ var uiCmd = &cobra.Command{
 
 func openBrowser(url string) {
 	var err error
+	// Opening the browser is fire-and-forget (Start, not Wait): the launched
+	// process outlives this call, so a context would have nothing to cancel.
 	switch runtime.GOOS {
 	case "linux":
-		err = osExec.Command("xdg-open", url).Start()
+		err = osExec.Command("xdg-open", url).Start() //nolint:noctx
 	case "darwin":
-		err = osExec.Command("open", url).Start()
+		err = osExec.Command("open", url).Start() //nolint:noctx
 	case "windows":
-		err = osExec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+		err = osExec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start() //nolint:noctx
 	}
 	if err != nil {
 		fmt.Printf("Could not open browser: %v\n", err)

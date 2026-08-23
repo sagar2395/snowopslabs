@@ -3,6 +3,7 @@ package incident
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,7 +156,7 @@ func TestInject_StatusResolutionLoop(t *testing.T) {
 	ctx := context.Background()
 
 	// Nothing active initially.
-	if _, err := e.Status(ctx, testRunner(), ""); err != ErrNoActive {
+	if _, err := e.Status(ctx, testRunner(), ""); !errors.Is(err, ErrNoActive) {
 		t.Fatalf("expected ErrNoActive, got %v", err)
 	}
 

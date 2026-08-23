@@ -53,7 +53,7 @@ var incidentListCmd = &cobra.Command{
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s/%s\t%s\n",
 				f.Name, f.Category, f.Severity, f.Target.Namespace, f.Target.Workload, status)
 		}
-		w.Flush()
+		_ = w.Flush()
 
 		for key, err := range incEng.LoadErrors() {
 			fmt.Fprintf(os.Stderr, "Warning: fault %s failed to load: %v\n", key, err)
@@ -256,7 +256,7 @@ var incidentHistoryCmd = &cobra.Command{
 				detect, (time.Duration(r.ResolveSeconds) * time.Second).String(),
 				r.HintsUsed, r.ResolvedBy)
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }

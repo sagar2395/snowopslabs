@@ -1,0 +1,110 @@
+# CD Pipeline — build, push image, update manifests
+name: CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/go-api/**'
+      - 'apps/echo-server/**'
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  detect-changes:
+    name: Detect changed apps
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.filter.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: filter
+        name: Find changed apps
+        run: |
+          changed=$(git diff --name-only HEAD~1 HEAD | grep '^apps/' | cut -d'/' -f2 | sort -u | jq -R -s -c 'split("\n")[:-1]')
+          echo "apps=$changed" >> $GITHUB_OUTPUT
+
+  build-and-push:
+    name: Build & push
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.apps != '[]'
+    strategy:
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/${{ matrix.app }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.app }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.app }}:latest
+
+  update-manifests:
+    name: Update manifests
+    runs-on: ubuntu-latest
+    needs: [detect-changes, build-and-push]
+    strategy:
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update image tag in Helm values
+        run: |
+          VALUES="apps/${{ matrix.app }}/deploy/helm/values-dev.yaml"
+          if [ -f "$VALUES" ]; then
+            sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|" "$VALUES"
+            sed -i "s|repository:.*|repository: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.app }}|" "$VALUES"
+          fi
+
+      - name: Commit and push
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add apps/${{ matrix.app }}/deploy/helm/values-dev.yaml
+          git diff --staged --quiet || git commit -m "chore: update ${{ matrix.app }} image to ${{ github.sha }}"
+          git push
+
+  notify-argocd:
+    name: ArgoCD sync
+    runs-on: ubuntu-latest
+    needs: [detect-changes, update-manifests]
+    if: needs.detect-changes.outputs.apps != '[]' && secrets.ARGOCD_SERVER != ''
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        app: ${{ fromJson(needs.detect-changes.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ArgoCD CLI
+        run: |
+          . versions.env
+          curl -sSL -o /usr/local/bin/argocd \
+            "https://github.com/argoproj/argo-cd/releases/download/v${ARGOCD_VERSION}/argocd-linux-amd64"
+          chmod +x /usr/local/bin/argocd
+      - name: Trigger ArgoCD sync
+        run: |
+          argocd app sync ${{ matrix.app }} \
+            --grpc-web \
+            --server ${{ secrets.ARGOCD_SERVER }} \
+            --auth-token ${{ secrets.ARGOCD_AUTH_TOKEN }}

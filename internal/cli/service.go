@@ -29,7 +29,7 @@ var serviceListCmd = &cobra.Command{
 		for _, s := range svcs {
 			fmt.Fprintf(w, "%s\t%s\n", s.Name, s.Path)
 		}
-		w.Flush()
+		_ = w.Flush()
 		return nil
 	},
 }

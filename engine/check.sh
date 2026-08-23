@@ -55,8 +55,8 @@ case "$cmd" in
     # configured provider and pass if any controller pod is Running.
     case "$provider" in
       traefik) selectors="app.kubernetes.io/name=traefik app=traefik" ;;
-      nginx)   selectors="app.kubernetes.io/name=ingress-nginx app.kubernetes.io/component=controller" ;;
-      *)       selectors="app.kubernetes.io/name=${provider} app=${provider}" ;;
+      nginx) selectors="app.kubernetes.io/name=ingress-nginx app.kubernetes.io/component=controller" ;;
+      *) selectors="app.kubernetes.io/name=${provider} app=${provider}" ;;
     esac
     for sel in $selectors; do
       if kubectl get pods --all-namespaces -l "$sel" --no-headers 2>/dev/null | grep -q Running; then

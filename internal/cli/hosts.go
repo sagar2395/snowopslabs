@@ -91,7 +91,7 @@ func buildBlock(hosts []string) string {
 // reexecWithSudo re-runs the current invocation under sudo, preserving all flags.
 func reexecWithSudo() error {
 	fmt.Fprintln(os.Stderr, "Root required — re-running with sudo...")
-	c := osexec.Command("sudo", append([]string{os.Args[0]}, os.Args[1:]...)...) //nolint:gosec
+	c := osexec.Command("sudo", append([]string{os.Args[0]}, os.Args[1:]...)...) //nolint:gosec,noctx // re-exec of this same CLI under sudo; a context would not manage the replacement process
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -138,7 +138,7 @@ func writeHostsBlock(block string) error {
 		result += "\n"
 	}
 
-	if err := os.WriteFile(hostsFile, []byte(result), 0644); err != nil {
+	if err := os.WriteFile(hostsFile, []byte(result), 0644); err != nil { //nolint:gosec // G703: hostsFile is the fixed /etc/hosts constant; this runs under sudo by design
 		return fmt.Errorf("writing %s: %w", hostsFile, err)
 	}
 

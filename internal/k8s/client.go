@@ -47,7 +47,7 @@ func GetClusterInfo(ctx context.Context) (*ClusterInfo, error) {
 	// Get current context
 	ctxOut, err := kubectl(ctx, "config", "current-context")
 	if err != nil {
-		return info, nil // not connected
+		return info, nil //nolint:nilerr // no current-context means not connected — report empty info, not an error
 	}
 	info.Context = ctxOut
 	info.Connected = true
@@ -142,7 +142,7 @@ func GetAppStatus(ctx context.Context, appName, namespace string) (*AppStatus, e
 	// Check if the namespace exists
 	_, err := kubectl(ctx, "get", "namespace", namespace, "--no-headers")
 	if err != nil {
-		return status, nil // Not deployed
+		return status, nil //nolint:nilerr // a missing namespace means the app is simply not deployed
 	}
 
 	// Get deployment info

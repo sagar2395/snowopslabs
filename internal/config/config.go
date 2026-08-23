@@ -224,7 +224,7 @@ func loadEnvFile(path string) {
 		}
 		// Don't override existing env vars
 		if _, exists := os.LookupEnv(key); !exists {
-			os.Setenv(key, val)
+			_ = os.Setenv(key, val)
 		}
 	}
 }

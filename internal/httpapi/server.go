@@ -248,7 +248,7 @@ type ErrorResponse struct {
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func respondError(w http.ResponseWriter, status int, code, msg string) {
