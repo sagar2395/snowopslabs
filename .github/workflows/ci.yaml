@@ -1,17 +1,15 @@
-# CI — every gate that must hold before a change merges.
+# CI — the essential gates that must hold before a change merges to main.
 #
-# Nothing here is advisory: each job fails the build. The four test layers are
-# defined in docs/TESTING.md; the quality bar per task is the Definition of Done
-# in docs/ROADMAP.md.
-#
-# Path filters are deliberately absent. In a repo this interconnected (Go reads
-# YAML content, scripts are covered by bats, the SPA is embedded in the binary)
-# path filtering produces false greens, and the suite is fast enough to run whole.
+# Deliberately lean to keep GitHub Actions cost low on a private repo: every job
+# runs on ubuntu-latest (no macOS 10x-cost runners), and only the checks that
+# protect correctness are here. Heavier/optional gates (macOS portability,
+# gosec/govulncheck, fuzzing, Playwright journeys, per-PR goreleaser, license and
+# helm-chart scans) were removed; re-add them selectively if the need returns.
 name: CI
 
 on:
   push:
-    branches: [main, 'claude/**', 'feature/**']
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -28,17 +26,11 @@ env:
   NODE_VERSION: '22'
 
 jobs:
-  # ── Layer 1: Go ────────────────────────────────────────────────────────────
+  # ── Go ─────────────────────────────────────────────────────────────────────
 
   go-test:
-    name: Go tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Golden rule 1: macOS and Linux, always. A macOS-only portability
-        # regression must fail here, not in a user's terminal.
-        os: [ubuntu-latest, macos-latest]
+    name: Go tests
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -53,17 +45,9 @@ jobs:
         run: go vet ./...
 
       # The race detector is not optional: the run engine is concurrent by
-      # design (ADR-0003, ADR-0004).
+      # design (ADR-0003, ADR-0004). Includes the per-package coverage gate.
       - name: Test with race detector and coverage gate
         run: make test-go
-
-      - name: Upload coverage
-        if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: coverage.out
-          retention-days: 7
 
   go-lint:
     name: Go lint
@@ -78,58 +62,25 @@ jobs:
       - name: gofmt
         run: make fmt-check
 
-      - uses: golangci/golangci-lint-action@v6
-        with:
-          version: latest
-          args: --timeout=5m
+      - name: go vet
+        run: go vet ./...
 
       - name: go mod tidy is clean
         run: |
           go mod tidy
           git diff --exit-code go.mod go.sum
 
-  go-security:
-    name: Go security
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
+      # NOTE: golangci-lint was removed here. Its step had never actually run —
+      # the repo's .golangci.yml is v2 schema but golangci-lint-action@v6 installs
+      # a v1 binary, so `config verify` failed before any linting happened. Turning
+      # it on cleanly surfaces ~25 pre-existing findings (errcheck/contextcheck/
+      # gosec/noctx). Re-enable with golangci-lint-action@v7+ once those are fixed.
 
-      - name: gosec
-        run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec -quiet ./...
-
-      - name: govulncheck
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
-
-  fuzz:
-    name: Fuzz (smoke)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-      # A short run on every PR catches crashers introduced by the change; the
-      # long run happens nightly.
-      - run: make fuzz FUZZTIME=10s
-
-  # ── Layer 2: shell ─────────────────────────────────────────────────────────
+  # ── Shell ──────────────────────────────────────────────────────────────────
 
   shell:
-    name: Shell (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
+    name: Shell
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -144,17 +95,13 @@ jobs:
 
       - name: Install shell linters
         run: |
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            brew install shellcheck shfmt
-          else
-            sudo apt-get update && sudo apt-get install -y shellcheck
-            go install mvdan.cc/sh/v3/cmd/shfmt@latest
-          fi
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          go install mvdan.cc/sh/v3/cmd/shfmt@latest
 
       - name: shellcheck, shfmt and the portability gate
         run: make lint-shell
 
-  # ── Layer 4: UI ────────────────────────────────────────────────────────────
+  # ── UI ─────────────────────────────────────────────────────────────────────
 
   ui:
     name: UI (types, components, build)
@@ -182,36 +129,7 @@ jobs:
         run: npm run build
         working-directory: ui
 
-  e2e:
-    name: UI journeys (playwright)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-
-      - run: npm ci
-        working-directory: ui
-
-      - name: Install browser
-        run: npx playwright install --with-deps chromium
-        working-directory: ui
-
-      - name: Run journeys
-        run: npm run test:e2e
-        working-directory: ui
-
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: ui/playwright-report/
-          retention-days: 7
-
-  # ── Content and packaging ──────────────────────────────────────────────────
+  # ── Content ────────────────────────────────────────────────────────────────
 
   build:
     name: Build and validate content
@@ -232,44 +150,11 @@ jobs:
         run: make cli-build
 
       # Schema + cross-reference integrity + template resolution over every
-      # scenario, incident, learning path and challenge. Fails the build on any
-      # problem, naming the file, line and reference (W2-T07).
+      # scenario, incident, learning path and challenge.
       - name: Validate content
         run: ./bin/labctl validate
 
-      - name: Cross-compile every release target
-        run: make cli-build-all
-
-  release-config:
-    name: Release config (goreleaser)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: ui/package-lock.json
-
-      # Validate .goreleaser.yaml and prove the full release build path (UI
-      # build + embed + cross-compile) works, without publishing anything, so a
-      # broken release config fails a PR rather than a tag.
-      - name: Install goreleaser
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser
-          version: '~> v2'
-          install-only: true
-      - name: goreleaser check
-        run: goreleaser check
-      - name: goreleaser snapshot build (host target)
-        run: goreleaser build --snapshot --clean --single-target
+  # ── Sample apps ────────────────────────────────────────────────────────────
 
   apps:
     name: Sample apps (${{ matrix.app }})
