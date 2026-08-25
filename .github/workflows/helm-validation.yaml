@@ -1,12 +1,16 @@
-# Helm Chart Validation — runs on PRs touching Helm charts
+# Helm Chart Validation — runs on every PR to main.
+#
+# Its jobs ("Discover charts", "Validate (…)") are REQUIRED status checks in the
+# protect-main ruleset. A required check must never be path-filtered: on a PR
+# that touches no matching path the workflow is skipped, the required context is
+# never reported, and the ruleset's strict policy blocks the PR forever waiting
+# for a status that will never arrive. So this runs on all PRs and stays cheap
+# (helm lint/template on a couple of small charts).
 name: Helm Validation
 
 on:
   pull_request:
-    paths:
-      - 'apps/*/deploy/helm/**'
-      - 'platform/**'
-      - 'scenarios/*/values/**'
+    branches: [main]
 
 jobs:
   discover-charts:
