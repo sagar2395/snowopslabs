@@ -12,13 +12,13 @@ on:
       - '**/go.mod'
       - '**/go.sum'
       - '.github/workflows/license-scan.yml'
+  # No path filter here: the "Go dependency licenses" job is a REQUIRED status
+  # check in the protect-main ruleset, and a required check must run on every PR.
+  # If it were path-filtered, a PR that touches no Go files would skip this
+  # workflow, the required context would never report, and the ruleset's strict
+  # policy would block the PR indefinitely.
   pull_request:
-    paths:
-      - 'cmd/**'
-      - 'pkg/**'
-      - '**/go.mod'
-      - '**/go.sum'
-      - '.github/workflows/license-scan.yml'
+    branches: [main]
 
 permissions:
   contents: read
