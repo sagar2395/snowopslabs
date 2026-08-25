@@ -79,7 +79,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"go-api|echo-server\"}[15m])) or vector(0)",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"go-api\"}[15m])) or vector(0)",
           "legendFormat": "Restarts"
         }
       ],
@@ -104,7 +104,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(kube_deployment_status_replicas_unavailable{namespace=~\"go-api|echo-server\"}) or vector(0)",
+          "expr": "sum(kube_deployment_status_replicas_unavailable{namespace=~\"go-api\"}) or vector(0)",
           "legendFormat": "Unavailable"
         }
       ],
@@ -157,13 +157,13 @@
       }
     },
     {
-      "title": "HTTP Request Rate (echo-server)",
+      "title": "HTTP Request Rate (go-api)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{namespace=\"echo-server\"}[1m])) by (code)",
+          "expr": "sum(rate(http_requests_total{namespace=\"go-api\"}[1m])) by (code)",
           "legendFormat": "{{code}}"
         }
       ],
@@ -229,21 +229,21 @@
       }
     },
     {
-      "title": "HTTP Request Latency p99 (echo-server)",
+      "title": "HTTP Request Latency p99 (go-api)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"echo-server\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"go-api\"}[5m])))",
           "legendFormat": "p99"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"echo-server\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"go-api\"}[5m])))",
           "legendFormat": "p95"
         },
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"echo-server\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{namespace=\"go-api\"}[5m])))",
           "legendFormat": "p50"
         }
       ],
@@ -273,7 +273,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"go-api|echo-server\"}[1m])",
+          "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"go-api\"}[1m])",
           "legendFormat": "{{namespace}}/{{pod}}"
         }
       ],
@@ -296,11 +296,11 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "kube_deployment_status_replicas_ready{namespace=~\"go-api|echo-server\"}",
+          "expr": "kube_deployment_status_replicas_ready{namespace=~\"go-api\"}",
           "legendFormat": "{{deployment}} ready"
         },
         {
-          "expr": "kube_deployment_spec_replicas{namespace=~\"go-api|echo-server\"}",
+          "expr": "kube_deployment_spec_replicas{namespace=~\"go-api\"}",
           "legendFormat": "{{deployment}} desired"
         }
       ],
@@ -329,11 +329,11 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"go-api|echo-server\", container!=\"\"}[5m])) by (namespace, pod)",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"go-api\", container!=\"\"}[5m])) by (namespace, pod)",
           "legendFormat": "{{namespace}}/{{pod}}"
         },
         {
-          "expr": "sum(kube_pod_container_resource_limits{namespace=~\"go-api|echo-server\", resource=\"cpu\"}) by (namespace, pod)",
+          "expr": "sum(kube_pod_container_resource_limits{namespace=~\"go-api\", resource=\"cpu\"}) by (namespace, pod)",
           "legendFormat": "{{namespace}}/{{pod}} limit"
         }
       ],
@@ -364,11 +364,11 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(container_memory_working_set_bytes{namespace=~\"go-api|echo-server\", container!=\"\"}) by (namespace, pod) / 1024 / 1024",
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"go-api\", container!=\"\"}) by (namespace, pod) / 1024 / 1024",
           "legendFormat": "{{namespace}}/{{pod}}"
         },
         {
-          "expr": "sum(kube_pod_container_resource_limits{namespace=~\"go-api|echo-server\", resource=\"memory\"}) by (namespace, pod) / 1024 / 1024",
+          "expr": "sum(kube_pod_container_resource_limits{namespace=~\"go-api\", resource=\"memory\"}) by (namespace, pod) / 1024 / 1024",
           "legendFormat": "{{namespace}}/{{pod}} limit"
         }
       ],
@@ -399,11 +399,11 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(container_network_receive_errors_total{namespace=~\"go-api|echo-server\"}[5m])) by (namespace, pod)",
+          "expr": "sum(rate(container_network_receive_errors_total{namespace=~\"go-api\"}[5m])) by (namespace, pod)",
           "legendFormat": "{{namespace}}/{{pod}} rx errors"
         },
         {
-          "expr": "sum(rate(container_network_transmit_errors_total{namespace=~\"go-api|echo-server\"}[5m])) by (namespace, pod)",
+          "expr": "sum(rate(container_network_transmit_errors_total{namespace=~\"go-api\"}[5m])) by (namespace, pod)",
           "legendFormat": "{{namespace}}/{{pod}} tx errors"
         }
       ],
@@ -425,7 +425,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "increase(kube_pod_container_status_last_terminated_reason{namespace=~\"go-api|echo-server\", reason=\"OOMKilled\"}[5m])",
+          "expr": "increase(kube_pod_container_status_last_terminated_reason{namespace=~\"go-api\", reason=\"OOMKilled\"}[5m])",
           "legendFormat": "{{namespace}}/{{pod}} ({{container}})"
         }
       ],

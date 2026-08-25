@@ -95,4 +95,4 @@ explore:
     - "Test with: kubectl run test --image=nginx -- Kyverno should enforce require-labels and disallow-privileged policies"
     - "cert-manager creates a self-signed CA, then a CA issuer — use lab-ca-issuer for certificates"
     - "Network policies deny all traffic by default, then allow DNS, monitoring, and ingress specifically"
-    - "Try accessing echo-server from go-api namespace — should be blocked by network policies"
+    - "Try accessing an external namespace from go-api — should be blocked by network policies"
