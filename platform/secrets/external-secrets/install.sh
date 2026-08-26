@@ -10,7 +10,7 @@ set -euo pipefail
 # it (install secrets/vault first).
 #
 # Config (env, with defaults — scripts never source .env themselves):
-#   ESO_CHART_VERSION     pinned external-secrets chart version (versions.env)
+#   ESO_CHART_VERSION     pinned external-secrets chart version (config/versions.env)
 #   VAULT_DEV_ROOT_TOKEN  Vault token ESO authenticates with (default: root)
 #   SECRETS_NAMESPACE     namespace to sync the secret into (default: go-api)
 #   VAULT_NAMESPACE       namespace where Vault runs (default: vault)

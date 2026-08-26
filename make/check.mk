@@ -3,10 +3,10 @@
 .PHONY: check-tools check-cluster check-ingress
 
 check-tools:
-	@bash engine/check.sh tools
+	@bash src/engine/check.sh tools
 
 check-cluster:
-	@bash engine/check.sh cluster
+	@bash src/engine/check.sh cluster
 
 check-ingress:
-	@bash engine/check.sh ingress
+	@bash src/engine/check.sh ingress

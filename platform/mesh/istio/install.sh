@@ -5,7 +5,7 @@ set -euo pipefail
 # Selected via MESH_PROVIDER=istio. Portable + idempotent.
 #
 # Config (env, with defaults — scripts never source .env themselves):
-#   ISTIO_VERSION   pinned chart/app version (see versions.env)
+#   ISTIO_VERSION   pinned chart/app version (see config/versions.env)
 #   MESH_NAMESPACE  workload namespace to enrol into the mesh (default: go-api)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

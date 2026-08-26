@@ -23,7 +23,7 @@ requires:
 
 env_variables:
   COST_PROVIDER: "Active provider: opencost"
-  OPENCOST_CHART_VERSION: "opencost: pinned chart version (versions.env)"
+  OPENCOST_CHART_VERSION: "opencost: pinned chart version (config/versions.env)"
   MONITORING_NAMESPACE: "Namespace where Prometheus runs (default: monitoring)"
   PROMETHEUS_SVC: "Full Prometheus service URL for OpenCost to query (auto-derived from MONITORING_NAMESPACE if unset)"
 
@@ -39,7 +39,7 @@ conventions:
   - Install monitoring/metrics (Prometheus) BEFORE this provider — it reads metrics from there.
   - k3d/lab deployments have no real billing API; on-prem pricing defaults are used.
     Cost numbers are relative (useful for right-sizing) not absolute invoices.
-  - Chart versions are pinned and overridable via env (defaults in versions.env).
+  - Chart versions are pinned and overridable via env (defaults in config/versions.env).
 
 implementations:
   opencost:

@@ -14,7 +14,10 @@ cross-compile from any host:
 - `linux/amd64`, `linux/arm64`
 
 Builds, archives (`.tar.gz`) and a `checksums.txt` (SHA-256) are produced by
-[goreleaser](https://goreleaser.com) from [`.goreleaser.yaml`](.goreleaser.yaml).
+[goreleaser](https://goreleaser.com) from
+[`src/.goreleaser.yaml`](src/.goreleaser.yaml). The Go module lives under `src/`
+(issue #7), so goreleaser runs from there — the CI and release workflows set the
+working directory accordingly.
 
 ## Versioning
 
@@ -37,6 +40,7 @@ first 1.0 release.
 2. Dry-run locally to sanity-check the artifacts (nothing is published):
 
    ```bash
+   cd src    # goreleaser runs where go.mod and .goreleaser.yaml live
    goreleaser release --snapshot --clean --skip=publish
    ls dist/    # four .tar.gz archives + checksums.txt
    ```

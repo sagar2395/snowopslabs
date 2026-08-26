@@ -36,13 +36,16 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-          cache-dependency-path: ui/package-lock.json
+          cache-dependency-path: src/ui/package-lock.json
 
+      # The module and .goreleaser.yaml live under src/ (issue #7); run
+      # goreleaser from there. workdir keeps it building where go.mod is.
       - name: Run goreleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: '~> v2'
           args: release --clean
+          workdir: src
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -25,7 +25,7 @@ requires:
 env_variables:
   MESH_PROVIDER: "Active provider: istio | linkerd"
   MESH_NAMESPACE: "Workload namespace enrolled into the mesh (default: go-api)"
-  ISTIO_VERSION: "istio: pinned chart/app version (see versions.env)"
+  ISTIO_VERSION: "istio: pinned chart/app version (see config/versions.env)"
   LINKERD_CRDS_CHART_VERSION: "linkerd: pinned linkerd-crds chart version"
   LINKERD_CONTROL_PLANE_CHART_VERSION: "linkerd: pinned linkerd-control-plane chart version"
 
@@ -43,7 +43,7 @@ conventions:
   - uninstall.sh removes the inject label/annotation and restarts deployments so
     sidecars are dropped — leaving the namespace mesh-free.
   - Both operations are idempotent and portable (no GNU-only flags).
-  - Chart versions are pinned and overridable via env (defaults in versions.env).
+  - Chart versions are pinned and overridable via env (defaults in config/versions.env).
 
 implementations:
   istio:

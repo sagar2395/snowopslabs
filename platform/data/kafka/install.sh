@@ -6,7 +6,7 @@ set -euo pipefail
 # Portable + idempotent.
 #
 # Config (env, with defaults — scripts never source .env themselves):
-#   STRIMZI_VERSION   pinned strimzi-kafka-operator chart version (versions.env)
+#   STRIMZI_VERSION   pinned strimzi-kafka-operator chart version (config/versions.env)
 #   KAFKA_VERSION     Kafka broker version the operator should run
 #   KAFKA_NAMESPACE   namespace for the operator + Kafka CR (default: kafka)
 #   KAFKA_CLUSTER     Kafka CR name (default: lab-kafka)

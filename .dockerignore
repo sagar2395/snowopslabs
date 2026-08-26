@@ -9,7 +9,7 @@ dist/
 *.test
 coverage.out
 coverage.html
-ui/node_modules/
-ui/dist/
+src/ui/node_modules/
+src/ui/dist/
 **/*.log
 .DS_Store

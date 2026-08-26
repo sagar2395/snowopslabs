@@ -18,7 +18,7 @@ them closed with CI gates.
 
 ### Layer 1 — Go unit tests
 
-**Scope:** every package under `internal/` and `pkg/`.
+**Scope:** every package under `src/internal/` and `src/pkg/`.
 
 Requirements:
 

@@ -7,7 +7,7 @@ enters the open engine.
 
 This package is part of the public SDK and is CODEOWNERS-locked:
 
-- [`pkg/extension`](../../pkg/extension/) — where content comes from
+- [`pkg/extension`](../../src/pkg/extension/) — where content comes from
   (resolvers) and what happens around lifecycle phases (hooks).
 
 > The entitlement seam and the OCI/pack resolver that used to live here were

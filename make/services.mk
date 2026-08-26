@@ -1,7 +1,7 @@
 # Services targets — manage shared services (redis, postgres, etc.)
-# Each service lives under services/<name>/ and has install.sh, uninstall.sh, status.sh
+# Each service lives under src/services/<name>/ and has install.sh, uninstall.sh, status.sh
 
-SERVICES_DIR := services
+SERVICES_DIR := src/services
 
 .PHONY: service-list service-up service-down service-status
 

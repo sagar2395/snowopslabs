@@ -15,7 +15,7 @@ platform modules — and the stability guarantees you can rely on.
 - [SDK & Schema Stability Policy](sdk-stability-policy.md) — what we keep stable
   and how the schema versions.
 - JSON Schema (for editor validation): the per-kind schemas under
-  [`sdk/schemas/`](../../sdk/schemas/) — `scenario`, `incident`, `path`,
+  [`sdk/schemas/`](../../src/sdk/schemas/) — `scenario`, `incident`, `path`,
   `challenge`, and the shared `check`.
 - Validate all content with `labctl validate` (checks schema, cross-references
   and templates; exits non-zero with `file:line: [kind/name] message`). See

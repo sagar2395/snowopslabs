@@ -36,7 +36,7 @@ agreement required — no CLA, no bot account, no click-through.
 | **Platform modules** | `platform/<category>/<provider>/` | platform maintainers |
 | **Incidents / learning / challenges** | `incidents/`, `learn/`, `challenges/` | scenario maintainers |
 | **Documentation** | `docs/` | docs maintainers |
-| **Engine / CLI / SDK** | `cmd/`, `internal/`, `pkg/`, `engine/` | **lead maintainer** (see GOVERNANCE.md) |
+| **Engine / CLI / SDK** | `src/cmd/`, `src/internal/`, `src/pkg/`, `src/engine/` | **lead maintainer** (see GOVERNANCE.md) |
 
 Changes to the engine, the public SDK (`pkg/`), or the scenario schema require an
 **RFC** first — a short markdown PR under `docs/rfcs/` that a maintainer approves
@@ -45,7 +45,8 @@ before implementation. This keeps architectural direction coherent.
 ## Development setup
 
 ```bash
-# Build the CLI, UI embedded (no committed binary)
+# Build the CLI, UI embedded (no committed binary). The Go module lives under
+# src/; the root make targets delegate there and the binary lands at bin/labctl.
 make cli-build
 
 # Run the gates. All four test layers are mandatory — see docs/TESTING.md.

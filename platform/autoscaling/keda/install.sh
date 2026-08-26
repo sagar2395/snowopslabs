@@ -6,7 +6,7 @@ set -euo pipefail
 # Kafka lag, …). Selected via AUTOSCALING_PROVIDER=keda. Portable + idempotent.
 #
 # Config (env, with defaults — scripts never source .env themselves):
-#   KEDA_CHART_VERSION   pinned kedacore/keda chart version (versions.env)
+#   KEDA_CHART_VERSION   pinned kedacore/keda chart version (config/versions.env)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NAMESPACE="keda"

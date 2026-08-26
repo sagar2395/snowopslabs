@@ -8,7 +8,7 @@ set -euo pipefail
 # billing API is configured (suitable for k3d/lab use).
 #
 # Config (env, with defaults — scripts never source .env themselves):
-#   OPENCOST_CHART_VERSION  pinned Helm chart version (versions.env)
+#   OPENCOST_CHART_VERSION  pinned Helm chart version (config/versions.env)
 #   MONITORING_NAMESPACE    namespace where Prometheus runs (default: monitoring)
 #   PROMETHEUS_SVC          Prometheus service address for OpenCost to query
 

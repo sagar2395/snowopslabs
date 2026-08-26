@@ -7,7 +7,7 @@ set -euo pipefail
 # Portable + idempotent.
 #
 # Config (env, with defaults — scripts never source .env themselves):
-#   CNPG_CHART_VERSION  pinned cloudnative-pg chart version (versions.env)
+#   CNPG_CHART_VERSION  pinned cloudnative-pg chart version (config/versions.env)
 #   POSTGRES_NAMESPACE  namespace for the Postgres Cluster CR (default: postgres)
 #   POSTGRES_CLUSTER    Cluster CR name (default: lab-postgres)
 #   POSTGRES_INSTANCES  number of instances (default: 2 — 1 primary + 1 replica)

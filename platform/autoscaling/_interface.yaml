@@ -22,7 +22,7 @@ requires:
 
 env_variables:
   AUTOSCALING_PROVIDER: "Active provider: keda"
-  KEDA_CHART_VERSION: "keda: pinned kedacore/keda chart version (versions.env)"
+  KEDA_CHART_VERSION: "keda: pinned kedacore/keda chart version (config/versions.env)"
 
 scripts:
   install.sh: "Install the operator + metrics server via Helm (idempotent)"
@@ -37,7 +37,7 @@ conventions:
     declared by scenarios/apps, not baked into the provider.
   - Prometheus-trigger ScaledObjects must read the monitoring namespace from a
     template/env (rule 3/4), not a hardcoded namespace.
-  - Chart versions are pinned and overridable via env (defaults in versions.env).
+  - Chart versions are pinned and overridable via env (defaults in config/versions.env).
 
 implementations:
   keda:

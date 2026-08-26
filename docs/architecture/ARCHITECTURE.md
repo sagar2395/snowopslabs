@@ -61,24 +61,34 @@ scripts, never touching Go.
 ## 2. Module layout
 
 The v1 module root sat at `cmd/labctl/`, which made `pkg/` un-importable in the
-idiomatic way and confused tooling. v2 puts the module at the repo root:
+idiomatic way and confused tooling. v2 gave the module a repo-root-derived path.
+Issue #7 then moved the whole module under `src/` so the repository root reads as
+a content/authoring workspace and a later "the engine gets its own repo" split is
+a straight lift of `src/`. **The module path is unchanged**
+(`github.com/sagar2395/snowopslabs`), so every import below is still written with
+no `src/` prefix — only the on-disk path gained one:
 
 ```
-go.mod                          module github.com/sagar2395/snowopslabs
-cmd/labctl/main.go              entrypoint, nothing else
-internal/cli/                   cobra commands — thin, parse + call service
-internal/httpapi/               REST/WS/SSE — thin, decode + call service
-internal/service/               use-cases (the only place invariants live)
-internal/run/                   durable run engine
-internal/store/                 SQLite persistence + migrations
-internal/catalog/               declarative content loading + validation
-internal/toolchain/             external binary adapters + fakes
-internal/config/                layered config resolution
-pkg/checks/                     public: the check engine
-pkg/scenario/                   public: content types + schema
-pkg/extension/                  public: the third-party seam
-ui/                             React SPA (built, embedded into the binary)
+src/go.mod                      module github.com/sagar2395/snowopslabs
+src/cmd/labctl/main.go          entrypoint, nothing else
+src/internal/cli/               cobra commands — thin, parse + call service
+src/internal/httpapi/           REST/WS/SSE — thin, decode + call service
+src/internal/service/           use-cases (the only place invariants live)
+src/internal/run/               durable run engine
+src/internal/store/             SQLite persistence + migrations
+src/internal/catalog/           declarative content loading + validation
+src/internal/toolchain/         external binary adapters + fakes
+src/internal/config/            layered config resolution
+src/pkg/checks/                 public: the check engine
+src/pkg/scenario/               public: content types + schema
+src/pkg/extension/              public: the third-party seam
+src/ui/                         React SPA (built, embedded into the binary)
 ```
+
+The user-facing content (`scenarios/`, `incidents/`, `apps/`, `platform/`,
+`runtimes/`) stays at the repo root; `labctl` discovers it by walking up from the
+working directory (it keys on `scenarios/` + `runtimes/`), so it runs unchanged
+from the repo root even though the binary is built under `src/`.
 
 `internal/cli` and `internal/httpapi` are deliberately dumb. If logic can be
 tested without a terminal or an HTTP request, it belongs in `internal/service`.

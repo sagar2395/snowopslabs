@@ -4,6 +4,15 @@
 **Date:** 2026-07-26
 **Wave:** W0
 
+> **Update (issue #7 — repo restructure):** the Go module moved from the repo
+> root into `src/` so the root reads as a content/authoring workspace and a
+> later "the engine gets its own repo" split is a straight lift of `src/`. The
+> **module path is unchanged** (`github.com/sagar2395/snowopslabs`), so every
+> import path in this ADR still holds — only the on-disk location gained a `src/`
+> prefix (e.g. `src/internal/service`). Tooling still runs from the module root;
+> that root is now `src/`, and the top-level `Makefile` delegates into it. The
+> service-layer decision below is otherwise unaffected.
+
 ## Context
 
 v1's `go.mod` sat at `cmd/labctl/`, making the module path
