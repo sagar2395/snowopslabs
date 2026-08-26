@@ -21,22 +21,22 @@ coverage.html
 .coverage-func.txt
 
 ## Embedded UI in the binary (copied at build time by make cli-build)
-internal/webui/dist/*
-!internal/webui/dist/.gitkeep
+src/internal/webui/dist/*
+!src/internal/webui/dist/.gitkeep
 
 ## SPA build output and dependencies
-ui/node_modules/
-ui/dist/*
-!ui/dist/.gitkeep
-ui/.env.local
-ui/*.tsbuildinfo
+src/ui/node_modules/
+src/ui/dist/*
+!src/ui/dist/.gitkeep
+src/ui/.env.local
+src/ui/*.tsbuildinfo
 
 ## UI test output
-ui/coverage/
-ui/test-results/
-ui/playwright-report/
-ui/blob-report/
-ui/.playwright/
+src/ui/coverage/
+src/ui/test-results/
+src/ui/playwright-report/
+src/ui/blob-report/
+src/ui/.playwright/
 
 ## Docker
 *.tar

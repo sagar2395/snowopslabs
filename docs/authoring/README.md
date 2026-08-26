@@ -15,7 +15,7 @@ platform modules — and the stability guarantees you can rely on.
 - [SDK & Schema Stability Policy](sdk-stability-policy.md) — what we keep stable
   and how the schema versions.
 - JSON Schema (for editor validation): the per-kind schemas under
-  [`sdk/schemas/`](../../sdk/schemas/) — `scenario`, `incident`, `path`,
+  [`sdk/schemas/`](../../src/sdk/schemas/) — `scenario`, `incident`, `path`,
   `challenge`, and the shared `check`.
 - Validate all content with `labctl validate` (checks schema, cross-references
   and templates; exits non-zero with `file:line: [kind/name] message`). See
@@ -48,7 +48,7 @@ publishing is `git push` and consuming is `git clone` plus
 ## Validate before you PR
 
 ```bash
-bin/labctl validate                  # schema + cross-reference integrity (CI gate)
-bin/labctl scenario info <name>      # parses + renders stages/checks
-bin/labctl scenario verify <name>    # runs the checks against a live cluster
+src/bin/labctl validate                  # schema + cross-reference integrity (CI gate)
+src/bin/labctl scenario info <name>      # parses + renders stages/checks
+src/bin/labctl scenario verify <name>    # runs the checks against a live cluster
 ```

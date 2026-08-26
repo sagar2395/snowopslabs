@@ -7,8 +7,8 @@ on:
   push:
     branches: [main]
     paths:
-      - 'cmd/**'
-      - 'pkg/**'
+      - 'src/cmd/**'
+      - 'src/pkg/**'
       - '**/go.mod'
       - '**/go.sum'
       - '.github/workflows/license-scan.yml'
@@ -31,12 +31,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          # The Go module lives under src/ (issue #7).
+          go-version-file: src/go.mod
       - name: Install go-licenses
         run: go install github.com/google/go-licenses@latest
       - name: Check disallowed licenses
         # forbidden + restricted == GPL/AGPL/LGPL family and similar copyleft.
-        run: go-licenses check ./... --disallowed_types=forbidden,restricted
+        # The module now lives under src/, so the repo-root LICENSE is outside
+        # the module tree; --ignore skips our own first-party packages (they are
+        # Apache-2.0 and are not what this scan is for — it guards dependencies).
+        working-directory: src
+        run: go-licenses check ./... --disallowed_types=forbidden,restricted --ignore github.com/sagar2395/snowopslabs
 
   spdx-headers:
     name: SPDX headers (advisory)
@@ -51,5 +56,5 @@ jobs:
               echo "::warning file=$f::missing SPDX-License-Identifier header"
               missing=$((missing+1))
             fi
-          done < <(find cmd pkg -name '*.go' 2>/dev/null)
+          done < <(find src/cmd src/pkg -name '*.go' 2>/dev/null)
           echo "Go files missing SPDX header: $missing (advisory; required on NEW files)"

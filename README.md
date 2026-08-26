@@ -62,19 +62,19 @@ make setup-tools              # installs tools for PROFILE (default: k3d)
 make setup-tools PROFILE=kind # headless alternative
 ```
 
-Versions are pinned in [`versions.env`](versions.env).
+Versions are pinned in [`config/versions.env`](config/versions.env).
 
 ## Quickstart
 
 **You always need the repo checked out** — `labctl` runs the scripts under
-`scenarios/ platform/ runtimes/ engine/ bootstrap/` at runtime, so the release
-archive (which ships only the binary) is not standalone. Clone the repo, then get
+`scenarios/ platform/ runtimes/ bootstrap/` and `src/engine/` at runtime, so the
+release archive (which ships only the binary) is not standalone. Clone the repo, then get
 `labctl` on your `PATH` one of two ways. **`make` is optional** — everything below
 runs through `labctl` itself.
 
 ```bash
 git clone <repo-url> && cd snowopslabs
-cp .env.example .env
+cp config/.env.example .env
 ```
 
 **Option A — download a release (no Go/Node toolchain, no `make`):**
@@ -93,12 +93,13 @@ labctl --version
 **Option B — build from source** (needs Go 1.24+ and Node 22+):
 
 ```bash
-make cli-build          # builds bin/labctl (UI embedded); run it as ./bin/labctl
+make cli-build          # builds src/bin/labctl (UI embedded); run it as ./src/bin/labctl
 make cli-install        # …or install onto PATH: copies to $(go env GOPATH)/bin/labctl
 ```
 
-> `bin/` is just the build-output directory, so `make cli-build` alone leaves the
-> binary at `./bin/labctl`. Use `make cli-install` (ensure `$(go env GOPATH)/bin`
+> The Go source lives under `src/` (the root `make` targets delegate there), so
+> `make cli-build` leaves the binary at `./src/bin/labctl`. Use `make cli-install`
+> (ensure `$(go env GOPATH)/bin`
 > is on your `PATH`) or the release `mv` above to get a plain `labctl`. Run
 > `labctl` from inside the repo (it auto-detects the project root), or from
 > anywhere with `--project-dir /path/to/snowopslabs`.
@@ -146,24 +147,42 @@ labctl teardown                       # remove everything (never hangs)
 
 ## Project structure
 
+The repository root is a content/authoring workspace: it surfaces what a *user*
+of the project edits (scenarios, incidents, apps, platform). The Go/labctl
+source is self-contained under `src/`, so a later "the engine gets its own repo"
+split is a straight lift of that directory (issue #7).
+
 ```
-go.mod                    module github.com/sagar2395/snowopslabs (repo root)
-cmd/labctl/               entrypoint
-internal/cli/             cobra commands — thin adapters
-internal/httpapi/         REST/WS — thin adapters
-internal/run/             durable run engine (cancel, timeouts, locks, logs)
-internal/store/           SQLite persistence
-internal/toolchain/       kubectl/helm/k3d adapters + fakes for tests
-pkg/                      public SDK: checks, scenario types, extension seam
-ui/                       React SPA, embedded into the binary
-platform/<cat>/<prov>/    install.sh / uninstall.sh / status.sh / values.yaml
+# User-facing content and config at the root
 scenarios/ incidents/     declarative content
 learn/ challenges/
+platform/<cat>/<prov>/    install.sh / uninstall.sh / status.sh / values.yaml
 runtimes/<profile>/       k3d | kind | incluster
 apps/<name>/              sample workloads
-test/shell/               bats suites with kubectl/helm stubbed
+bootstrap/                tool installation
+config/                   versions.env, .env.example (non-dotfile config)
 docs/                     PRODUCT, ROADMAP, TESTING, architecture/, adr/, runbooks/
+Makefile make/            thin root Makefile + orchestration/shell targets
+
+# The labctl Go module — self-contained under src/
+src/go.mod                module github.com/sagar2395/snowopslabs (imports unchanged)
+src/Makefile src/make/    build + test targets (delegated to from the root)
+src/cmd/labctl/           entrypoint
+src/internal/cli/         cobra commands — thin adapters
+src/internal/httpapi/     REST/WS — thin adapters
+src/internal/run/         durable run engine (cancel, timeouts, locks, logs)
+src/internal/store/       SQLite persistence
+src/internal/toolchain/   kubectl/helm/k3d adapters + fakes for tests
+src/pkg/                  public SDK: checks, scenario types, extension seam
+src/ui/                   React SPA, embedded into the binary
+src/engine/               app build/deploy/check strategy scripts
+src/services/             shared services (redis, pager, traffic)
+src/test/shell/           bats suites with kubectl/helm stubbed
 ```
+
+`labctl` discovers content by walking up from the working directory to the
+content root (it keys on `scenarios/` + `runtimes/`), so it still runs unchanged
+from the repo root even though the binary is built under `src/`.
 
 
 ## Documentation
@@ -196,7 +215,7 @@ make lint              # every static-analysis gate
 
 ## Configuration
 
-Global settings live in `.env` (from [`.env.example`](.env.example)):
+Global settings live in `.env` (from [`config/.env.example`](config/.env.example)):
 
 ```bash
 PROFILE=k3d                    # k3d | kind | incluster

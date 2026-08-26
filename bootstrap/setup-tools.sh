@@ -14,7 +14,7 @@ case "$ARCH" in
 esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION_FILE="${SCRIPT_DIR}/../versions.env"
+VERSION_FILE="${SCRIPT_DIR}/../config/versions.env"
 
 if [ ! -f "$VERSION_FILE" ]; then
   echo "Error: versions.env not found at $VERSION_FILE" >&2

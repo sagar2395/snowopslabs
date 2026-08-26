@@ -13,29 +13,32 @@
 APPS := $(notdir $(patsubst %/,%,$(filter %/,$(wildcard apps/*/))))
 
 
-.PHONY: build local-run deploy destroy-app lint validate \
+.PHONY: build local-run deploy destroy-app app-lint validate \
         deploy-all destroy-all-apps
 
 # build target dispatches to the chosen build strategy
 build:
-	@bash engine/build.sh $(APP_NAME)
+	@bash src/engine/build.sh $(APP_NAME)
 
 # run locally if the app is a binary
 local-run:
-	@bash engine/run.sh $(APP_NAME)
+	@bash src/engine/run.sh $(APP_NAME)
 
 # deploy/destroy are completely strategy-driven
 deploy:
-	@bash engine/deploy.sh deploy $(APP_NAME)
+	@bash src/engine/deploy.sh deploy $(APP_NAME)
 
 destroy-app:
-	@bash engine/deploy.sh destroy $(APP_NAME)
+	@bash src/engine/deploy.sh destroy $(APP_NAME)
 
-lint:
-	@bash engine/deploy.sh lint $(APP_NAME)
+# Per-app helm/manifest lint via the app's deploy strategy. Named app-lint so
+# it does not collide with the repo-wide `lint` (static analysis) in the root
+# Makefile — `make app-lint APP_NAME=<name>`.
+app-lint:
+	@bash src/engine/deploy.sh lint $(APP_NAME)
 
 validate:
-	@bash engine/deploy.sh validate $(APP_NAME)
+	@bash src/engine/deploy.sh validate $(APP_NAME)
 
 # Bulk operations for all apps
 deploy-all: $(APPS:%=deploy-%)

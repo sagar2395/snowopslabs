@@ -17,23 +17,47 @@ CLUSTER_NAME ?= snowops
 APP_NAME ?= go-api
 HELM_RELEASE_NAME ?= go-api
 HELM_VALUES ?= values-dev.yaml
+# Mirrors src/make/test.mk; used only in the help text below.
+COVERAGE_MIN ?= 80
 
 # Defaults are read from .env if present; any command may override them by
 # passing VAR=val on the make command line.
 
+# Orchestration and repo-wide gates run from the content root. The Go/UI build
+# and test targets live in the self-contained module under src/ (src/Makefile)
+# and are delegated in below, so `make cli-build`, `make test`, etc. still work
+# from here.
 include make/vars.mk
 include make/bootstrap.mk
 include make/runtime.mk
 include make/app.mk
 include make/platform.mk
 include make/check.mk
-include make/cli.mk
 include make/services.mk
-include make/test.mk
+include make/shell.mk
+
+# Targets implemented by the src/ module. Running any of them here delegates to
+# `make -C src <target>` so the build executes where go.mod lives.
+SRC_TARGETS := cli-build cli-build-all cli-install cli-clean ui-build ui-deps \
+               test-go test-api test-coverage coverage-check fuzz \
+               lint-go lint-ui sec vuln golden-update validate-content \
+               test-ui test-e2e test-cluster
+
+.PHONY: $(SRC_TARGETS)
+$(SRC_TARGETS):
+	@$(MAKE) --no-print-directory -C src $@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init teardown reset run
+.PHONY: help init teardown reset run test lint
+
+# ── Aggregate test & lint (Go module + repo-wide shell gates) ─────────────────
+
+## test: Go unit + contract tests (src/) and the shell (bats) suites
+test: test-go test-shell
+
+## lint: every static-analysis gate — gofmt + shell (root) and Go/UI (src/)
+lint: fmt-check lint-shell lint-go lint-ui sec vuln
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -58,7 +82,7 @@ help:
 	@echo "SnowOps Labs — Kubernetes platform-engineering simulator"
 	@echo ""
 	@echo "  Quick start:"
-	@echo "    make cli-build           Build bin/labctl (UI embedded)"
+	@echo "    make cli-build           Build src/bin/labctl (UI embedded)"
 	@echo "    make init                setup-tools + runtime-up + platform-up"
 	@echo "    make teardown            Remove apps, platform and cluster"
 	@echo "    make reset               teardown then init"

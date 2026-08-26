@@ -37,14 +37,16 @@ $ git checkout claude/platform-simulator-redesign-41mkry
 ## 1. 🔍 The repository is where the docs say it is
 
 ```bash
-$ ls go.mod cmd/labctl/main.go internal/ pkg/ ui/ docs/ROADMAP.md
+$ ls src/go.mod src/cmd/labctl/main.go src/internal/ src/pkg/ src/ui/ docs/ROADMAP.md
+$ ls scenarios/ runtimes/ apps/          # user-facing content stays at the root
 ```
 
-**Expect:** all present, no errors. `go.mod` is at the **root** — not under
-`cmd/labctl/` (ADR-0005).
+**Expect:** all present, no errors. The Go module lives under `src/` (issue #7);
+the module path is unchanged, so imports still read
+`github.com/sagar2395/snowopslabs/...` with no `src/` prefix.
 
 ```bash
-$ head -1 go.mod
+$ head -1 src/go.mod
 ```
 
 **Expect:** `module github.com/sagar2395/snowopslabs`
@@ -54,8 +56,7 @@ $ head -1 go.mod
 ## 2. The Go build is clean
 
 ```bash
-$ go build ./...
-$ go vet ./...
+$ cd src && go build ./... && go vet ./... && cd ..
 ```
 
 **Expect:** both silent, exit 0. First run takes a minute or two while modules
@@ -84,9 +85,9 @@ that is intentional (ADR-0003, ADR-0004).
 🔍 Now confirm the gate actually bites. Break a test deliberately:
 
 ```bash
-$ printf '\nfunc TestDeliberateFailure(t *testing.T) { t.Fatal("R00 check") }\n' >> pkg/checks/runner_test.go
+$ printf '\nfunc TestDeliberateFailure(t *testing.T) { t.Fatal("R00 check") }\n' >> src/pkg/checks/runner_test.go
 $ make test-go ; echo "exit=$?"
-$ git checkout pkg/checks/runner_test.go
+$ git checkout src/pkg/checks/runner_test.go
 ```
 
 **Expect:** `FAIL` and a **non-zero** exit. A green result here means the gate
@@ -100,7 +101,7 @@ The exceptions file lets packages awaiting rewrite sit below 80%, but only
 downward-never. Confirm:
 
 ```bash
-$ head -20 .coverage-exceptions
+$ head -20 src/.coverage-exceptions
 ```
 
 **Expect:** a comment block explaining the rules, then entries of the form
@@ -164,7 +165,7 @@ CI installs it.
 ## 7. The UI builds, typechecks and tests
 
 ```bash
-$ cd ui && npm ci
+$ cd src/ui && npm ci
 ```
 
 **Expect:** completes without `ERESOLVE` or peer-dependency errors.
@@ -190,7 +191,7 @@ hooks are excluded via the ratchet in `vitest.config.ts` (the UI analogue of
 $ npm run build
 ```
 
-**Expect:** a Vite build summary and `ui/dist/index.html` on disk.
+**Expect:** a Vite build summary and `src/ui/dist/index.html` on disk.
 
 ---
 
@@ -216,24 +217,25 @@ installed. Run the install command above, or set the variable.
 ## 9. The binary builds with the UI embedded
 
 ```bash
-$ cd .. && make cli-build
+$ cd "$(git rev-parse --show-toplevel)" && make cli-build
 ```
 
-**Expect:** ends with `Binary: bin/labctl`. This builds the SPA and copies it
-into `internal/webui/dist/` before compiling, so the result is one
+**Expect:** ends with `Binary: bin/labctl` (i.e. `src/bin/labctl`). The root
+target delegates into `src/`, which builds the SPA and copies it into
+`src/internal/webui/dist/` before compiling, so the result is one
 self-contained artifact.
 
 ```bash
-$ ./bin/labctl --help
+$ ./src/bin/labctl --help
 ```
 
 **Expect:** the command list. 🔍 **Confirm the removed commands are gone** —
 these must each report an unknown command:
 
 ```bash
-$ ./bin/labctl pack --help        ; echo "exit=$?"
-$ ./bin/labctl credential --help  ; echo "exit=$?"
-$ ./bin/labctl edition --help     ; echo "exit=$?"
+$ ./src/bin/labctl pack --help        ; echo "exit=$?"
+$ ./src/bin/labctl credential --help  ; echo "exit=$?"
+$ ./src/bin/labctl edition --help     ; echo "exit=$?"
 ```
 
 **Expect:** `unknown command` and a non-zero exit for all three (ADR-0001).
@@ -244,7 +246,7 @@ $ ./bin/labctl edition --help     ; echo "exit=$?"
 
 ```bash
 $ make cli-build-all
-$ ls -la dist/
+$ ls -la src/dist/
 ```
 
 **Expect:** four binaries — `labctl-darwin-arm64`, `labctl-darwin-amd64`,

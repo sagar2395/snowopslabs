@@ -1,7 +1,7 @@
 {
   "//": "Inline validation for SnowOps Labs content. Requires the Red Hat YAML extension (redhat.vscode-yaml). Maps the SDK JSON Schemas to the files they govern; the templates also carry a yaml-language-server modeline so validation works outside this repo too. Incident/path/challenge schemas land in W2-T01.",
   "yaml.schemas": {
-    "./sdk/schemas/scenario.schema.json": [
+    "./src/sdk/schemas/scenario.schema.json": [
       "scenarios/**/scenario.yaml",
       "**/scenario-template/**/scenario.yaml"
     ]
