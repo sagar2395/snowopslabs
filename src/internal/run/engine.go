@@ -141,12 +141,31 @@ type Engine struct {
 
 	subs *subscribers
 
+	// metrics, when non-nil, receives run-lifecycle signals.
+	metrics Metrics
+
 	wg       sync.WaitGroup
 	shutdown chan struct{}
 }
 
+// Metrics receives run-lifecycle signals for observability. It is deliberately
+// tiny and framework-free so the engine does not depend on any metrics library;
+// internal/metrics.App satisfies it. A nil Metrics (the default) disables it.
+type Metrics interface {
+	// RunStarted is called once a run transitions to running.
+	RunStarted()
+	// RunFinished is called once a run reaches a terminal state, with its kind,
+	// terminal status ("succeeded", "failed", …) and wall-clock duration.
+	RunFinished(kind, status string, dur time.Duration)
+}
+
 // Option configures an Engine.
 type Option func(*Engine)
+
+// WithMetrics attaches a metrics sink that receives run-lifecycle signals.
+func WithMetrics(m Metrics) Option {
+	return func(e *Engine) { e.metrics = m }
+}
 
 // WithWorkers sets how many non-conflicting runs execute concurrently.
 func WithWorkers(n int) Option {

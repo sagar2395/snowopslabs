@@ -18,6 +18,7 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/config"
 	"github.com/sagar2395/snowopslabs/internal/executor"
 	"github.com/sagar2395/snowopslabs/internal/incident"
+	"github.com/sagar2395/snowopslabs/internal/metrics"
 	"github.com/sagar2395/snowopslabs/internal/platform"
 	"github.com/sagar2395/snowopslabs/internal/runtime"
 	"github.com/sagar2395/snowopslabs/internal/scenario"
@@ -43,12 +44,26 @@ type Server struct {
 	users       *auth.Store
 	sessions    *auth.SessionStore
 	userLoadErr error
+
+	// metrics is set via WithMetrics when the /metrics endpoint is enabled;
+	// nil (the default) leaves the endpoint and request instrumentation off.
+	metrics *metrics.App
+}
+
+// ServerOption configures optional Server behaviour without changing the
+// constructor signature (existing callers pass none).
+type ServerOption func(*Server)
+
+// WithMetrics enables the Prometheus /metrics endpoint and per-request
+// instrumentation, recording into the given metric set.
+func WithMetrics(app *metrics.App) ServerOption {
+	return func(s *Server) { s.metrics = app }
 }
 
 // NewServer creates a new API server. The embeddedUI parameter should be the
 // embedded ui/dist filesystem (from go:embed). If nil or empty, the server
 // falls back to serving UI files from the project's ui/dist/ directory.
-func NewServer(cfg *config.Config, exec *executor.Executor, registry *platform.Registry, scenes *scenario.Engine, incidents *incident.Engine, svcs *services.Registry, rtm *runtime.Manager, embeddedUI fs.FS) *Server {
+func NewServer(cfg *config.Config, exec *executor.Executor, registry *platform.Registry, scenes *scenario.Engine, incidents *incident.Engine, svcs *services.Registry, rtm *runtime.Manager, embeddedUI fs.FS, opts ...ServerOption) *Server {
 	s := &Server{
 		cfg:       cfg,
 		exec:      exec,
@@ -61,6 +76,11 @@ func NewServer(cfg *config.Config, exec *executor.Executor, registry *platform.R
 			CheckOrigin: originAllowed,
 		},
 		uiFS: embeddedUI,
+	}
+	// Apply options before setupRoutes so the route table reflects them (the
+	// /metrics endpoint and request instrumentation are conditional on them).
+	for _, opt := range opts {
+		opt(s)
 	}
 	if auth.Enabled() {
 		s.authEnabled = true
@@ -110,6 +130,11 @@ func (s *Server) setupRoutes() {
 	// experience is unchanged. When on, it gates every /api route except the
 	// auth endpoints below and enforces operator-only mutations.
 	api.Use(s.authMiddleware)
+	// Request instrumentation, innermost so it measures the handler itself.
+	// Only active when metrics are enabled.
+	if s.metrics != nil {
+		api.Use(s.metricsMiddleware)
+	}
 
 	// Auth endpoints (always registered; meaningful only when auth is enabled).
 	api.HandleFunc("/auth/me", s.handleAuthMe).Methods("GET", "OPTIONS")
@@ -171,6 +196,15 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/runtimes/{name}/deactivate", s.handleRuntimeDeactivate).Methods("POST", "OPTIONS")
 
 	api.HandleFunc("/ws", s.handleWebSocket)
+
+	// Prometheus scrape endpoint — top-level (no /api auth or JSON middleware),
+	// registered before the UI catch-all. Only present when metrics are enabled.
+	// No .Methods() restriction: the handler itself enforces GET/HEAD and
+	// answers 405 otherwise, so a POST reaches it instead of falling through to
+	// the SPA catch-all.
+	if s.metrics != nil {
+		s.router.Handle("/metrics", s.metrics.Handler())
+	}
 
 	// Serve UI — use embedded FS if available, fall back to filesystem for dev
 	var uiHandler http.Handler
