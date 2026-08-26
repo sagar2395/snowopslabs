@@ -37,7 +37,10 @@ include make/services.mk
 include make/shell.mk
 
 # Targets implemented by the src/ module. Running any of them here delegates to
-# `make -C src <target>` so the build executes where go.mod lives.
+# `make -C src <target>` so the build executes where go.mod lives. BIN_DIR is
+# passed as an absolute path to the repo-root bin/ so the host binary lands at
+# ./bin/labctl (gitignored) rather than src/bin/labctl — the module still
+# defaults to src/bin when built standalone. Only the cli-* targets read it.
 SRC_TARGETS := cli-build cli-build-all cli-install cli-clean ui-build ui-deps \
                test-go test-api test-coverage coverage-check fuzz \
                lint-go lint-ui sec vuln golden-update validate-content \
@@ -45,7 +48,7 @@ SRC_TARGETS := cli-build cli-build-all cli-install cli-clean ui-build ui-deps \
 
 .PHONY: $(SRC_TARGETS)
 $(SRC_TARGETS):
-	@$(MAKE) --no-print-directory -C src $@
+	@$(MAKE) --no-print-directory -C src $@ BIN_DIR=$(CURDIR)/bin
 
 .DEFAULT_GOAL := help
 
@@ -82,7 +85,7 @@ help:
 	@echo "SnowOps Labs — Kubernetes platform-engineering simulator"
 	@echo ""
 	@echo "  Quick start:"
-	@echo "    make cli-build           Build src/bin/labctl (UI embedded)"
+	@echo "    make cli-build           Build bin/labctl (UI embedded)"
 	@echo "    make init                setup-tools + runtime-up + platform-up"
 	@echo "    make teardown            Remove apps, platform and cluster"
 	@echo "    make reset               teardown then init"

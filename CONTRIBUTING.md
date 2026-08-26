@@ -46,7 +46,7 @@ before implementation. This keeps architectural direction coherent.
 
 ```bash
 # Build the CLI, UI embedded (no committed binary). The Go module lives under
-# src/; the root make targets delegate there and the binary lands at src/bin/labctl.
+# src/; the root make targets delegate there and the binary lands at bin/labctl.
 make cli-build
 
 # Run the gates. All four test layers are mandatory — see docs/TESTING.md.
@@ -57,7 +57,7 @@ make lint          # gofmt, golangci-lint, gosec, govulncheck, shellcheck,
                    # shfmt, the portability gate, and TypeScript strict
 
 # Bring up a local cluster + the platform to test changes end to end
-src/bin/labctl lab up && make platform-up
+bin/labctl lab up && make platform-up
 ```
 
 New to the repo? Work through

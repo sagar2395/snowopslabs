@@ -16,7 +16,7 @@ down with a single command.
 Run `labctl runtime up` and verify the cluster is reachable.
 
 ```bash
-src/bin/labctl runtime up
+bin/labctl runtime up
 kubectl cluster-info
 ```
 

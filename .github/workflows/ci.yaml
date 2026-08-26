@@ -244,7 +244,7 @@ jobs:
       # problem, naming the file, line and reference (W2-T07). The binary is
       # built under src/bin/ but discovers content from the repo root (CWD).
       - name: Validate content
-        run: ./src/bin/labctl validate
+        run: ./bin/labctl validate
 
       - name: Cross-compile every release target
         run: make cli-build-all

@@ -18,7 +18,7 @@ Inject the fault, diagnose it, fix it, and confirm resolution.
 
 ```bash
 # Inject
-src/src/bin/labctl incident inject service-selector-broken
+bin/labctl incident inject service-selector-broken
 curl http://go-api.k3d.local/health   # 503 — broken
 
 # Diagnose
@@ -30,11 +30,11 @@ kubectl -n go-api patch svc go-api \
   -p '{"spec":{"selector":{"app.kubernetes.io/name":"go-api"}}}'
 
 # Verify
-src/src/bin/labctl incident status            # RESOLVED
+bin/labctl incident status            # RESOLVED
 ```
 
 **Completion check:** `labctl incident status` reports RESOLVED or no
 active incident.
 
-**Note:** use `src/src/bin/labctl incident hint` if you are stuck, and
-`src/src/bin/labctl incident resolve` as the escape hatch.
+**Note:** use `bin/labctl incident hint` if you are stuck, and
+`bin/labctl incident resolve` as the escape hatch.

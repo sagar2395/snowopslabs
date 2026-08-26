@@ -3,7 +3,7 @@
 This walks the full loop — **scaffold → edit → verify → share** — in a few
 minutes. It is the fast path for a first contribution.
 
-> Prereqs: `src/bin/labctl` built (`make cli-build`) and a running lab
+> Prereqs: `bin/labctl` built (`make cli-build`) and a running lab
 > (`labctl lab up`). For inline editor validation: VS Code + the Red Hat YAML
 > extension — the repo's `.vscode/settings.json` wires the schemas up for you.
 

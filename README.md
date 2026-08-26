@@ -93,12 +93,12 @@ labctl --version
 **Option B — build from source** (needs Go 1.24+ and Node 22+):
 
 ```bash
-make cli-build          # builds src/bin/labctl (UI embedded); run it as ./src/bin/labctl
+make cli-build          # builds bin/labctl (UI embedded); run it as ./bin/labctl
 make cli-install        # …or install onto PATH: copies to $(go env GOPATH)/bin/labctl
 ```
 
 > The Go source lives under `src/` (the root `make` targets delegate there), so
-> `make cli-build` leaves the binary at `./src/bin/labctl`. Use `make cli-install`
+> `make cli-build` leaves the binary at `./bin/labctl`. Use `make cli-install`
 > (ensure `$(go env GOPATH)/bin`
 > is on your `PATH`) or the release `mv` above to get a plain `labctl`. Run
 > `labctl` from inside the repo (it auto-detects the project root), or from

@@ -220,22 +220,22 @@ installed. Run the install command above, or set the variable.
 $ cd "$(git rev-parse --show-toplevel)" && make cli-build
 ```
 
-**Expect:** ends with `Binary: bin/labctl` (i.e. `src/bin/labctl`). The root
-target delegates into `src/`, which builds the SPA and copies it into
-`src/internal/webui/dist/` before compiling, so the result is one
-self-contained artifact.
+**Expect:** ends with a `Binary:` line and leaves the host binary at
+`./bin/labctl` (gitignored). The root target delegates into `src/`, which builds
+the SPA and copies it into `src/internal/webui/dist/` before compiling, so the
+result is one self-contained artifact.
 
 ```bash
-$ ./src/bin/labctl --help
+$ ./bin/labctl --help
 ```
 
 **Expect:** the command list. 🔍 **Confirm the removed commands are gone** —
 these must each report an unknown command:
 
 ```bash
-$ ./src/bin/labctl pack --help        ; echo "exit=$?"
-$ ./src/bin/labctl credential --help  ; echo "exit=$?"
-$ ./src/bin/labctl edition --help     ; echo "exit=$?"
+$ ./bin/labctl pack --help        ; echo "exit=$?"
+$ ./bin/labctl credential --help  ; echo "exit=$?"
+$ ./bin/labctl edition --help     ; echo "exit=$?"
 ```
 
 **Expect:** `unknown command` and a non-zero exit for all three (ADR-0001).

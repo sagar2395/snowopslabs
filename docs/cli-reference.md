@@ -5,7 +5,7 @@
 ## Installation
 
 ```bash
-make cli-build        # builds src/bin/labctl
+make cli-build        # builds bin/labctl
 make cli-install      # builds + copies to PATH
 ```
 

@@ -18,8 +18,8 @@ and loaded directly into the cluster.
 Build and deploy go-api, then confirm it is reachable through the ingress.
 
 ```bash
-src/bin/labctl app build go-api
-src/bin/labctl app deploy go-api
+bin/labctl app build go-api
+bin/labctl app deploy go-api
 curl http://go-api.k3d.local/health
 ```
 

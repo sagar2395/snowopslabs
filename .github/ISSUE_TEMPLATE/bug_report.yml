@@ -15,7 +15,7 @@ body:
       label: Steps to reproduce
       description: Exact commands, in order.
       placeholder: |
-        1. src/bin/labctl init
+        1. bin/labctl init
         2. make platform-up
         3. ...
     validations:

@@ -48,7 +48,7 @@ publishing is `git push` and consuming is `git clone` plus
 ## Validate before you PR
 
 ```bash
-src/bin/labctl validate                  # schema + cross-reference integrity (CI gate)
-src/bin/labctl scenario info <name>      # parses + renders stages/checks
-src/bin/labctl scenario verify <name>    # runs the checks against a live cluster
+bin/labctl validate                  # schema + cross-reference integrity (CI gate)
+bin/labctl scenario info <name>      # parses + renders stages/checks
+bin/labctl scenario verify <name>    # runs the checks against a live cluster
 ```

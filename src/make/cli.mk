@@ -1,9 +1,14 @@
-# Building the labctl binary (module root is the repo root — ADR-0005).
+# Building the labctl binary (the Go module lives under src/ — ADR-0005, issue #7).
 #
 # The SPA is built first and embedded, so a release is one self-contained
 # artifact with no separate frontend deploy.
-
-CLI_BIN     := bin/labctl
+#
+# BIN_DIR is where the host binary lands. It defaults to bin/ next to this
+# module (src/bin/labctl) so `cd src && make cli-build` is self-contained, but
+# the repository-root Makefile overrides it with an absolute path to the repo's
+# own bin/ so `make cli-build` from the root leaves the binary at ./bin/labctl.
+BIN_DIR     ?= bin
+CLI_BIN     := $(BIN_DIR)/labctl
 CLI_PKG     := ./cmd/labctl
 CLI_UI_SRC  := ui/dist
 CLI_UI_DEST := internal/webui/dist
@@ -32,7 +37,7 @@ cli-build: ui-build
 	@mkdir -p $(CLI_UI_DEST)
 	@cp -R $(CLI_UI_SRC)/. $(CLI_UI_DEST)/
 	@echo "==> Building labctl $(VERSION) for $$(go env GOOS)/$$(go env GOARCH)"
-	@mkdir -p bin
+	@mkdir -p $(BIN_DIR)
 	@CGO_ENABLED=0 go build -trimpath -ldflags '$(LDFLAGS)' -o $(CLI_BIN) $(CLI_PKG)
 	@echo "Binary: $(CLI_BIN)"
 
