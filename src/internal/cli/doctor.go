@@ -3,14 +3,28 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/sagar2395/snowopslabs/internal/toolchain"
+)
+
+// The most common first-run failure is an under-provisioned Docker VM: `make
+// init` stands up a 3-node k3d cluster plus the full platform stack, which OOMs
+// or times out (a cryptic API-server "TLS handshake timeout") on a default
+// 2 GB VM. doctor catches it before the build does. Thresholds mirror the
+// README guidance.
+const (
+	minDockerCPU      = 4
+	minDockerMemBytes = 8 << 30 // 8 GiB
 )
 
 // doctorCmd tells the user what is wrong with their environment *before* they
@@ -77,10 +91,15 @@ func runDoctor(ctx context.Context, out io.Writer, runner toolchain.Runner) erro
 		problems = append(problems, r)
 	}
 
-	if len(warnings) > 0 {
+	dockerNote := dockerResourceWarning(ctx, runner)
+
+	if len(warnings) > 0 || dockerNote != "" {
 		fmt.Fprintln(out, "\nNotes:")
 		for _, r := range warnings {
 			fmt.Fprintf(out, "  - %s\n", r.Detail)
+		}
+		if dockerNote != "" {
+			fmt.Fprintf(out, "  - %s\n", dockerNote)
 		}
 	}
 
@@ -120,6 +139,86 @@ func statusLabel(r toolchain.CheckResult) string {
 	default:
 		return "unknown"
 	}
+}
+
+// dockerResourceWarning returns an actionable, multi-line warning when the
+// Docker/container engine has fewer than the minimum CPUs or memory SnowOps
+// Labs needs, or "" when resources are sufficient or cannot be determined.
+//
+// It degrades gracefully, exactly like the missing-tool checks: if docker is
+// not on PATH, the daemon is unreachable, or `docker info` output cannot be
+// parsed, it stays silent rather than guessing — a missing docker is already
+// reported by the preflight table, and a stopped daemon is a different problem.
+func dockerResourceWarning(ctx context.Context, runner toolchain.Runner) string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	ncpu, mem, ok := dockerResources(ctx, runner)
+	if !ok {
+		return ""
+	}
+	if ncpu >= minDockerCPU && mem >= minDockerMemBytes {
+		return ""
+	}
+
+	const gib = 1 << 30
+	// A whole number when the VM is set to an integer GiB (the common case),
+	// one decimal otherwise, so "2 GiB" doesn't render as "2.0 GiB".
+	detectedMem := strconv.FormatFloat(float64(mem)/gib, 'f', -1, 64)
+
+	return fmt.Sprintf(
+		"⚠️  Docker has %d CPU / %s GiB available; SnowOps Labs needs at least %d CPU / %d GiB.\n"+
+			"    A 3-node k3d cluster plus the platform stack (Prometheus, Grafana, Loki, …)\n"+
+			"    OOM-kills pods or fails with an API-server \"TLS handshake timeout\" below this.\n"+
+			"    Colima:         colima stop && colima start --cpu %d --memory %d\n"+
+			"    Docker Desktop: Settings → Resources → raise CPUs to %d and Memory to %d GB",
+		ncpu, detectedMem, minDockerCPU, minDockerMemBytes/gib,
+		minDockerCPU, minDockerMemBytes/gib, minDockerCPU, minDockerMemBytes/gib,
+	)
+}
+
+// dockerResources reports the CPU count and total memory (bytes) the Docker
+// engine has, via `docker info`. ok is false when the value cannot be
+// determined (docker absent, daemon down, or unparseable output).
+func dockerResources(ctx context.Context, runner toolchain.Runner) (ncpu int, memBytes int64, ok bool) {
+	path, err := runner.LookPath("docker")
+	if err != nil {
+		return 0, 0, false
+	}
+
+	// Bound the call: a wedged daemon should not hang `doctor`.
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var buf bytes.Buffer
+	// --format keeps this machine-readable and locale-independent; NCPU and
+	// MemTotal (bytes) are the simplest source of truth (docker info fields).
+	_, err = runner.Run(ctx, toolchain.Command{
+		Path:   path,
+		Args:   []string{"info", "--format", "{{.NCPU}} {{.MemTotal}}"},
+		Stdout: &buf,
+	})
+	if err != nil {
+		return 0, 0, false
+	}
+
+	fields := strings.Fields(buf.String())
+	if len(fields) != 2 {
+		return 0, 0, false
+	}
+	ncpu, err = strconv.Atoi(fields[0])
+	if err != nil {
+		return 0, 0, false
+	}
+	memBytes, err = strconv.ParseInt(fields[1], 10, 64)
+	if err != nil {
+		return 0, 0, false
+	}
+	if ncpu <= 0 || memBytes <= 0 {
+		return 0, 0, false
+	}
+	return ncpu, memBytes, true
 }
 
 func init() {
