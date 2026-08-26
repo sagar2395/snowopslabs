@@ -84,6 +84,9 @@ func (e *Engine) execute(id string) {
 		return
 	}
 	e.subs.publish(Event{Type: EventStatus, RunID: id, Status: store.StatusRunning})
+	if e.metrics != nil {
+		e.metrics.RunStarted()
+	}
 
 	sink := newLogSink(ctx, e.store, e.subs, id, e.now)
 
@@ -91,7 +94,7 @@ func (e *Engine) execute(id string) {
 	if err != nil {
 		sink.system("cannot run " + rec.Script + ": " + err.Error())
 		sink.flush()
-		e.finish(ctx, id, store.StatusFailed, nil, err.Error(), 0)
+		e.finish(ctx, id, rec.Kind, store.StatusFailed, nil, err.Error(), 0)
 		return
 	}
 
@@ -137,7 +140,7 @@ func (e *Engine) execute(id string) {
 	_ = e.store.FinishSteps(ctx, id, stepStatus, e.now())
 
 	sink.close()
-	e.finish(ctx, id, status, exitCode, message, elapsed)
+	e.finish(ctx, id, rec.Kind, status, exitCode, message, elapsed)
 }
 
 // classify turns an execution outcome into a terminal status, an exit code and
@@ -167,11 +170,14 @@ func classify(runCtx, timeoutCtx context.Context, timeout time.Duration, res too
 	return store.StatusFailed, nil, runErr.Error()
 }
 
-func (e *Engine) finish(ctx context.Context, id string, status store.Status, exitCode *int, message string, elapsed time.Duration) {
+func (e *Engine) finish(ctx context.Context, id, kind string, status store.Status, exitCode *int, message string, elapsed time.Duration) {
 	// Ignore the error: a nil return means another path already recorded a
 	// terminal state, which is the correct outcome for a race.
 	_ = e.store.FinishRun(ctx, id, status, exitCode, message, e.now(), elapsed)
 	e.subs.publish(Event{Type: EventStatus, RunID: id, Status: status})
+	if e.metrics != nil {
+		e.metrics.RunFinished(kind, string(status), elapsed)
+	}
 }
 
 func intPtr(i int) *int { return &i }

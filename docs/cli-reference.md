@@ -619,6 +619,32 @@ The dashboard shows:
 - Scenarios with activate/deactivate controls
 - Real-time updates via WebSocket
 
+#### Metrics (Prometheus)
+
+The server can expose an optional Prometheus `/metrics` endpoint. It is **off by
+default** and turned on with `LABCTL_METRICS=true`:
+
+```bash
+LABCTL_METRICS=true labctl ui --port 3939
+curl http://localhost:3939/metrics
+```
+
+When enabled it serves the standard text exposition format (no auth, so a local
+Prometheus can scrape it) with:
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `labctl_http_requests_total` | counter | `method`, `route`, `status` | API requests handled (route is the path template, e.g. `/api/apps/{name}/build`) |
+| `labctl_http_request_duration_seconds` | histogram | `method`, `route` | API request latency |
+| `labctl_runs_total` | counter | `kind`, `status` | Run-engine runs by kind and terminal outcome |
+| `labctl_run_duration_seconds` | histogram | `kind` | Run-engine run execution time |
+| `labctl_runs_in_flight` | gauge | — | Run-engine runs currently executing |
+| `labctl_build_info` | gauge | `version` | Always 1; carries the build version |
+
+> The `labctl_runs_*` metrics populate once operations flow through the durable
+> run engine (`internal/run`); the HTTP metrics are live for every API request.
+> The endpoint adds no scrape surface at all when `LABCTL_METRICS` is unset.
+
 ### `labctl users` — Team mode (auth & RBAC)
 
 Manage accounts for the API/UI when authentication is enabled. Authentication is

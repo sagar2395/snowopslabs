@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/sagar2395/snowopslabs/internal/httpapi"
+	"github.com/sagar2395/snowopslabs/internal/metrics"
 	"github.com/sagar2395/snowopslabs/internal/webui"
 )
 
@@ -30,7 +31,15 @@ var uiCmd = &cobra.Command{
 
 		// Use embedded UI assets (sub-directory "dist" within the embed.FS)
 		uiFS, _ := fs.Sub(webui.DistFS, "dist")
-		server := httpapi.NewServer(cfg, exec, reg, scenes, incEng, svcReg, rtm, uiFS)
+
+		// Optional Prometheus endpoint, off unless LABCTL_METRICS=true.
+		var opts []httpapi.ServerOption
+		if metrics.Enabled() {
+			opts = append(opts, httpapi.WithMetrics(metrics.NewApp(rootCmd.Version)))
+			fmt.Printf("Metrics enabled at %s/metrics\n", url)
+		}
+
+		server := httpapi.NewServer(cfg, exec, reg, scenes, incEng, svcReg, rtm, uiFS, opts...)
 		return server.Start(addr)
 	},
 }

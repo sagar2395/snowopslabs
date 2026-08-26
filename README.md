@@ -129,6 +129,10 @@ labctl teardown                       # remove everything (never hangs)
 > `/etc/hosts` so the ingress hostnames below resolve; skip it and URL-based
 > access (and the `grafana-reachable` scenario check) will fail with
 > `no such host`. It is **not** needed for the labctl UI itself (a direct port).
+>
+> Want to scrape labctl itself? Start the server with `LABCTL_METRICS=true` to
+> expose an optional Prometheus endpoint at `/metrics` (off by default). See the
+> [CLI reference](docs/cli-reference.md#metrics-prometheus).
 
 [releases]: https://github.com/sagar2395/snowopslabs/releases
 
