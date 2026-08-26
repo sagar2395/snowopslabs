@@ -23,11 +23,11 @@ requires:
 env_variables:
   DATA_PROVIDER: "Optional: provider to act on when targeting the bare `data` category (kafka | postgres). Usually you address data/<provider> explicitly."
   KAFKA_NAMESPACE: "kafka: namespace for the operator + Kafka CR (default: kafka)"
-  STRIMZI_VERSION: "kafka: pinned strimzi-kafka-operator chart version (versions.env)"
-  KAFKA_VERSION: "kafka: broker version (versions.env)"
+  STRIMZI_VERSION: "kafka: pinned strimzi-kafka-operator chart version (config/versions.env)"
+  KAFKA_VERSION: "kafka: broker version (config/versions.env)"
   POSTGRES_NAMESPACE: "postgres: namespace for the Cluster CR (default: postgres)"
   POSTGRES_INSTANCES: "postgres: instance count (default: 2)"
-  CNPG_CHART_VERSION: "postgres: pinned cloudnative-pg chart version (versions.env)"
+  CNPG_CHART_VERSION: "postgres: pinned cloudnative-pg chart version (config/versions.env)"
 
 scripts:
   install.sh: "Install the operator and apply the cluster CR; wait for Ready (idempotent)"
@@ -45,7 +45,7 @@ conventions:
     no text scraping.
   - Resource requests are minimal so both can run on a laptop k3d alongside
     monitoring. Raise them for cloud/load testing.
-  - Chart/app versions are pinned and overridable via env (defaults in versions.env).
+  - Chart/app versions are pinned and overridable via env (defaults in config/versions.env).
 
 implementations:
   kafka:

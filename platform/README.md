@@ -112,7 +112,7 @@ workloads. Swappable via `MESH_PROVIDER`.
 
 `install.sh` enrols the workload namespace (`MESH_NAMESPACE`, default `go-api`)
 into the mesh and restarts its deployments so sidecars are injected;
-`uninstall.sh` reverses both. Chart versions are pinned in `versions.env`
+`uninstall.sh` reverses both. Chart versions are pinned in `config/versions.env`
 (`ISTIO_VERSION`, `LINKERD_CRDS_CHART_VERSION`,
 `LINKERD_CONTROL_PLANE_CHART_VERSION`) and overridable per-install.
 
@@ -140,7 +140,7 @@ and `postgres` coexist. Address each as `data/<provider>`.
 
 Each provider owns its own namespace (kafka → `kafka`, postgres → `postgres`;
 CNPG's operator lives in `cnpg-system`) so installing/removing one never
-disturbs the other. Chart/app versions are pinned in `versions.env`
+disturbs the other. Chart/app versions are pinned in `config/versions.env`
 (`STRIMZI_VERSION`, `KAFKA_VERSION`, `CNPG_CHART_VERSION`) and overridable.
 
 ```bash
@@ -186,7 +186,7 @@ labctl platform down secrets/external-secrets && labctl platform down secrets/va
 > environment (`VAULT_DEV_ROOT_TOKEN`, defaulting to Vault's well-known dev value
 > `root`); the token ESO uses is created in-cluster from that env value. Dev-mode
 > Vault is in-memory and wiped on restart — rotation, not durability, is the point.
-> Versions are pinned in `versions.env` (`VAULT_CHART_VERSION`, `ESO_CHART_VERSION`).
+> Versions are pinned in `config/versions.env` (`VAULT_CHART_VERSION`, `ESO_CHART_VERSION`).
 
 ### Autoscaling (`autoscaling/`)
 
@@ -210,7 +210,7 @@ labctl scenario verify autoscaling-under-load    # asserts the scaled-up state
 AUTOSCALING_PROVIDER=keda labctl platform down autoscaling
 ```
 
-Version pinned in `versions.env` (`KEDA_CHART_VERSION`), overridable per-install.
+Version pinned in `config/versions.env` (`KEDA_CHART_VERSION`), overridable per-install.
 
 ### Cost Visibility (`cost/`)
 
@@ -236,7 +236,7 @@ COST_PROVIDER=opencost labctl platform down cost
 > **k3d note:** no real billing API is wired — OpenCost uses on-prem pricing
 > defaults (~$0.048/CPU-hr). Cost numbers are relative, not real invoices.
 
-Version pinned in `versions.env` (`OPENCOST_CHART_VERSION`), overridable per-install.
+Version pinned in `config/versions.env` (`OPENCOST_CHART_VERSION`), overridable per-install.
 
 ## Provider Interface Contracts
 

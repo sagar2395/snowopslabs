@@ -16,7 +16,7 @@ CHART="$PROJECT_ROOT/apps/go-api/deploy/helm"
 VALUES="$SCENARIO_DIR/values/overprovisioned.yaml"
 
 echo "Re-deploying go-api over-provisioned (helm release: go-api)..."
-# Match the canonical app deploy (engine/deploy/helm.sh): create the namespace
+# Match the canonical app deploy (src/engine/deploy/helm.sh): create the namespace
 # out-of-band and pass namespace.create=false, so the chart doesn't render a
 # Namespace object helm cannot adopt (the go-api namespace already exists,
 # created by kubectl rather than helm).

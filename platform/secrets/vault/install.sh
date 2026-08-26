@@ -10,7 +10,7 @@ set -euo pipefail
 # this profile for anything real. See values.yaml for a non-dev profile sketch.
 #
 # Config (env, with defaults — scripts never source .env themselves):
-#   VAULT_CHART_VERSION   pinned hashicorp/vault chart version (versions.env)
+#   VAULT_CHART_VERSION   pinned hashicorp/vault chart version (config/versions.env)
 #   VAULT_DEV_ROOT_TOKEN  dev root token (default: root — the well-known dev default)
 #   VAULT_DEMO_SECRET     demo KV value seeded at secret/go-api (default: demo value)
 #   INGRESS_CLASS         ingress class for the UI route (default: traefik)
