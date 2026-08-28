@@ -1,5 +1,6 @@
 apiVersion: scenario.snowops.net/v2
 name: backup-restore-drill
+verified: true
 displayName: "Day-2 Drill: Namespace Backup & Restore"
 description: "Back up a namespace's resources to a manifest archive, simulate accidental data loss (delete a resource — or the whole namespace), then restore from the backup and verify the round-trip with checks. A dependency-light alternative to Velero that teaches the backup/restore loop every operator must rehearse before they need it."
 category: operations

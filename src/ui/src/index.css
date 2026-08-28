@@ -1,32 +1,149 @@
-/* ── Design tokens ─────────────────────────────────────────────────────────── */
+/* ── Design tokens ─────────────────────────────────────────────────────────────
+ * Dark-first developer-tool identity (Grafana/Linear-adjacent). The dark palette
+ * lives on :root and is the default; `:root[data-theme="light"]` overrides only
+ * the colours for the light palette. A tiny inline script in index.html stamps
+ * data-theme before first paint (see useTheme), so there is no theme flash.
+ * Every colour a component paints comes from a token here, so both themes stay
+ * consistent and a11y contrast is tuned in one place. */
 :root {
-  --bg:      #0f172a;
-  --surface: #1e293b;
-  --border:  #334155;
-  --text:    #e2e8f0;
-  --muted:   #94a3b8;
-  --accent:  #38bdf8;
-  --green:   #4ade80;
-  --red:     #f87171;
-  --yellow:  #fbbf24;
+  color-scheme: dark;
 
+  /* Surfaces (back → front) */
+  --bg:            #0f172a;
+  --bg-elevated:   #172033;
+  --surface:       #1e293b;
+  --surface-2:     #273449;
+  --border:        #334155;
+  --border-strong: #475569;
+
+  /* Text */
+  --text:        #e2e8f0;
+  --text-strong: #f8fafc;
+  --muted:       #94a3b8;
+
+  /* Brand + semantic (aliases keep old names working) */
+  --accent:    #38bdf8;
+  --accent-2:  #818cf8;
+  --green:     #4ade80;
+  --red:       #f87171;
+  --yellow:    #fbbf24;
+  --success: var(--green);
+  --danger:  var(--red);
+  --warning: var(--yellow);
+  --on-accent: #0f172a;   /* text/glyph colour on an accent fill */
+
+  /* Effects */
+  --focus-ring: 0 0 0 3px rgba(56, 189, 248, .40);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .30);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, .50);
+  --overlay:   rgba(0, 0, 0, .60);
+
+  /* Radii */
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
+
+  /* Type */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
+  --text-xs:   12px;
+  --text-sm:   13px;
+  --text-base: 14px;
+  --text-lg:   16px;
+  --text-xl:   20px;
+  --text-2xl:  28px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+}
+
+/* Light palette — overrides colours only; radii/type/spacing are shared.
+ * Accents are darkened so they clear WCAG AA on light surfaces. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:            #f8fafc;
+  --bg-elevated:   #ffffff;
+  --surface:       #ffffff;
+  --surface-2:     #f1f5f9;
+  --border:        #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  --text:        #0f172a;
+  --text-strong: #020617;
+  --muted:       #64748b;
+
+  --accent:    #0284c7;
+  --accent-2:  #6366f1;
+  --green:     #16a34a;
+  --red:       #dc2626;
+  --yellow:    #b45309;
+  --on-accent: #ffffff;
+
+  --focus-ring: 0 0 0 3px rgba(2, 132, 199, .35);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, .08);
+  --shadow-md: 0 4px 16px rgba(15, 23, 42, .10);
+  --shadow-lg: 0 12px 40px rgba(15, 23, 42, .18);
+  --overlay:   rgba(15, 23, 42, .40);
 }
 
 /* ── Reset ──────────────────────────────────────────────────────────────────── */
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: var(--font-sans);
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
+  /* Ease the palette swap when toggling themes (but never animate layout). */
+  transition: background-color .2s ease, color .2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body { transition: none; }
 }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+
+/* A single, consistent keyboard-focus treatment for every interactive element.
+ * :focus-visible only shows for keyboard/AT users, so mouse clicks stay clean. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+/* Skip link — first tab stop, jumps keyboard users past the nav to content.
+ * Off-screen until focused. */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 1000;
+  transform: translateY(-150%);
+  padding: 8px 14px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition: transform .15s ease;
+}
+.skip-link:focus-visible {
+  transform: translateY(0);
+  text-decoration: none;
+}
+.main-content:focus { outline: none; }
+@media (prefers-reduced-motion: reduce) {
+  .skip-link { transition: none; }
+}
 
 /* ── Layout ──────────────────────────────────────────────────────────────────── */
 .app-shell {
@@ -66,9 +183,9 @@ a:hover { text-decoration: underline; }
   border-radius: 9px;
   font-size: 17px;
   line-height: 1;
-  color: var(--bg);
-  background: linear-gradient(135deg, var(--accent), #818cf8);
-  box-shadow: 0 2px 8px rgba(56, 189, 248, .35);
+  color: var(--on-accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  box-shadow: var(--shadow-sm);
 }
 .brand-name { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
 .brand-name .accent { color: var(--accent); }
@@ -227,6 +344,40 @@ a:hover { text-decoration: underline; }
 .dot-red    { background: var(--red);   }
 .dot-yellow { background: var(--yellow); }
 
+/* ── Theme toggle ───────────────────────────────────────────────────────────── */
+.theme-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+}
+.theme-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  transition: color .15s, background-color .15s;
+}
+.theme-opt:hover { color: var(--text); }
+.theme-opt.active {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.theme-opt:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 /* ── Quick links ────────────────────────────────────────────────────────────── */
 .quick-links { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
 
@@ -245,23 +396,56 @@ a:hover { text-decoration: underline; }
 .quick-link:hover { background: rgba(56,189,248,.16); border-color: var(--accent); text-decoration: none; }
 
 /* ── State helpers ───────────────────────────────────────────────────────────── */
-.loading    { color: var(--muted); font-style: italic; font-size: 14px; }
-.empty-state { text-align: center; padding: 32px; color: var(--muted); font-size: 14px; }
-.empty-hint  { margin-top: 6px; font-size: 12px; color: var(--muted); opacity: .8; }
+/* Loading — a spinner plus its label, centred, so a fetch reads as "working",
+ * never as a frozen blank. Every view uses <div class="loading">. */
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: var(--text-base);
+  padding: 40px 16px;
+}
+.loading::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .loading::before { animation-duration: 2s; }
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 32px;
+  color: var(--muted);
+  font-size: var(--text-base);
+  background: var(--surface-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+.empty-hint  { margin-top: 6px; font-size: var(--text-xs); color: var(--muted); opacity: .85; }
 .empty-hint code, .error-state code, .banner code {
-  background: rgba(148,163,184,.12); padding: 1px 5px; border-radius: 4px;
-  font-size: 12px; font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  background: color-mix(in srgb, var(--muted) 18%, transparent);
+  padding: 1px 5px; border-radius: 4px;
+  font-size: var(--text-xs); font-family: var(--font-mono);
 }
 
 .error-state {
-  background: rgba(248,113,113,.06);
-  border: 1px solid rgba(248,113,113,.3);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
   border-radius: var(--radius-lg);
   padding: 24px;
   text-align: center;
 }
-.error-state-title   { color: var(--red); font-weight: 600; margin-bottom: 6px; }
-.error-state-message { color: var(--muted); font-size: 13px; margin-bottom: 14px; word-break: break-word; }
+.error-state-title   { color: var(--danger); font-weight: 600; margin-bottom: 6px; }
+.error-state-message { color: var(--muted); font-size: var(--text-sm); margin-bottom: 14px; word-break: break-word; }
 
 /* ── Banners ─────────────────────────────────────────────────────────────────── */
 .banner {
@@ -273,14 +457,29 @@ a:hover { text-decoration: underline; }
   gap: 4px;
 }
 .banner-warn {
-  background: rgba(251,191,36,.08);
-  border-bottom: 1px solid rgba(251,191,36,.3);
-  color: var(--yellow);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
+  color: var(--warning);
 }
 .main-content .banner-warn {
-  border: 1px solid rgba(251,191,36,.3);
+  border: 1px solid color-mix(in srgb, var(--warning) 35%, transparent);
   border-radius: var(--radius-md);
   margin-bottom: 16px;
+}
+/* The offline banner leads with a spinner so "reconnecting…" reads as active
+ * recovery, not a dead end. */
+.banner-reconnecting::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border: 2px solid color-mix(in srgb, var(--warning) 40%, transparent);
+  border-top-color: var(--warning);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .banner-reconnecting::before { animation-duration: 2s; }
 }
 .banner-info {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
@@ -438,12 +637,19 @@ a:hover { text-decoration: underline; }
   align-items: center;
   justify-content: space-between;
   padding: 6px 16px;
-  cursor: pointer;
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
   user-select: none;
 }
-.log-panel-title { font-size: 13px; font-weight: 600; color: var(--muted); }
+.log-panel-titlebtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px 2px 0;
+  border-radius: var(--radius-sm);
+}
+.log-panel-title { font-size: var(--text-sm); font-weight: 600; color: var(--muted); }
+.log-panel-titlebtn:hover .log-panel-title { color: var(--text); }
 .log-panel-controls { display: flex; gap: 8px; align-items: center; }
 
 .log-ctrl-btn {
@@ -497,6 +703,51 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius-lg); padding: 28px;
   max-width: 680px; width: 100%; max-height: 85vh;
   overflow-y: auto; position: relative;
+}
+
+/* ── Command palette (⌘K) ───────────────────────────────────────────────────── */
+.cmdk-overlay {
+  position: fixed; inset: 0; z-index: 950;
+  background: var(--overlay); backdrop-filter: blur(4px);
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 12vh 16px 16px;
+}
+.cmdk-panel {
+  background: var(--bg-elevated); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md); box-shadow: var(--shadow-lg);
+  width: 100%; max-width: 560px; overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.cmdk-input {
+  border: none; border-bottom: 1px solid var(--border);
+  background: transparent; color: var(--text);
+  font-size: var(--text-lg); padding: 16px 18px; outline: none;
+}
+.cmdk-input::placeholder { color: var(--muted); }
+.cmdk-list { list-style: none; margin: 0; padding: 6px; max-height: 46vh; overflow-y: auto; }
+.cmdk-opt {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radius-sm); cursor: pointer;
+}
+.cmdk-opt.active { background: var(--accent); color: var(--on-accent); }
+.cmdk-opt-label { font-size: var(--text-base); }
+.cmdk-opt-hint { margin-left: auto; font-size: var(--text-xs); color: var(--muted); }
+.cmdk-opt.active .cmdk-opt-hint { color: var(--on-accent); opacity: .85; }
+.cmdk-empty { padding: 16px 12px; color: var(--muted); font-size: var(--text-sm); text-align: center; }
+
+/* The header button that opens the palette. */
+.cmdk-trigger {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-elevated); color: var(--muted);
+  font-size: var(--text-xs); padding: 4px 8px; cursor: pointer;
+}
+.cmdk-trigger:hover { color: var(--text); border-color: var(--border-strong); }
+.cmdk-trigger:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.cmdk-kbd {
+  font-family: var(--font-mono); font-size: 11px;
+  border: 1px solid var(--border); border-radius: 4px; padding: 0 5px;
+  background: var(--surface-2);
 }
 
 .modal-close {
@@ -601,4 +852,12 @@ a:hover { text-decoration: underline; }
   .modal-overlay { padding: 16px 8px; }
   .modal-card    { padding: 20px 16px; max-height: 92vh; }
   .banner        { padding: 8px 16px; }
+  /* Run console: stack the master/detail columns on narrow screens. */
+  .runs-grid     { grid-template-columns: 1fr !important; }
 }
+
+/* Run console — the run-row list buttons get a hover affordance and a clear
+   selected state; the rest of the layout is inline in Runs.tsx. */
+.run-row:hover { background: var(--surface-2) !important; }
+.run-row:focus-visible { outline: 2px solid var(--focus-ring, var(--accent)); outline-offset: -2px; }
+.run-row-active { box-shadow: inset 3px 0 0 var(--accent); }

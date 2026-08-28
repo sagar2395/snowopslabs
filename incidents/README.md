@@ -23,6 +23,7 @@ Every fault is a directory `incidents/<name>/` with:
 
 ```yaml
 name: crashloop-bad-config        # must match the directory name
+verified: true                    # optional: confirmed end-to-end on a fresh cluster (else unverified)
 displayName: "CrashLoop: broken container command"
 description: "What the victim experiences, not how it's injected"
 category: workload                # workload | network | resources | storage | config
@@ -38,7 +39,29 @@ detection:                        # same schema as scenario checks
   script: checks/resolved.sh
   timeoutSeconds: 30
 expectAlert: LabFaultCrashLoop    # optional: this alert should page (049)
+
+references:                       # optional: upstream docs for the fix
+  - label: "Kubernetes — Debug a CrashLooping pod"
+    url: "https://kubernetes.io/docs/tasks/debug/debug-application/"
+    note: "Optional context."
+snippets:                         # optional: applyable diagnose/remediate manifests
+  - label: "Restore the container command"
+    description: "Strategic-merge patch that undoes the fault."
+    yaml: |                       # inline manifest, OR `path: manifests/fix.yaml`
+      spec:
+        template:
+          spec:
+            containers:
+              - name: go-api
+                command: null
 ```
+
+`references` and `snippets` use the same shape as scenarios (see
+[scenarios.md → References and snippets](../docs/scenarios.md#references-and-snippets)):
+a reference is `{label, url, note?}`; a snippet is `{label, description?, yaml |
+path}` with exactly one of `yaml`/`path` (a `path` is relative to the incident
+directory). Both are template-resolved and shown by `labctl incident info
+<name>`. `labctl validate` fails on a dangling snippet `path`.
 
 ### Paging (`expectAlert`, on-call drills)
 

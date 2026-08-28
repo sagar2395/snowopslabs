@@ -1,5 +1,6 @@
 apiVersion: scenario.snowops.net/v2
 name: mesh-traffic-management
+verified: true
 displayName: "Mesh Traffic Management"
 description: "Istio canary release for go-api: a 90/10 weighted split between v1 and v2, mesh-level latency fault injection, and STRICT mTLS on the canary workload. Watch the split and faults in mesh telemetry."
 category: networking
@@ -72,6 +73,25 @@ checks:
     type: kubectl
     resource: peerauthentication/go-api-mtls
     namespace: go-api
+
+references:
+  - label: "Istio — Traffic management (VirtualService & DestinationRule)"
+    url: "https://istio.io/latest/docs/concepts/traffic-management/"
+    note: "The concepts behind manifests/canary.yaml: subsets, weighted routes, and how the 90/10 split is expressed."
+  - label: "Istio — Fault injection"
+    url: "https://istio.io/latest/docs/tasks/traffic-management/fault-injection/"
+    note: "Mesh-level delay/abort faults, exactly what the fault-injection stage applies to the v2 subset."
+  - label: "Istio — Mutual TLS (PeerAuthentication)"
+    url: "https://istio.io/latest/docs/tasks/security/authentication/mtls-migration/"
+    note: "Why STRICT mode rejects plaintext sidecar-less clients."
+
+snippets:
+  - label: "Canary VirtualService + DestinationRule (90/10 v1/v2 split)"
+    description: "The weighted route this scenario installs. Shift spec.http[0].route weights and re-apply to promote the canary."
+    path: manifests/canary.yaml
+  - label: "Mesh-level latency fault on the v2 subset"
+    description: "Adds a fixed delay to v2 without touching the app — applied by the fault-injection stage."
+    path: manifests/fault-injection.yaml
 
 explore:
   urls:

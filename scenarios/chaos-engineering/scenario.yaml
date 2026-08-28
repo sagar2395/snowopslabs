@@ -1,4 +1,5 @@
 name: chaos-engineering
+verified: true
 displayName: "Chaos Engineering"
 description: "Failure injection with Chaos Mesh — pod kills, network delays, CPU/memory stress, partitions. Correlate chaos experiments with application metrics via Grafana dashboard."
 category: reliability

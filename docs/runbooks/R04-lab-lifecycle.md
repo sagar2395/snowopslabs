@@ -9,10 +9,14 @@ properties end-to-end on a real cluster. The script-level guarantees behind them
 are also enforced hermetically in CI (`test/shell/platform_uninstall.bats`,
 `platform_install.bats`, `runtime_lifecycle.bats`).
 
-> Deferred to a later pass (with the durable-engine migration, W3-T01/T03/T04):
-> store-backed component tracking, `lab down` reporting exactly what it could
-> not remove, and `lab status` served from the store in <200ms. This runbook
-> covers the reliability slice shipped for first delivery.
+> **Update (W3-T01/T08):** the durable lab service (`internal/service/lab`) now
+> runs bring-up/teardown/status through the recorded, cancellable run engine,
+> and `labctl lab up|down|status` (W3-T08) drives it — see steps 6–7 below. The
+> web run console reads the same runs (W6-T05). Still deferred: store-backed
+> component tracking and exact "what could not be removed" teardown (W3-T04),
+> and porting `labctl platform` onto a platform service (W3-T03). Steps 1–5
+> continue to exercise the legacy `make` path, which remains the default entry
+> point (`make init`/`teardown`) until it is switched over.
 
 ---
 
@@ -90,6 +94,58 @@ will do.
 
 ---
 
+## 6. Durable lab service (W3-T01)
+
+The cluster lifecycle now has a service on the run engine
+(`src/internal/service/lab`). It is the root of the W3/W4 service layer and
+unblocks the W6-T05 run console. Its guarantees are proven hermetically — no
+cluster, no network, no real binaries — with `toolchain.Fake`:
+
+```bash
+$ cd src && go test -race ./internal/service/lab/
+```
+
+**Expect:** `ok`, race-clean. The suite proves the properties this runbook
+verifies by hand at the script level, now at the service level:
+
+- **`Up`/`Down` are recorded runs** under the exclusive `lab` lock key, with the
+  cluster name passed as argv and the right per-kind timeout.
+- **Conflicting operations are refused, not raced** — a second lab op while one
+  is in flight returns `*run.LockConflictError` naming the holder (the 409).
+- **A cancelled `lab up` leaves nothing in flight and frees the lock** — the run
+  reaches a terminal `cancelled` state (the engine cancels the whole process
+  group, ADR-0003) and a fresh operation is immediately accepted.
+- **`lab status` is answered from the store** (well under the 200ms budget) and
+  degrades to `unknown`/`error`/`provisioning`/`up`/`down` from the run history;
+  `--live` additionally attaches a cluster probe without ever failing the read.
+
+**Reviewer check:** the run history the service writes is visible in the same
+store the CLI reads — `labctl runs list` shows `lab.up`/`lab.down` entries with
+status, duration, and logs.
+
+---
+
+## 7. `labctl lab` on the durable engine (W3-T08)
+
+The CLI now drives the service, so cluster lifecycle is a recorded, cancellable,
+followable run instead of a fire-and-forget shell-out:
+
+```bash
+$ labctl lab status                 # from the store, no cluster round-trip
+$ labctl lab up                     # provisions the configured profile; follows the transcript
+$ labctl lab status --live          # adds a real kubectl reachability probe
+$ labctl runs list                  # the lab.up run is recorded with timing + logs
+$ labctl lab down                   # tears down as a recorded run
+```
+
+**Expect:** `lab up`/`down` stream their output and exit non-zero if the run
+fails; `lab status` answers instantly from the store (`unknown` before the first
+run). The same runs appear in `labctl runs list|logs` and in the web run console
+(`labctl ui` → **Runs**). Hermetic coverage:
+`go test ./internal/cli/ -run TestLab` and `go test ./internal/httpapi/ -run TestHandleRun`.
+
+---
+
 ## Sign-off
 
 | Step | Result | Notes |
@@ -99,5 +155,7 @@ will do.
 | 3. Teardown completes, no hang | | |
 | 4. Teardown of down lab is a no-op | | |
 | 5. Reset round-trips | | |
+| 6. `go test ./internal/service/lab/` green (durable service) | | |
+| 7. `labctl lab up/status/down` recorded + followable (W3-T08) | | |
 
 Time to teardown (step 3): _____   ·   Any step that felt slow or risky: _____

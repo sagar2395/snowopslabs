@@ -33,6 +33,13 @@ platform modules — and the stability guarantees you can rely on.
 - An **incident** is a small directory (`fault.yaml`, `inject.sh`,
   `resolve.sh`, `hints.md`) declaring a reversible fault and the check that
   detects it.
+- **References and snippets** (optional, on scenarios *and* incidents) give the
+  learner upstream doc links and copy-paste-applyable manifest fragments. Add a
+  `references:` list (`{label, url, note?}`) and a `snippets:` list (`{label,
+  description?, yaml | path}`); `path` reuses the item's `manifests/` dir.
+  `labctl scenario info` / `labctl incident info` render both, and `labctl
+  validate` fails on a dangling snippet `path`. See
+  [scenarios.md → References and snippets](../scenarios.md#references-and-snippets).
 - A **platform provider** is `platform/<category>/<provider>/` with
   `install.sh`, `uninstall.sh`, `status.sh` and `values.yaml`.
 - Content is **cross-platform, idempotent and declarative** — never hardcode

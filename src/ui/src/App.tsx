@@ -1,33 +1,63 @@
 import { useState, useCallback, useRef, useEffect, Component, type ReactNode } from 'react'
+import {
+  Routes, Route, Navigate, NavLink, Outlet,
+  useOutletContext, useNavigate, useLocation,
+} from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useWebSocket, type WSStatus } from './hooks/useWebSocket'
 import type { ActionEvent, AuthStatus, ClusterInfo, LogEntry, Notification, NotifLevel } from './types'
 import { NotificationList } from './components/Notification'
+import { ThemeToggle } from './components/ThemeToggle'
+import { CommandPalette, type Command } from './components/CommandPalette'
 import { Login } from './components/Login'
 import { LogPanel } from './components/LogPanel'
 import { ConfirmDialog, type ConfirmRequest } from './components/ConfirmDialog'
 import { Dashboard } from './views/Dashboard'
 import { Scenarios } from './views/Scenarios'
+import { Incidents } from './views/Incidents'
 import { Platform } from './views/Platform'
 import { Apps } from './views/Apps'
 import { Learn } from './views/Learn'
 import { Challenges } from './views/Challenges'
 import { Results } from './views/Results'
 import { Leaderboard } from './views/Leaderboard'
+import { Traffic } from './views/Traffic'
+import { Runs } from './views/Runs'
 import { api } from './api/client'
 import { completeJob, reconcileJobs, hasTrackedJobs, trackJob } from './lib/jobs'
 
-type Tab = 'dashboard' | 'scenarios' | 'platform' | 'apps' | 'learn' | 'challenges' | 'results' | 'leaderboard'
-
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'dashboard',   label: 'Dashboard'   },
-  { id: 'scenarios',   label: 'Scenarios'   },
-  { id: 'platform',    label: 'Platform'    },
-  { id: 'apps',        label: 'Apps'        },
-  { id: 'learn',       label: 'Learn'       },
-  { id: 'challenges',  label: 'Challenges'  },
-  { id: 'results',     label: 'Results'     },
-  { id: 'leaderboard', label: 'Leaderboard' },
+// Each section is a real, deep-linkable route. `path` is the URL segment; the
+// nav renders in this order and arrow keys cycle through it.
+type NavItem = { path: string; label: string }
+const NAV: NavItem[] = [
+  { path: 'dashboard',   label: 'Dashboard'   },
+  { path: 'scenarios',   label: 'Scenarios'   },
+  { path: 'incidents',   label: 'Incidents'   },
+  { path: 'platform',    label: 'Platform'    },
+  { path: 'apps',        label: 'Apps'        },
+  { path: 'runs',        label: 'Runs'        },
+  { path: 'traffic',     label: 'Traffic'     },
+  { path: 'learn',       label: 'Learn'       },
+  { path: 'challenges',  label: 'Challenges'  },
+  { path: 'results',     label: 'Results'     },
+  { path: 'leaderboard', label: 'Leaderboard' },
 ]
+
+// Shared state the layout owns and every view reads, delivered through the
+// router Outlet so views stay plain components (no prop drilling through routes).
+// Data fetching itself lives in the query cache (useQuery), not here — the
+// layout only invalidates it on run completion.
+export type AppOutletContext = {
+  notify: (level: NotifLevel, title: string, detail?: string) => void
+  requestConfirm: (req: ConfirmRequest) => void
+  liveCluster: ClusterInfo | null
+  lastStatusAt: number | null
+}
+
+/** Views pull the shared app state from the router outlet. */
+export function useApp(): AppOutletContext {
+  return useOutletContext<AppOutletContext>()
+}
 
 let notifSeq = 0
 let logSeq = 0
@@ -37,7 +67,8 @@ function nowHMS() {
 }
 
 /** Catches render-time crashes in a view so one bad payload can't blank the
- *  whole UI — shows a reset affordance instead. */
+ *  whole UI — shows a reset affordance instead. Keyed by route so navigating
+ *  away from a crashed view clears the error. */
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null as Error | null }
   static getDerivedStateFromError(error: Error) { return { error } }
@@ -55,8 +86,10 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
   }
 }
 
-function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void }) {
-  const [tab, setTab] = useState<Tab>('dashboard')
+function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void }) {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const queryClient = useQueryClient()
   const [wsStatus, setWsStatus] = useState<WSStatus>('connecting')
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [logEntries, setLogEntries] = useState<LogEntry[]>([])
@@ -66,9 +99,7 @@ function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void })
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
   const [liveCluster, setLiveCluster] = useState<ClusterInfo | null>(null)
   const [lastStatusAt, setLastStatusAt] = useState<number | null>(null)
-  // Bumped (debounced) whenever an action completes or the WS reconnects, so
-  // the active view refreshes its data exactly when state may have changed.
-  const [refreshTick, setRefreshTick] = useState(0)
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   const notify = useCallback((level: NotifLevel, title: string, detail?: string) => {
     const id = ++notifSeq
@@ -89,16 +120,17 @@ function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void })
     })
   }, [])
 
-  // Debounced refresh bump — coalesces bursts of action_end events
-  // (e.g. platform-up's per-component sub-actions) into one data reload.
+  // Debounced cache invalidation — coalesces bursts of action_end events
+  // (e.g. platform-up's per-component sub-actions) into one refetch. Every
+  // mounted view's useQuery reruns, so the whole UI reflects the new state.
   const bumpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bumpRefresh = useCallback(() => {
     if (bumpTimer.current) return
     bumpTimer.current = setTimeout(() => {
       bumpTimer.current = null
-      setRefreshTick(t => t + 1)
+      queryClient.invalidateQueries()
     }, 1200)
-  }, [])
+  }, [queryClient])
   useEffect(() => () => { if (bumpTimer.current) clearTimeout(bumpTimer.current) }, [])
 
   const onActionEvent = useCallback((ev: ActionEvent) => {
@@ -142,11 +174,34 @@ function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void })
       if (hasTrackedJobs()) {
         api.getJobs().then(reconcileJobs).catch(() => { /* next event will settle them */ })
       }
-      setRefreshTick(t => t + 1)
+      queryClient.invalidateQueries()
     }
-  }, [notify])
+  }, [notify, queryClient])
 
   useWebSocket({ onActionEvent, onStatusChange, onClusterStatus })
+
+  // Cmd/Ctrl-K toggles the command palette from anywhere in the app.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(o => !o)
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
+  // Palette commands: jump to any section, plus a couple of quick actions.
+  const commands: Command[] = [
+    ...NAV.map(n => ({
+      id: `go-${n.path}`,
+      label: `Go to ${n.label}`,
+      hint: `/${n.path}`,
+      run: () => navigate(`/${n.path}`),
+    })),
+    { id: 'refresh', label: 'Refresh data', hint: 'reload all views', run: () => { queryClient.invalidateQueries() } },
+  ]
 
   // Load runtimes once
   const runtimeLoaded = useRef(false)
@@ -192,27 +247,29 @@ function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void })
     })
   }
 
-  // Keyboard navigation for tabs (Left/Right arrows)
-  function onTabKeyDown(e: React.KeyboardEvent) {
-    const idx = TABS.findIndex(t => t.id === tab)
-    if (e.key === 'ArrowRight') {
-      const next = TABS[(idx + 1) % TABS.length]
-      setTab(next.id)
-      document.getElementById(`tab-${next.id}`)?.focus()
-    } else if (e.key === 'ArrowLeft') {
-      const prev = TABS[(idx - 1 + TABS.length) % TABS.length]
-      setTab(prev.id)
-      document.getElementById(`tab-${prev.id}`)?.focus()
-    }
+  // Arrow-key navigation across the nav links, matching the section order.
+  function onNavKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    const current = location.pathname.replace(/^\//, '') || 'dashboard'
+    const idx = NAV.findIndex(n => n.path === current)
+    if (idx === -1) return
+    const delta = e.key === 'ArrowRight' ? 1 : -1
+    const next = NAV[(idx + delta + NAV.length) % NAV.length]
+    navigate(`/${next.path}`)
+    document.getElementById(`nav-${next.path}`)?.focus()
   }
 
   const connDot = wsStatus === 'connected' ? 'green' : wsStatus === 'connecting' ? 'yellow' : 'red'
   const connLabel = wsStatus === 'connected' ? 'Connected' : wsStatus === 'connecting' ? 'Connecting…' : 'Disconnected'
 
+  const ctx: AppOutletContext = { notify, requestConfirm: setConfirm, liveCluster, lastStatusAt }
+
   return (
     <div className="app-shell">
+      <a href="#main-content" className="skip-link">Skip to main content</a>
       <NotificationList items={notifications} onDismiss={dismiss} />
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
 
       {/* Header */}
       <header className="app-header">
@@ -239,6 +296,17 @@ function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void })
             <span className={`dot dot-${connDot}`} aria-hidden="true" />
             <span>{connLabel}</span>
           </div>
+          <button
+            type="button"
+            className="cmdk-trigger"
+            aria-label="Open command palette"
+            aria-keyshortcuts="Meta+K Control+K"
+            onClick={() => setPaletteOpen(true)}
+          >
+            <span>Jump to</span>
+            <span className="cmdk-kbd" aria-hidden="true">⌘K</span>
+          </button>
+          <ThemeToggle />
           {auth.authEnabled && (
             <div className="auth-indicator">
               {auth.user && (
@@ -252,49 +320,34 @@ function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void })
         </div>
       </header>
 
-      {/* Live-updates banner when the WebSocket is down */}
+      {/* Designed offline state: a non-blocking banner with a live spinner that
+          makes clear the app is actively reconnecting (and it recovers on its
+          own — see onStatusChange, which invalidates the cache on reconnect). */}
       {wsStatus === 'disconnected' && (
-        <div className="banner banner-warn" role="alert">
+        <div className="banner banner-warn banner-reconnecting" role="alert">
           Live updates unavailable — reconnecting to the labctl server…
         </div>
       )}
 
-      {/* Nav */}
-      <nav className="nav-tabs" role="tablist" aria-label="Sections" onKeyDown={onTabKeyDown}>
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            id={`tab-${t.id}`}
-            role="tab"
-            aria-selected={tab === t.id}
-            tabIndex={tab === t.id ? 0 : -1}
-            className={`nav-tab${tab === t.id ? ' active' : ''}`}
-            onClick={() => setTab(t.id)}
+      {/* Nav — real links to deep-linkable routes */}
+      <nav className="nav-tabs" aria-label="Sections" onKeyDown={onNavKeyDown}>
+        {NAV.map(n => (
+          <NavLink
+            key={n.path}
+            id={`nav-${n.path}`}
+            to={`/${n.path}`}
+            className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}
           >
-            {t.label}
-          </button>
+            {n.label}
+          </NavLink>
         ))}
       </nav>
 
-      {/* Content */}
-      <main className="main-content" role="tabpanel" aria-labelledby={`tab-${tab}`}>
-        <ErrorBoundary>
-          {tab === 'dashboard'  && (
-            <Dashboard
-              notify={notify}
-              refreshTick={refreshTick}
-              liveCluster={liveCluster}
-              lastStatusAt={lastStatusAt}
-              requestConfirm={setConfirm}
-            />
-          )}
-          {tab === 'scenarios'  && <Scenarios   notify={notify} refreshTick={refreshTick} requestConfirm={setConfirm} />}
-          {tab === 'platform'   && <Platform    notify={notify} refreshTick={refreshTick} requestConfirm={setConfirm} />}
-          {tab === 'apps'       && <Apps        notify={notify} refreshTick={refreshTick} requestConfirm={setConfirm} />}
-          {tab === 'learn'      && <Learn       notify={notify} refreshTick={refreshTick} />}
-          {tab === 'challenges' && <Challenges  notify={notify} refreshTick={refreshTick} requestConfirm={setConfirm} />}
-          {tab === 'results'    && <Results     notify={notify} refreshTick={refreshTick} />}
-          {tab === 'leaderboard' && <Leaderboard notify={notify} refreshTick={refreshTick} />}
+      {/* Content — the active route renders here, sharing app state via context.
+          The boundary is keyed by path so navigating away clears a crash. */}
+      <main className="main-content" id="main-content" tabIndex={-1}>
+        <ErrorBoundary key={location.pathname}>
+          <Outlet context={ctx} />
         </ErrorBoundary>
       </main>
 
@@ -304,7 +357,54 @@ function MainApp({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void })
   )
 }
 
-/** Resolves authentication before mounting MainApp (which uses the WebSocket
+// Thin route elements: adapt the shared outlet context to each view's props, so
+// the view components themselves stay unchanged and independently testable.
+function DashboardRoute() {
+  const { notify, liveCluster, lastStatusAt, requestConfirm } = useApp()
+  return <Dashboard notify={notify} liveCluster={liveCluster} lastStatusAt={lastStatusAt} requestConfirm={requestConfirm} />
+}
+function ScenariosRoute() {
+  const { notify, requestConfirm } = useApp()
+  return <Scenarios notify={notify} requestConfirm={requestConfirm} />
+}
+function IncidentsRoute() {
+  const { notify, requestConfirm } = useApp()
+  return <Incidents notify={notify} requestConfirm={requestConfirm} />
+}
+function PlatformRoute() {
+  const { notify, requestConfirm } = useApp()
+  return <Platform notify={notify} requestConfirm={requestConfirm} />
+}
+function AppsRoute() {
+  const { notify, requestConfirm } = useApp()
+  return <Apps notify={notify} requestConfirm={requestConfirm} />
+}
+function TrafficRoute() {
+  const { notify } = useApp()
+  return <Traffic notify={notify} />
+}
+function RunsRoute() {
+  const { notify } = useApp()
+  return <Runs notify={notify} />
+}
+function LearnRoute() {
+  const { notify } = useApp()
+  return <Learn notify={notify} />
+}
+function ChallengesRoute() {
+  const { notify, requestConfirm } = useApp()
+  return <Challenges notify={notify} requestConfirm={requestConfirm} />
+}
+function ResultsRoute() {
+  const { notify } = useApp()
+  return <Results notify={notify} />
+}
+function LeaderboardRoute() {
+  const { notify } = useApp()
+  return <Leaderboard notify={notify} />
+}
+
+/** Resolves authentication before mounting the app (which uses the WebSocket
  *  hook), so React hooks never run conditionally. While auth is null we're
  *  still loading; on a transient error we fall back to a permissive status so
  *  a hiccup can't lock the user out. */
@@ -335,5 +435,24 @@ export default function App() {
     return <Login onLoggedIn={setAuth} />
   }
 
-  return <MainApp auth={auth} onLogout={handleLogout} />
+  return (
+    <Routes>
+      <Route element={<AppLayout auth={auth} onLogout={handleLogout} />}>
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="dashboard" element={<DashboardRoute />} />
+        <Route path="scenarios" element={<ScenariosRoute />} />
+        <Route path="incidents" element={<IncidentsRoute />} />
+        <Route path="platform" element={<PlatformRoute />} />
+        <Route path="apps" element={<AppsRoute />} />
+        <Route path="runs" element={<RunsRoute />} />
+        <Route path="traffic" element={<TrafficRoute />} />
+        <Route path="learn" element={<LearnRoute />} />
+        <Route path="challenges" element={<ChallengesRoute />} />
+        <Route path="results" element={<ResultsRoute />} />
+        <Route path="leaderboard" element={<LeaderboardRoute />} />
+        {/* Unknown paths fall back to the dashboard rather than a blank screen. */}
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      </Route>
+    </Routes>
+  )
 }

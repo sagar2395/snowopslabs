@@ -11,10 +11,12 @@
 //	participant — run challenges/incidents/learn + read status; may NOT mutate
 //	              platform/runtime/lab/apps/services.
 //
-// Password hashing uses the Go 1.24 standard library crypto/pbkdf2 rather than
-// an external bcrypt dependency: x/crypto/bcrypt requires Go >= 1.25, which
-// would break CI (pinned to Go 1.24). PBKDF2-HMAC-SHA256 with a per-user random
-// salt and a high iteration count is a sound, FIPS-approved password hash.
+// Password hashing defaults to Argon2id (memory-hard, the modern password-hash
+// recommendation) via golang.org/x/crypto/argon2, which is pure Go and builds on
+// the Go 1.24 toolchain CI pins. Existing PBKDF2-HMAC-SHA256 hashes remain valid
+// — VerifyPassword accepts both schemes — so upgrading is seamless and no stored
+// hash has to be rewritten. (x/crypto/bcrypt is deliberately avoided: it needs
+// Go >= 1.25.)
 package auth
 
 import (
@@ -29,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 
+	"golang.org/x/crypto/argon2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -38,12 +41,25 @@ const (
 	RoleParticipant = "participant"
 )
 
-// pbkdf2 parameters. iterations is deliberately high; 32-byte salt + key.
+// pbkdf2 parameters (legacy hashes only; still verified, never freshly minted).
 const (
 	pbkdf2Iterations = 210_000
 	pbkdf2KeyLen     = 32
 	pbkdf2SaltLen    = 16
-	hashScheme       = "pbkdf2-sha256"
+	schemePBKDF2     = "pbkdf2-sha256"
+)
+
+// Argon2id parameters for freshly minted hashes. These follow the OWASP
+// second-recommended profile (64 MiB, t=3, p=4) — a comfortable cost for a
+// login path while being memory-hard against GPU cracking. They are encoded
+// into each hash, so tuning them later does not invalidate existing hashes.
+const (
+	schemeArgon2id = "argon2id"
+	argonMemoryKiB = 64 * 1024
+	argonTime      = 3
+	argonThreads   = 4
+	argonKeyLen    = 32
+	argonSaltLen   = 16
 )
 
 // ValidRole reports whether r is a recognised role.
@@ -79,34 +95,78 @@ func DefaultUsersPath(projectRoot string) string {
 	return filepath.Join(projectRoot, ".labctl", "users.yaml")
 }
 
-// HashPassword returns an encoded PBKDF2 hash string of the form
-// "pbkdf2-sha256$<iter>$<saltB64>$<hashB64>". It generates a fresh random salt.
+// HashPassword returns an encoded Argon2id hash of the form
+// "argon2id$<mKiB>$<t>$<p>$<saltB64>$<hashB64>". It generates a fresh random
+// salt. Legacy PBKDF2 hashes are still accepted by VerifyPassword, but every new
+// hash is Argon2id.
 func HashPassword(password string) (string, error) {
 	if password == "" {
 		return "", fmt.Errorf("password must not be empty")
 	}
-	salt := make([]byte, pbkdf2SaltLen)
+	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generating salt: %w", err)
 	}
-	dk, err := pbkdf2.Key(sha256.New, password, salt, pbkdf2Iterations, pbkdf2KeyLen)
-	if err != nil {
-		return "", fmt.Errorf("deriving key: %w", err)
-	}
-	return fmt.Sprintf("%s$%d$%s$%s",
-		hashScheme,
-		pbkdf2Iterations,
+	dk := argon2.IDKey([]byte(password), salt, argonTime, argonMemoryKiB, argonThreads, argonKeyLen)
+	return fmt.Sprintf("%s$%d$%d$%d$%s$%s",
+		schemeArgon2id,
+		argonMemoryKiB, argonTime, argonThreads,
 		base64.RawStdEncoding.EncodeToString(salt),
 		base64.RawStdEncoding.EncodeToString(dk),
 	), nil
 }
 
-// VerifyPassword reports whether password matches the encoded hash. It returns
-// false (never an error) for malformed hashes so callers can treat any failure
-// as "wrong password" without leaking which part failed.
+// VerifyPassword reports whether password matches the encoded hash, dispatching
+// on the scheme prefix so both Argon2id (current) and PBKDF2 (legacy) hashes
+// verify. It returns false (never an error) for malformed hashes so callers can
+// treat any failure as "wrong password" without leaking which part failed.
 func VerifyPassword(encoded, password string) bool {
 	parts := strings.Split(encoded, "$")
-	if len(parts) != 4 || parts[0] != hashScheme {
+	if len(parts) == 0 {
+		return false
+	}
+	switch parts[0] {
+	case schemeArgon2id:
+		return verifyArgon2id(parts, password)
+	case schemePBKDF2:
+		return verifyPBKDF2(parts, password)
+	default:
+		return false
+	}
+}
+
+// verifyArgon2id checks an "argon2id$<mKiB>$<t>$<p>$<saltB64>$<hashB64>" hash.
+func verifyArgon2id(parts []string, password string) bool {
+	if len(parts) != 6 {
+		return false
+	}
+	mem, err1 := strconv.Atoi(parts[1])
+	t, err2 := strconv.Atoi(parts[2])
+	p, err3 := strconv.Atoi(parts[3])
+	// Bound every parameter so the conversions below can't overflow and a
+	// malformed hash can't ask argon2 for an absurd amount of work.
+	if err1 != nil || err2 != nil || err3 != nil ||
+		mem <= 0 || mem > 1<<24 || // ≤ 16 GiB in KiB
+		t <= 0 || t > 1<<16 ||
+		p <= 0 || p > 255 {
+		return false
+	}
+	salt, err := base64.RawStdEncoding.DecodeString(parts[4])
+	if err != nil {
+		return false
+	}
+	want, err := base64.RawStdEncoding.DecodeString(parts[5])
+	if err != nil || len(want) == 0 {
+		return false
+	}
+	//nolint:gosec // G115: t, mem, p are range-checked just above.
+	got := argon2.IDKey([]byte(password), salt, uint32(t), uint32(mem), uint8(p), uint32(len(want)))
+	return subtle.ConstantTimeCompare(got, want) == 1
+}
+
+// verifyPBKDF2 checks a legacy "pbkdf2-sha256$<iter>$<saltB64>$<hashB64>" hash.
+func verifyPBKDF2(parts []string, password string) bool {
+	if len(parts) != 4 {
 		return false
 	}
 	iter, err := strconv.Atoi(parts[1])
@@ -172,13 +232,25 @@ func LoadStore(path string) (*Store, error) {
 	return s, nil
 }
 
+// dummyHash is a valid Argon2id hash of a random password, computed once. An
+// unknown-username login is verified against it so the request does the same
+// memory-hard work as a real one — keeping response timing (and cost) uniform,
+// which denies an attacker a username-enumeration oracle.
+var dummyHash = func() string {
+	h, err := HashPassword("unused-placeholder-password")
+	if err != nil { // HashPassword only fails on empty input; never here.
+		panic("auth: computing dummy hash: " + err.Error())
+	}
+	return h
+}()
+
 // Authenticate returns the user if name exists and password verifies.
 func (s *Store) Authenticate(name, password string) (User, bool) {
 	u, ok := s.byName[name]
 	if !ok {
-		// Run a dummy verification to keep timing roughly constant whether or
-		// not the user exists (mitigates username enumeration via timing).
-		VerifyPassword("pbkdf2-sha256$1$AAAA$AAAA", password)
+		// Dummy verification against a real Argon2id hash: same work as the hit
+		// path, so timing does not reveal whether the username exists.
+		VerifyPassword(dummyHash, password)
 		return User{}, false
 	}
 	if !VerifyPassword(u.PasswordHash, password) {

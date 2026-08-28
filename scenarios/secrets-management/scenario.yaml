@@ -1,5 +1,6 @@
 apiVersion: scenario.snowops.net/v2
 name: secrets-management
+verified: true
 displayName: "Secrets Management & Rotation"
 description: "go-api consumes a Vault-backed secret synced by External Secrets. Stage 1 wires the sync and seeds a baseline value; stage 2 rotates it in Vault. A check verifies the new value propagated to the Kubernetes Secret with no redeploy."
 category: security

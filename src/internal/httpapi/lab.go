@@ -28,7 +28,7 @@ func (s *Server) labDeps(continueOnError bool) lab.Deps {
 func (s *Server) handleLabSnapshots(w http.ResponseWriter, r *http.Request) {
 	snaps, err := s.labStore().List()
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		respondError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if snaps == nil {
@@ -41,7 +41,7 @@ func (s *Server) handleLabSnapshots(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLabSnapshotTake(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 	if !isValidName(name) {
-		respondError(w, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid snapshot name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid snapshot name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -49,7 +49,7 @@ func (s *Server) handleLabSnapshotTake(w http.ResponseWriter, r *http.Request) {
 
 	snap, warnings := lab.Collect(ctx, name, s.cfg.Profile, s.cfg.DomainSuffix, s.cfg.ProjectRoot, s.registry, s.scenes)
 	if err := s.labStore().Save(snap); err != nil {
-		respondError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		respondError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -62,11 +62,11 @@ func (s *Server) handleLabSnapshotTake(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLabSnapshotDelete(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 	if !isValidName(name) {
-		respondError(w, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid snapshot name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid snapshot name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
 		return
 	}
 	if err := s.labStore().Delete(name); err != nil {
-		respondError(w, http.StatusNotFound, "not_found", err.Error())
+		respondError(w, r, http.StatusNotFound, "not_found", err.Error())
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
@@ -76,12 +76,12 @@ func (s *Server) handleLabSnapshotDelete(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleLabRestore(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 	if !isValidName(name) {
-		respondError(w, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid snapshot name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid snapshot name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
 		return
 	}
 	snap, err := s.labStore().Load(name)
 	if err != nil {
-		respondError(w, http.StatusNotFound, "not_found", err.Error())
+		respondError(w, r, http.StatusNotFound, "not_found", err.Error())
 		return
 	}
 
@@ -101,7 +101,7 @@ func (s *Server) handleLabRestore(w http.ResponseWriter, r *http.Request) {
 // requires explicit ?confirm=true — the UI shows the confirmation dialog.
 func (s *Server) handleLabReset(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("confirm") != "true" {
-		respondError(w, http.StatusBadRequest, "confirmation_required",
+		respondError(w, r, http.StatusBadRequest, "confirmation_required",
 			"lab reset is destructive; call with ?confirm=true")
 		return
 	}

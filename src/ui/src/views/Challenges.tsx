@@ -1,13 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
-import type { ChallengeSummary, ChallengeStatus, ChallengeRunRecord, NotifyFn } from '../types'
+import { qk } from '../lib/queryClient'
+import { useApiQuery } from '../hooks/useApiQuery'
+import type { ChallengeRunRecord, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 interface ChallengesProps {
   notify: NotifyFn
-  refreshTick: number
   requestConfirm: (req: ConfirmRequest) => void
 }
 
@@ -26,44 +27,31 @@ function formatDate(iso: string) {
 // endpoints — so this view is intentionally read-only: it lists challenges,
 // shows any active run and past results, and points to the exact `labctl`
 // command to play. See docs / `labctl challenge --help`.
-export function Challenges({ refreshTick }: ChallengesProps) {
-  const [challenges, setChallenges] = useState<ChallengeSummary[]>([])
-  const [status, setStatus] = useState<ChallengeStatus | null>(null)
-  const [history, setHistory] = useState<ChallengeRunRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+export function Challenges({ notify: _notify }: ChallengesProps) {
+  // The three challenge reads move together (list, active run, history), so
+  // they share one cache entry fetched in parallel.
+  const { data, loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.challenges, async () => {
+    const [list, st, hist] = await Promise.all([
+      api.listChallenges(),
+      api.getChallengeStatus(),
+      api.getChallengeHistory(),
+    ])
+    return { challenges: list ?? [], status: st, history: hist ?? [] }
+  })
+  const challenges = data?.challenges ?? []
+  const status = data?.status ?? null
+  const history = data?.history ?? []
+
   const [elapsed, setElapsed] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const load = useCallback(async () => {
-    try {
-      const [list, st, hist] = await Promise.all([
-        api.listChallenges(),
-        api.getChallengeStatus(),
-        api.getChallengeHistory(),
-      ])
-      setChallenges(list ?? [])
-      setStatus(st)
-      setHistory(hist ?? [])
-      setLoadError(null)
-      setLoaded(true)
-      // Seed elapsed from server if a challenge is active
-      if (st.active && st.startedAt) {
-        const secs = Math.floor((Date.now() - new Date(st.startedAt).getTime()) / 1000)
-        setElapsed(Math.max(0, secs))
-      }
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
+  // Seed the elapsed counter from the server whenever an active run appears.
+  useEffect(() => {
+    if (status?.active && status.startedAt) {
+      const secs = Math.floor((Date.now() - new Date(status.startedAt).getTime()) / 1000)
+      setElapsed(Math.max(0, secs))
     }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { if (refreshTick > 0) load() }, [refreshTick, load])
+  }, [status?.active, status?.startedAt])
 
   // Live timer when a challenge is active
   useEffect(() => {
@@ -106,7 +94,7 @@ export function Challenges({ refreshTick }: ChallengesProps) {
       <ErrorState
         title="Failed to load challenges"
         message={loadError}
-        onRetry={() => { setRefreshing(true); load() }}
+        onRetry={load}
         retrying={refreshing}
       />
     )
@@ -119,7 +107,7 @@ export function Challenges({ refreshTick }: ChallengesProps) {
       {loadError && (
         <div className="banner banner-warn" role="alert">
           Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>Retry</button>
+          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
         </div>
       )}
 
@@ -162,7 +150,7 @@ export function Challenges({ refreshTick }: ChallengesProps) {
       <div className="card">
         <div className="card-header">
           <span className="card-title">Challenges ({challenges.length})</span>
-          <button className="btn btn-sm" onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>
+          <button className="btn btn-sm" onClick={load} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>

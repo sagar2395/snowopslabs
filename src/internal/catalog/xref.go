@@ -3,6 +3,8 @@ package catalog
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 
@@ -56,6 +58,48 @@ func (c *Catalog) crossReference() {
 			})
 		}
 	}
+
+	c.checkSnippetPaths()
+}
+
+// checkSnippetPaths verifies that every snippet with a `path` points at a file
+// that actually exists inside the item's directory. A dangling path is caught
+// here, at load, naming the file and the offending reference — so an author
+// learns their manifest is missing from `labctl validate`, not when a learner
+// tries to apply it (M2).
+func (c *Catalog) checkSnippetPaths() {
+	for _, s := range c.scenarios {
+		key := sourceKey(KindScenario, s.Name)
+		c.checkItemSnippetPaths(KindScenario, s.Name, c.sources[key], c.nodes[key], s.Dir, s.Snippets)
+	}
+	for _, f := range c.incidents {
+		key := sourceKey(KindIncident, f.Name)
+		c.checkItemSnippetPaths(KindIncident, f.Name, c.sources[key], c.nodes[key], f.Dir, f.Snippets)
+	}
+}
+
+func (c *Catalog) checkItemSnippetPaths(kind Kind, name, file string, node *yaml.Node, dir string, snips []scenario.Snippet) {
+	for _, sn := range snips {
+		if sn.Path == "" {
+			continue // inline yaml, or already reported malformed by Validate
+		}
+		// Validate already rejected unsafe (absolute / "..") paths; only the
+		// existence check needs the directory, which the loader supplies.
+		abs := filepath.Join(dir, filepath.FromSlash(sn.Path))
+		if info, err := os.Stat(abs); err != nil || info.IsDir() {
+			c.problems = append(c.problems, Problem{
+				Kind: kind, Name: name, File: file, Line: lineOfValue(node, sn.Path),
+				Message: fmt.Sprintf("snippet %q: path %q not found in the %s directory", snippetLabel(sn), sn.Path, kind),
+			})
+		}
+	}
+}
+
+func snippetLabel(s scenario.Snippet) string {
+	if s.Label != "" {
+		return s.Label
+	}
+	return s.Path
 }
 
 func moduleLabel(name string, i int) string {
@@ -109,13 +153,35 @@ func scenarioTemplated(s *scenario.Scenario) []string {
 	for _, chk := range s.Checks {
 		out = append(out, chk.URL, chk.Resource, chk.Namespace, chk.Query, chk.Value)
 	}
+	out = append(out, snippetTemplated(s.Snippets)...)
+	for _, r := range s.References {
+		out = append(out, r.URL)
+	}
 	return nonEmpty(out)
 }
 
 // incidentTemplated returns every incident string field that authors template.
 func incidentTemplated(f *incident.Fault) []string {
 	d := f.Detection
-	return nonEmpty([]string{d.URL, d.Resource, d.Namespace, d.Query, d.Value, d.BodyContains})
+	out := []string{d.URL, d.Resource, d.Namespace, d.Query, d.Value, d.BodyContains}
+	out = append(out, snippetTemplated(f.Snippets)...)
+	for _, r := range f.References {
+		out = append(out, r.URL)
+	}
+	return nonEmpty(out)
+}
+
+// snippetTemplated returns the inline-yaml body of every snippet, so a malformed
+// template ({{.Typo}}) in an applyable manifest is caught at validation instead
+// of producing a manifest that won't apply.
+func snippetTemplated(snips []scenario.Snippet) []string {
+	out := make([]string, 0, len(snips))
+	for _, s := range snips {
+		if s.YAML != "" {
+			out = append(out, s.YAML)
+		}
+	}
+	return out
 }
 
 func nonEmpty(in []string) []string {

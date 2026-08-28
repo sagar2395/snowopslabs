@@ -111,3 +111,49 @@ func TestAppend_Idempotent_FileCreation(t *testing.T) {
 		t.Errorf("expected 2, got %d", len(all))
 	}
 }
+
+func TestNewScenarioRecord(t *testing.T) {
+	start := now
+	end := now.Add(30 * time.Second)
+	checks := []CheckOutcome{
+		{Name: "a", Pass: true},
+		{Name: "b", Pass: false, Detail: "got x, want y"},
+	}
+	r := NewScenarioRecord("demo", "alice", []string{"obj1", "obj2"}, checks, start, end)
+
+	if r.Kind != KindScenario || r.Name != "demo" || r.User != "alice" {
+		t.Fatalf("record = %+v", r)
+	}
+	if r.Elapsed != 30 {
+		t.Errorf("elapsed = %d, want 30", r.Elapsed)
+	}
+	if r.Outcome != "failed" {
+		t.Errorf("outcome = %q, want failed (one check failed)", r.Outcome)
+	}
+	if r.Score != 50 {
+		t.Errorf("score = %d, want 50 (1 of 2 checks)", r.Score)
+	}
+	if r.Meta["checksPassed"] != 1 || r.Meta["checksTotal"] != 2 {
+		t.Errorf("meta counts = %v", r.Meta)
+	}
+	if objs, ok := r.Meta["objectives"].([]string); !ok || len(objs) != 2 {
+		t.Errorf("objectives meta = %v", r.Meta["objectives"])
+	}
+}
+
+func TestNewScenarioRecord_AllPass(t *testing.T) {
+	r := NewScenarioRecord("demo", "", nil, []CheckOutcome{{Name: "a", Pass: true}}, now, now.Add(time.Second))
+	if r.Outcome != "passed" || r.Score != 100 {
+		t.Errorf("all-pass record: outcome=%q score=%d, want passed/100", r.Outcome, r.Score)
+	}
+	if _, ok := r.Meta["objectives"]; ok {
+		t.Error("no objectives should mean no objectives meta key")
+	}
+}
+
+func TestNewScenarioRecord_NoChecks(t *testing.T) {
+	r := NewScenarioRecord("demo", "", nil, nil, now, now)
+	if r.Score != -1 || r.Outcome != "failed" {
+		t.Errorf("no-checks record: score=%d outcome=%q, want -1/failed", r.Score, r.Outcome)
+	}
+}

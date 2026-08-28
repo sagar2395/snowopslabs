@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
-import type { LeaderboardEntry, NotifyFn } from '../types'
+import { qk } from '../lib/queryClient'
+import { useApiQuery } from '../hooks/useApiQuery'
+import type { NotifyFn } from '../types'
 import { ErrorState } from '../components/ErrorState'
 
 interface LeaderboardProps {
   notify: NotifyFn
-  refreshTick: number
 }
 
 function formatMttr(seconds: number) {
@@ -15,29 +15,8 @@ function formatMttr(seconds: number) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-export function Leaderboard({ notify, refreshTick }: LeaderboardProps) {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-
-  const load = useCallback(async () => {
-    try {
-      const data = await api.getLeaderboard()
-      setEntries(data ?? [])
-      setLoadError(null)
-      setLoaded(true)
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { if (refreshTick > 0) load() }, [refreshTick, load])
+export function Leaderboard(_props: LeaderboardProps) {
+  const { data: entries = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.leaderboard, api.getLeaderboard)
 
   if (loading) return <div className="loading" role="status">Loading leaderboard…</div>
 
@@ -46,7 +25,7 @@ export function Leaderboard({ notify, refreshTick }: LeaderboardProps) {
       <ErrorState
         title="Failed to load leaderboard"
         message={loadError}
-        onRetry={() => { setRefreshing(true); load() }}
+        onRetry={load}
         retrying={refreshing}
       />
     )
@@ -57,14 +36,14 @@ export function Leaderboard({ notify, refreshTick }: LeaderboardProps) {
       {loadError && (
         <div className="banner banner-warn" role="alert">
           Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>Retry</button>
+          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
         </div>
       )}
 
       <div className="card">
         <div className="card-header">
           <span className="card-title">Leaderboard ({entries.length})</span>
-          <button className="btn btn-sm" onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>
+          <button className="btn btn-sm" onClick={load} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>

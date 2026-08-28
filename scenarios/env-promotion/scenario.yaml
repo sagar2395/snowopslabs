@@ -1,5 +1,6 @@
 apiVersion: scenario.snowops.net/v2
 name: env-promotion
+verified: true
 displayName: "Multi-Env Promotion (Dev → Staging → Prod)"
 description: "Simulate a real release pipeline: three environments (dev, staging, prod) each running go-api in dedicated namespaces with separate declared image tags. Promote between environments with 'labctl env promote' — no ArgoCD required in the default namespace mode."
 category: delivery

@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 
 export interface ConfirmRequest {
   title: string
-  message: string
+  /** Plain text, or rich content (e.g. a requirements preview before activating). */
+  message: ReactNode
   confirmLabel?: string
   /** Style the confirm button as destructive (red). Default true. */
   danger?: boolean
@@ -43,7 +44,7 @@ export function ConfirmDialog({ request, onClose }: ConfirmDialogProps) {
     >
       <div className="modal-card confirm-card" role="alertdialog" aria-modal="true" aria-label={request.title}>
         <h2 className="confirm-title">{request.title}</h2>
-        <p className="confirm-message">{request.message}</p>
+        <div className="confirm-message">{request.message}</div>
         <div className="card-footer confirm-actions">
           <button ref={cancelRef} className="btn" onClick={onClose}>Cancel</button>
           <button

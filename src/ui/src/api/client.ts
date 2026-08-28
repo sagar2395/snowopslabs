@@ -13,9 +13,17 @@ import type {
   ChallengeSummary,
   ChallengeStatus,
   ChallengeRunRecord,
+  IncidentList,
+  IncidentStatus,
+  IncidentHint,
+  IncidentHistoryRecord,
+  Fault,
   ResultRecord,
   LeaderboardEntry,
   AuthStatus,
+  RunSummary,
+  RunDetail,
+  RunLogs,
 } from '../types'
 
 const BASE = '/api'
@@ -104,6 +112,23 @@ export const api = {
   getLearnPath:    (name: string) => req<LearnPath>(`/learn/paths/${enc(name)}`),
   getLearnProgress:(name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/progress`),
   startLearnPath:  (name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/start`, { method: 'POST' }, POST_TIMEOUT_MS),
+  completeLearnModule: (name: string, moduleIdx: number) =>
+    req<LearnProgress>(`/learn/paths/${enc(name)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ moduleIdx }),
+      headers: { 'Content-Type': 'application/json' },
+    }, POST_TIMEOUT_MS),
+
+  // ── Incidents ─────────────────────────────────────────────────────────────
+  // inject/resolve/hint are synchronous (not durable jobs): they return the
+  // final state directly, so callers manage their own busy flags.
+  listIncidents:      ()             => req<IncidentList>('/incidents'),
+  getIncidentStatus:  ()             => req<IncidentStatus>('/incidents/status'),
+  getIncidentHistory: ()             => req<IncidentHistoryRecord[]>('/incidents/history'),
+  injectIncident:     (name: string) => req<{ status: string; silent: boolean; fault?: Fault }>(`/incidents/${enc(name)}/inject`, { method: 'POST' }, POST_TIMEOUT_MS),
+  injectRandomIncident: ()           => req<{ status: string; silent: boolean; fault?: Fault }>('/incidents/inject-random', { method: 'POST' }, POST_TIMEOUT_MS),
+  resolveIncident:    ()             => req<{ status: string; fault: string }>('/incidents/resolve', { method: 'POST' }, POST_TIMEOUT_MS),
+  nextIncidentHint:   ()             => req<IncidentHint>('/incidents/hint', { method: 'POST' }, POST_TIMEOUT_MS),
 
   // ── Challenges ────────────────────────────────────────────────────────────
   listChallenges:     ()             => req<ChallengeSummary[]>('/challenges'),
@@ -117,6 +142,25 @@ export const api = {
   // ── Leaderboard ─────────────────────────────────────────────────────────────
   getLeaderboard:  ()             => req<LeaderboardEntry[]>('/leaderboard'),
 
+  // ── Traffic generator ───────────────────────────────────────────────────────
+  getTraffic:   ()                        => req<{ profiles: string[] }>('/traffic'),
+  startTraffic: (opts: TrafficOptions)    => req<ActionAccepted>('/traffic/start',
+    { method: 'POST', body: JSON.stringify(opts), headers: { 'Content-Type': 'application/json' } }, POST_TIMEOUT_MS),
+  stopTraffic:  ()                        => post('/traffic/stop'),
+
+  // ── Durable runs (run console) ──────────────────────────────────────────────
+  listRuns:  (status?: string)            => req<RunSummary[]>(`/runs${status ? `?status=${enc(status)}` : ''}`),
+  getRun:    (id: string)                 => req<RunDetail>(`/runs/${enc(id)}`),
+  getRunLogs:(id: string, after = 0)      => req<RunLogs>(`/runs/${enc(id)}/logs?after=${after}`),
+  cancelRun: (id: string)                 => req<{ status: string; runId: string }>(`/runs/${enc(id)}/cancel`, { method: 'POST' }, POST_TIMEOUT_MS),
+
+}
+
+export interface TrafficOptions {
+  profile: string
+  rps: number
+  duration?: string
+  target?: string
 }
 
 function enc(s: string) { return encodeURIComponent(s) }

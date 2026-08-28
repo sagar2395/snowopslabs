@@ -1,4 +1,5 @@
 name: crashloop-bad-config
+verified: true
 displayName: "CrashLoop: broken container command"
 description: "Users report the latest go-api deploy never finished. New pods start, die instantly, and start again — classic CrashLoopBackOff. The old pods are still serving, so traffic mostly works… for now."
 category: workload

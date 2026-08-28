@@ -15,3 +15,31 @@ detection:
   script: checks/resolved.sh
   timeoutSeconds: 30
 expectAlert: LabFaultOOMKill
+
+references:
+  - label: "Kubernetes — Assign memory resources to containers"
+    url: "https://kubernetes.io/docs/tasks/configure-pod-container/assign-memory-resource/"
+    note: "requests vs limits, and what the kernel does when a container exceeds its memory limit."
+  - label: "Kubernetes — Debug an OOMKilled container / exit code 137"
+    url: "https://kubernetes.io/docs/tasks/debug/debug-application/debug-running-pod/"
+  - label: "Prometheus — kube-state-metrics container restart & OOM signals"
+    url: "https://github.com/kubernetes/kube-state-metrics/blob/main/docs/metrics/workload/pod-metrics.md"
+
+snippets:
+  - label: "Raise echo-server's memory limit (strategic-merge patch)"
+    description: "Bumps the limit above the working set so the kernel stops killing it. Apply with: kubectl -n echo-server patch deployment echo-server --patch-file <this>"
+    yaml: |
+      spec:
+        template:
+          spec:
+            containers:
+              - name: echo-server
+                resources:
+                  requests:
+                    memory: "32Mi"
+                  limits:
+                    memory: "128Mi"
+  - label: "Watch the restart count settle after the fix"
+    yaml: |
+      # kubectl -n echo-server get pods -w \
+      #   -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount,STATE:.status.phase

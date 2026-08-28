@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
-import type { PlatformProvidersMap, PlatformProviderEntry, NotifyFn } from '../types'
+import { qk } from '../lib/queryClient'
+import { useApiQuery } from '../hooks/useApiQuery'
+import type { PlatformProviderEntry, DashboardURL, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { useJobRunner } from '../hooks/useJobRunner'
@@ -8,7 +9,6 @@ import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 interface PlatformProps {
   notify: NotifyFn
-  refreshTick: number
   requestConfirm: (req: ConfirmRequest) => void
 }
 
@@ -31,33 +31,15 @@ function sortCategories(cats: string[]) {
   })
 }
 
-export function Platform({ notify, refreshTick, requestConfirm }: PlatformProps) {
-  const [providers, setProviders] = useState<PlatformProvidersMap | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
+export function Platform({ notify, requestConfirm }: PlatformProps) {
+  const { data: providers = null, loading, loadError, refreshing, reload: load } = useApiQuery(qk.platform, api.getPlatform)
+  // Service dashboards (Grafana, Prometheus, Traefik, ArgoCD, …). The server only
+  // returns links whose namespace actually exists, so this list is exactly the
+  // reachable set — which is why it lives here next to the components that serve
+  // them, not on the home page where dead links used to appear.
+  const dashQ = useApiQuery(qk.dashboards, () => api.getDashboards().catch(() => [] as DashboardURL[]))
+  const dashboards = (dashQ.data ?? []).filter(d => d.available)
   const { busy, run } = useJobRunner(notify)
-
-  const load = useCallback(async () => {
-    try {
-      const p = await api.getPlatform()
-      setProviders(p)
-      setLoadError(null)
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { if (refreshTick > 0) load() }, [refreshTick, load])
-
-  async function handleRefresh() {
-    setRefreshing(true)
-    await load()
-  }
 
   function install(entry: PlatformProviderEntry, installedSibling?: PlatformProviderEntry) {
     const key = `${entry.category}/${entry.name}`
@@ -91,7 +73,7 @@ export function Platform({ notify, refreshTick, requestConfirm }: PlatformProps)
       <ErrorState
         title="Failed to load platform status"
         message={loadError}
-        onRetry={handleRefresh}
+        onRetry={load}
         retrying={refreshing}
       />
     )
@@ -104,14 +86,14 @@ export function Platform({ notify, refreshTick, requestConfirm }: PlatformProps)
       {loadError && (
         <div className="banner banner-warn" role="alert">
           Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={handleRefresh} disabled={refreshing}>Retry</button>
+          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
         </div>
       )}
 
       <div className="card">
         <div className="card-header">
           <span className="card-title">Platform Components</span>
-          <button className="btn btn-sm" onClick={handleRefresh} disabled={refreshing}>
+          <button className="btn btn-sm" onClick={load} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
@@ -171,23 +153,50 @@ export function Platform({ notify, refreshTick, requestConfirm }: PlatformProps)
           <button
             className="btn btn-primary"
             disabled={busy['platform-all']}
-            onClick={() => run('platform-all', 'Platform install', () => api.platformUp(), () => load())}
+            title="Installs the slim baseline: ingress + metrics + Grafana. Add anything else per-component above."
+            onClick={() => run('platform-all', 'Install baseline', () => api.platformUp(), () => load())}
           >
-            {busy['platform-all'] ? 'Working…' : 'Install All'}
+            {busy['platform-all'] ? 'Working…' : 'Install baseline'}
           </button>
           <button
             className="btn btn-danger"
             disabled={busy['platform-all']}
             onClick={() => requestConfirm({
-              title: 'Remove all platform components?',
-              message: 'This uninstalls every configured platform component (ingress, metrics, Grafana, logging, tracing). Dashboards and scenarios will stop working.',
-              confirmLabel: 'Remove all',
-              onConfirm: () => run('platform-all', 'Platform removal', () => api.platformDown(), () => load()),
+              title: 'Remove the baseline platform components?',
+              message: 'This uninstalls the configured baseline (ingress, metrics, Grafana). Dashboards and scenarios that rely on them will stop working. Components you added individually are removed with their own Remove button.',
+              confirmLabel: 'Remove baseline',
+              onConfirm: () => run('platform-all', 'Remove baseline', () => api.platformDown(), () => load()),
             })}
           >
-            Remove All
+            Remove baseline
           </button>
         </div>
+      </div>
+
+      {/* Service dashboards — moved here from the home page so the links sit
+          next to the components that provide them, and only appear when the
+          backing service is actually present. */}
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-header">
+          <span className="card-title">Dashboards &amp; Access</span>
+          <button className="btn btn-sm" onClick={() => dashQ.reload()} disabled={dashQ.refreshing}>
+            {dashQ.refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+        {dashboards.length === 0 ? (
+          <div className="empty-state">
+            No service dashboards available yet.
+            <div className="empty-hint">Install a component above (e.g. Grafana, Traefik, ArgoCD) and its dashboard link appears here.</div>
+          </div>
+        ) : (
+          <div className="quick-links" style={{ padding: 12 }}>
+            {dashboards.map(d => (
+              <a key={d.name} className="quick-link" href={d.url} target="_blank" rel="noopener noreferrer">
+                {d.label} ↗
+              </a>
+            ))}
+          </div>
+        )}
       </div>
     </>
   )

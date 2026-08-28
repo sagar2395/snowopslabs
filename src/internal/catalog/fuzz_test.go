@@ -43,6 +43,12 @@ var fuzzSeeds = []string{
 	"name: item\nsetup:\n  type: incident\n  ref: {{",
 	string([]byte{0x00, 0x01, 0xff, 0xfe}),
 	"a: &a [*a]", // self-referential alias
+	// M2 references/snippets: malformed shapes must surface as problems, never panic.
+	"name: item\nreferences: not-a-list",
+	"name: item\nreferences:\n  - {}",
+	"name: item\nsnippets:\n  - {label: x, yaml: \"a\", path: \"b\"}",
+	"name: item\nsnippets:\n  - {label: x, path: \"../escape.yaml\"}",
+	"name: item\nsnippets:\n  - {label: x, yaml: \"{{.Nope}}\"}",
 }
 
 func FuzzLoadScenario(f *testing.F) {

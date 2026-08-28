@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -62,6 +63,24 @@ type Engine struct {
 	scenarios  map[string]*Scenario
 	loadErrors map[string]error // scenario dir name → why it failed to load
 	stateDir   string
+
+	// out is where Up/Down write their human-readable progress. It defaults to
+	// os.Stdout (unchanged for the legacy path); the durable scenario service
+	// points it at the run's transcript so activation output is recorded and
+	// streamed through the run engine rather than racing on os.Stdout.
+	out io.Writer
+}
+
+// SetOutput redirects the progress output of Up/Down. Not safe to call while an
+// activation is in flight on the same engine; callers serialise per engine.
+func (e *Engine) SetOutput(w io.Writer) { e.out = w }
+
+// output returns the configured progress writer, defaulting to os.Stdout.
+func (e *Engine) output() io.Writer {
+	if e.out != nil {
+		return e.out
+	}
+	return os.Stdout
 }
 
 // NewEngine creates a scenario engine by scanning the scenarios/ directory.
@@ -201,15 +220,15 @@ func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 		return err
 	}
 
-	fmt.Printf("Activating scenario: %s\n", s.DisplayName)
-	fmt.Printf("  %s\n\n", s.Description)
+	fmt.Fprintf(e.output(), "Activating scenario: %s\n", s.DisplayName)
+	fmt.Fprintf(e.output(), "  %s\n\n", s.Description)
 
 	if len(s.Objectives) > 0 {
-		fmt.Println("Objectives:")
+		fmt.Fprintln(e.output(), "Objectives:")
 		for _, o := range s.Objectives {
-			fmt.Printf("  - %s\n", o)
+			fmt.Fprintf(e.output(), "  - %s\n", o)
 		}
-		fmt.Println()
+		fmt.Fprintln(e.output())
 	}
 
 	ctx := context.Background()
@@ -217,9 +236,9 @@ func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 	i := 0
 	for _, st := range s.StagesOrDefault() {
 		if st.Name != "" {
-			fmt.Printf("=== Stage: %s ===\n", st.Name)
+			fmt.Fprintf(e.output(), "=== Stage: %s ===\n", st.Name)
 			if st.Description != "" {
-				fmt.Printf("    %s\n", st.Description)
+				fmt.Fprintf(e.output(), "    %s\n", st.Description)
 			}
 		}
 		ev := extension.Event{Scenario: s.Name, Stage: st.Name}
@@ -228,7 +247,7 @@ func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 		}
 		for _, comp := range st.Components {
 			i++
-			fmt.Printf("[%d/%d] Installing %s (%s)...\n", i, total, comp.Name, comp.Type)
+			fmt.Fprintf(e.output(), "[%d/%d] Installing %s (%s)...\n", i, total, comp.Name, comp.Type)
 			if err := e.installComponent(s, &comp, exec); err != nil {
 				return fmt.Errorf("installing component %s: %w", comp.Name, err)
 			}
@@ -244,8 +263,8 @@ func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 	}
 
 	if len(s.Checks) > 0 {
-		fmt.Printf("\nThis scenario has %d verifiable checks. Run: labctl scenario verify %s\n", len(s.Checks), s.Name)
-		fmt.Printf("Pods may still be starting — add --watch to wait for them:\n  labctl scenario verify %s --watch\n", s.Name)
+		fmt.Fprintf(e.output(), "\nThis scenario has %d verifiable checks. Run: labctl scenario verify %s\n", len(s.Checks), s.Name)
+		fmt.Fprintf(e.output(), "Pods may still be starting — add --watch to wait for them:\n  labctl scenario verify %s --watch\n", s.Name)
 	}
 
 	// Print explore hints
@@ -320,21 +339,21 @@ func (e *Engine) Down(name string, exec CommandExecutor) error {
 		return fmt.Errorf("scenario %q is not active", name)
 	}
 
-	fmt.Printf("Deactivating scenario: %s\n\n", s.DisplayName)
+	fmt.Fprintf(e.output(), "Deactivating scenario: %s\n\n", s.DisplayName)
 
 	// Uninstall in reverse order (across all stages)
 	all := s.AllComponents()
 	for i := len(all) - 1; i >= 0; i-- {
 		comp := all[i]
-		fmt.Printf("[%d/%d] Uninstalling %s...\n", len(all)-i, len(all), comp.Name)
+		fmt.Fprintf(e.output(), "[%d/%d] Uninstalling %s...\n", len(all)-i, len(all), comp.Name)
 		if err := e.uninstallComponent(s, &comp, exec); err != nil {
-			fmt.Printf("  Warning: %v\n", err)
+			fmt.Fprintf(e.output(), "  Warning: %v\n", err)
 		}
 	}
 
 	// Mark as inactive
 	e.markInactive(name)
-	fmt.Println("\nScenario deactivated.")
+	fmt.Fprintln(e.output(), "\nScenario deactivated.")
 	return nil
 }
 
@@ -796,32 +815,32 @@ func (e *Engine) printExploreHints(s *Scenario) {
 		return
 	}
 
-	fmt.Println("\n=== Explore This Scenario ===")
+	fmt.Fprintln(e.output(), "\n=== Explore This Scenario ===")
 
 	if len(s.Explore.URLs) > 0 {
-		fmt.Println("\nURLs:")
+		fmt.Fprintln(e.output(), "\nURLs:")
 		for _, u := range s.Explore.URLs {
 			resolved := e.resolveTemplate(u.URL)
-			fmt.Printf("  %-30s %s\n", u.Label+":", resolved)
+			fmt.Fprintf(e.output(), "  %-30s %s\n", u.Label+":", resolved)
 		}
 	}
 
 	if len(s.Explore.Commands) > 0 {
-		fmt.Println("\nCommands to try:")
+		fmt.Fprintln(e.output(), "\nCommands to try:")
 		for _, c := range s.Explore.Commands {
 			resolved := e.resolveTemplate(c.Command)
-			fmt.Printf("  %s:\n    %s\n", c.Label, resolved)
+			fmt.Fprintf(e.output(), "  %s:\n    %s\n", c.Label, resolved)
 		}
 	}
 
 	if len(s.Explore.Tips) > 0 {
-		fmt.Println("\nTips:")
+		fmt.Fprintln(e.output(), "\nTips:")
 		for _, t := range s.Explore.Tips {
-			fmt.Printf("  - %s\n", e.resolveTemplate(t))
+			fmt.Fprintf(e.output(), "  - %s\n", e.resolveTemplate(t))
 		}
 	}
 
-	fmt.Println()
+	fmt.Fprintln(e.output())
 }
 
 func indentJSON(s, prefix string) string {

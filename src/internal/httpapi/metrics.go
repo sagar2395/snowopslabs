@@ -52,6 +52,7 @@ type statusRecorder struct {
 	http.ResponseWriter
 	status  int
 	written bool
+	bytes   int
 }
 
 func (r *statusRecorder) WriteHeader(code int) {
@@ -65,7 +66,9 @@ func (r *statusRecorder) WriteHeader(code int) {
 func (r *statusRecorder) Write(b []byte) (int, error) {
 	// An implicit 200: a handler that writes a body without calling WriteHeader.
 	r.written = true
-	return r.ResponseWriter.Write(b)
+	n, err := r.ResponseWriter.Write(b)
+	r.bytes += n
+	return n, err
 }
 
 func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {

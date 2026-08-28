@@ -1,43 +1,26 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { api } from '../api/client'
+import { qk } from '../lib/queryClient'
+import { useApiQuery } from '../hooks/useApiQuery'
 import type { LearnPathSummary, LearnPath, LearnProgress, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 
 interface LearnProps {
   notify: NotifyFn
-  refreshTick: number
 }
 
-export function Learn({ notify, refreshTick }: LearnProps) {
-  const [paths, setPaths] = useState<LearnPathSummary[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+export function Learn({ notify }: LearnProps) {
+  const { data: paths = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.learnPaths, api.listLearnPaths)
   const [selected, setSelected] = useState<{ path: LearnPath; progress: LearnProgress } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [openingPath, setOpeningPath] = useState<string | null>(null)
   const [starting, setStarting] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
-    try {
-      const list = await api.listLearnPaths()
-      setPaths(list ?? [])
-      setLoadError(null)
-      setLoaded(true)
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { if (refreshTick > 0) load() }, [refreshTick, load])
+  const [completingIdx, setCompletingIdx] = useState<number | null>(null)
 
   async function openPath(name: string) {
     setDetailLoading(true)
+    setOpeningPath(name)
     setSelected(null)
     try {
       const [path, progress] = await Promise.all([
@@ -49,6 +32,7 @@ export function Learn({ notify, refreshTick }: LearnProps) {
       notify('error', 'Failed to load path', e instanceof Error ? e.message : String(e))
     } finally {
       setDetailLoading(false)
+      setOpeningPath(null)
     }
   }
 
@@ -65,6 +49,26 @@ export function Learn({ notify, refreshTick }: LearnProps) {
       notify('error', 'Failed to start path', e instanceof Error ? e.message : String(e))
     } finally {
       setStarting(null)
+    }
+  }
+
+  // Completing a module is the core of the in-UI progression (W7-T01): the
+  // learner works through a path end to end without dropping to the CLI. The
+  // server returns the updated progress (nextIdx advances, -1 when finished),
+  // which we fold straight into the open modal and mirror into the list.
+  async function completeModule(name: string, idx: number) {
+    setCompletingIdx(idx)
+    try {
+      const progress = await api.completeLearnModule(name, idx)
+      setSelected(prev => (prev && prev.path.name === name ? { ...prev, progress } : prev))
+      if (progress.nextIdx === -1) {
+        notify('success', 'Path complete', `You finished "${name}". Nicely done.`)
+      }
+      load()
+    } catch (e) {
+      notify('error', 'Failed to complete module', e instanceof Error ? e.message : String(e))
+    } finally {
+      setCompletingIdx(null)
     }
   }
 
@@ -87,7 +91,7 @@ export function Learn({ notify, refreshTick }: LearnProps) {
       <ErrorState
         title="Failed to load learning paths"
         message={loadError}
-        onRetry={() => { setRefreshing(true); load() }}
+        onRetry={load}
         retrying={refreshing}
       />
     )
@@ -98,14 +102,14 @@ export function Learn({ notify, refreshTick }: LearnProps) {
       {loadError && (
         <div className="banner banner-warn" role="alert">
           Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>Retry</button>
+          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
         </div>
       )}
 
       <div className="card">
         <div className="card-header">
           <span className="card-title">Learning Paths ({paths.length})</span>
-          <button className="btn btn-sm" onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>
+          <button className="btn btn-sm" onClick={load} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
@@ -163,8 +167,8 @@ export function Learn({ notify, refreshTick }: LearnProps) {
                       {starting === p.name ? 'Starting…' : 'Start'}
                     </button>
                   )}
-                  <button className="btn btn-sm" onClick={() => openPath(p.name)}>
-                    {detailLoading ? 'Loading…' : 'Details'}
+                  <button className="btn btn-sm" onClick={() => openPath(p.name)} disabled={openingPath === p.name}>
+                    {openingPath === p.name ? 'Loading…' : 'Details'}
                   </button>
                 </div>
               </div>
@@ -189,6 +193,11 @@ export function Learn({ notify, refreshTick }: LearnProps) {
                     {(selected.path as LearnPath & { tags?: string[] }).tags?.map((t: string) => (
                       <Badge key={t} variant="category">{t}</Badge>
                     ))}
+                    {selected.progress.started && (
+                      <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+                        {selected.progress.completed?.length ?? 0}/{selected.path.modules.length} complete
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -223,9 +232,19 @@ export function Learn({ notify, refreshTick }: LearnProps) {
                               {m.action.type} · {m.action.ref}
                             </div>
                           </div>
-                          <Badge variant={status === 'done' ? 'running' : status === 'next' ? 'category' : 'stopped'}>
-                            {status === 'done' ? 'Done' : status === 'next' ? 'Next' : status === 'locked' ? 'Locked' : 'Pending'}
-                          </Badge>
+                          {status === 'next' ? (
+                            <button
+                              className="btn btn-sm btn-primary"
+                              disabled={completingIdx !== null}
+                              onClick={() => completeModule(selected.path.name, idx)}
+                            >
+                              {completingIdx === idx ? 'Marking…' : 'Mark complete'}
+                            </button>
+                          ) : (
+                            <Badge variant={status === 'done' ? 'running' : 'stopped'}>
+                              {status === 'done' ? 'Done' : status === 'locked' ? 'Locked' : 'Pending'}
+                            </Badge>
+                          )}
                         </div>
                       )
                     })}
@@ -233,7 +252,7 @@ export function Learn({ notify, refreshTick }: LearnProps) {
                 </div>
 
                 <div className="card-footer">
-                  {!selected.progress.started && (
+                  {!selected.progress.started ? (
                     <button
                       className="btn btn-primary"
                       disabled={starting === selected.path.name}
@@ -241,6 +260,18 @@ export function Learn({ notify, refreshTick }: LearnProps) {
                     >
                       {starting === selected.path.name ? 'Starting…' : 'Start Path'}
                     </button>
+                  ) : selected.progress.nextIdx != null && selected.progress.nextIdx >= 0 ? (
+                    <button
+                      className="btn btn-primary"
+                      disabled={completingIdx !== null}
+                      onClick={() => completeModule(selected.path.name, selected.progress.nextIdx!)}
+                    >
+                      {completingIdx === selected.progress.nextIdx
+                        ? 'Marking…'
+                        : `Complete “${selected.path.modules[selected.progress.nextIdx]?.displayName || selected.path.modules[selected.progress.nextIdx]?.name || 'module'}” & continue`}
+                    </button>
+                  ) : (
+                    <span style={{ alignSelf: 'center' }}><Badge variant="running">✓ Path complete</Badge></span>
                   )}
                   <button className="btn" onClick={() => setSelected(null)}>Close</button>
                 </div>

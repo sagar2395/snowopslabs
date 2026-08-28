@@ -5,6 +5,7 @@ package run
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/sagar2395/snowopslabs/internal/store"
@@ -90,41 +91,50 @@ func (e *Engine) execute(id string) {
 
 	sink := newLogSink(ctx, e.store, e.subs, id, e.now)
 
-	scriptPath, err := e.resolver.Resolve(rec.Script)
-	if err != nil {
-		sink.system("cannot run " + rec.Script + ": " + err.Error())
-		sink.flush()
-		e.finish(ctx, id, rec.Kind, store.StatusFailed, nil, err.Error(), 0)
-		return
+	var (
+		res    toolchain.Result
+		runErr error
+		begin  = time.Now()
+	)
+	if spec.Func != nil {
+		// In-process operation: run it, streaming its transcript to the sink.
+		res, runErr = e.executeFunc(timeoutCtx, spec.Func, sink)
+	} else {
+		scriptPath, err := e.resolver.Resolve(rec.Script)
+		if err != nil {
+			sink.system("cannot run " + rec.Script + ": " + err.Error())
+			sink.flush()
+			e.finish(ctx, id, rec.Kind, store.StatusFailed, nil, err.Error(), 0)
+			return
+		}
+
+		dir := spec.Dir
+		if dir == "" {
+			dir = e.dir
+		}
+
+		stdout := sink.writer(store.StreamStdout)
+		stderr := sink.writer(store.StreamStderr)
+
+		cmd := toolchain.Command{
+			Path:   scriptPath,
+			Args:   rec.Argv,
+			Dir:    dir,
+			Env:    spec.Env,
+			Stdout: stdout,
+			Stderr: stderr,
+		}
+
+		// Monotonic measurement. Subtracting two wall-clock timestamps would be
+		// wrong across a DST change or an NTP step.
+		res, runErr = e.runner.Run(timeoutCtx, cmd)
+
+		// A script that dies mid-line, or ends without a trailing newline, still
+		// has its last words recorded — that line is often the one explaining why.
+		stdout.Flush()
+		stderr.Flush()
 	}
-
-	dir := spec.Dir
-	if dir == "" {
-		dir = e.dir
-	}
-
-	stdout := sink.writer(store.StreamStdout)
-	stderr := sink.writer(store.StreamStderr)
-
-	cmd := toolchain.Command{
-		Path:   scriptPath,
-		Args:   rec.Argv,
-		Dir:    dir,
-		Env:    spec.Env,
-		Stdout: stdout,
-		Stderr: stderr,
-	}
-
-	// Monotonic measurement. Subtracting two wall-clock timestamps would be
-	// wrong across a DST change or an NTP step.
-	begin := time.Now()
-	res, runErr := e.runner.Run(timeoutCtx, cmd)
 	elapsed := time.Since(begin)
-
-	// A script that dies mid-line, or ends without a trailing newline, still
-	// has its last words recorded — that line is often the one explaining why.
-	stdout.Flush()
-	stderr.Flush()
 	sink.flush()
 
 	status, exitCode, message := classify(runCtx, timeoutCtx, timeout, res, runErr)
@@ -141,6 +151,22 @@ func (e *Engine) execute(id string) {
 
 	sink.close()
 	e.finish(ctx, id, rec.Kind, status, exitCode, message, elapsed)
+}
+
+// executeFunc runs an in-process operation, streaming its transcript to the sink
+// and translating its outcome into the same Result/error shape a script yields —
+// so classify treats both identically. A panic in the operation is contained and
+// reported as a failure rather than taking the worker down.
+func (e *Engine) executeFunc(ctx context.Context, fn RunFunc, sink *logSink) (res toolchain.Result, err error) {
+	out := sink.writer(store.StreamStdout)
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("operation panicked: %v", r)
+		}
+		out.Flush()
+	}()
+	err = fn(ctx, out)
+	return toolchain.Result{}, err
 }
 
 // classify turns an execution outcome into a terminal status, an exit code and
@@ -177,6 +203,16 @@ func (e *Engine) finish(ctx context.Context, id, kind string, status store.Statu
 	e.subs.publish(Event{Type: EventStatus, RunID: id, Status: status})
 	if e.metrics != nil {
 		e.metrics.RunFinished(kind, string(status), elapsed)
+	}
+	// Fire completion hooks with the full terminal record (re-read so they get
+	// target and lock key, not just the fields this call carries). Hooks run
+	// before the worker moves on, so a Shutdown waits for them.
+	if len(e.finishHooks) > 0 {
+		if rec, err := e.store.GetRun(ctx, id); err == nil {
+			for _, h := range e.finishHooks {
+				h(ctx, rec)
+			}
+		}
 	}
 }
 

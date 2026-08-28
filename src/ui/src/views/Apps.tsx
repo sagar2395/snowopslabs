@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api/client'
-import type { AppInfo, StatusResponse, NotifyFn } from '../types'
+import { qk } from '../lib/queryClient'
+import { useApiQuery } from '../hooks/useApiQuery'
+import type { AppInfo, NotifyFn } from '../types'
 import { DeployedBadge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { useJobRunner } from '../hooks/useJobRunner'
@@ -8,44 +9,17 @@ import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 interface AppsProps {
   notify: NotifyFn
-  refreshTick: number
   requestConfirm: (req: ConfirmRequest) => void
 }
 
-export function Apps({ notify, refreshTick, requestConfirm }: AppsProps) {
-  const [apps, setApps] = useState<AppInfo[]>([])
-  const [suffix, setSuffix] = useState('')
-  const [loggingActive, setLoggingActive] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [loaded, setLoaded] = useState(false)
+export function Apps({ notify, requestConfirm }: AppsProps) {
+  // /status carries apps + domainSuffix + platform in one call; the Dashboard
+  // shares this same cache key, so both views fetch it once.
+  const { data, loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.status, api.getStatus)
+  const apps = data?.apps ?? []
+  const suffix = data?.domainSuffix ?? ''
+  const loggingActive = Boolean(data?.platform?.logging?.active)
   const { busy, run } = useJobRunner(notify)
-
-  const load = useCallback(async () => {
-    try {
-      // Use /status to get apps + domainSuffix + platform in one call
-      const s: StatusResponse = await api.getStatus()
-      setApps(s.apps ?? [])
-      if (s.domainSuffix) setSuffix(s.domainSuffix)
-      setLoggingActive(Boolean(s.platform?.logging?.active))
-      setLoadError(null)
-      setLoaded(true)
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { if (refreshTick > 0) load() }, [refreshTick, load])
-
-  async function handleRefresh() {
-    setRefreshing(true)
-    await load()
-  }
 
   function openLogs(a: AppInfo) {
     if (!suffix) {
@@ -69,7 +43,7 @@ export function Apps({ notify, refreshTick, requestConfirm }: AppsProps) {
       <ErrorState
         title="Failed to load apps"
         message={loadError}
-        onRetry={handleRefresh}
+        onRetry={load}
         retrying={refreshing}
       />
     )
@@ -80,14 +54,14 @@ export function Apps({ notify, refreshTick, requestConfirm }: AppsProps) {
       {loadError && (
         <div className="banner banner-warn" role="alert">
           Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={handleRefresh} disabled={refreshing}>Retry</button>
+          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
         </div>
       )}
 
       <div className="card">
         <div className="card-header">
           <span className="card-title">Applications ({apps.length})</span>
-          <button className="btn btn-sm" onClick={handleRefresh} disabled={refreshing}>
+          <button className="btn btn-sm" onClick={load} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>

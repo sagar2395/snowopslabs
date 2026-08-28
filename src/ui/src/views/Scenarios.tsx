@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
+import { qk } from '../lib/queryClient'
+import { useApiQuery } from '../hooks/useApiQuery'
 import type { Scenario, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
@@ -8,39 +10,17 @@ import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 interface ScenariosProps {
   notify: NotifyFn
-  refreshTick: number
   requestConfirm: (req: ConfirmRequest) => void
 }
 
-export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProps) {
-  const [scenarios, setScenarios] = useState<Scenario[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [loaded, setLoaded] = useState(false)
+export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
+  const { data: scenarios = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.scenarios, api.listScenarios)
   const [filter, setFilter] = useState('')
   const [detail, setDetail] = useState<Scenario | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const { busy, run } = useJobRunner(notify)
   const modalCloseRef = useRef<HTMLButtonElement>(null)
   const detailOpener = useRef<Element | null>(null)
-
-  const load = useCallback(async () => {
-    try {
-      const list = await api.listScenarios()
-      setScenarios(list ?? [])
-      setLoadError(null)
-      setLoaded(true)
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { if (refreshTick > 0) load() }, [refreshTick, load])
 
   // Modal: Esc to close, focus management
   useEffect(() => {
@@ -60,11 +40,6 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
 
   function closeDetail() { setDetail(null) }
 
-  async function handleRefresh() {
-    setRefreshing(true)
-    await load()
-  }
-
   async function openDetail(name: string) {
     setDetailLoading(true)
     setDetail({ name, displayName: name, description: '', category: '', active: false })
@@ -79,8 +54,52 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
     }
   }
 
-  function activate(name: string) {
-    run(name, `Activate ${name}`, () => api.scenarioUp(name), () => load())
+  // Activating shows a requirements preview first (W-feedback): what the scenario
+  // will install and what it expects to already be present, so nothing runs as a
+  // surprise. Prerequisites are not auto-installed — the dialog says so and points
+  // to the Platform tab. If the detail fetch fails we fall back to a plain confirm.
+  async function activate(name: string) {
+    let s: Scenario | null = null
+    try { s = await api.getScenario(name) } catch { /* fall back to a plain confirm */ }
+    const plat = s?.prerequisites?.platform ?? []
+    const apps = s?.prerequisites?.apps ?? []
+    const comps = s?.components ?? []
+    const doRun = () => run(name, `Activate ${name}`, () => api.scenarioUp(name), () => load())
+    requestConfirm({
+      title: `Activate ${s?.displayName || name}?`,
+      danger: false,
+      confirmLabel: 'Activate',
+      message: (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {comps.length > 0 && (
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>This will install</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {comps.map(c => (
+                  <li key={c.name}>{c.name} <span style={{ color: 'var(--muted)', fontSize: 12 }}>({c.type}{c.namespace ? ` → ${c.namespace}` : ''})</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(plat.length > 0 || apps.length > 0) && (
+            <div>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>Requires (install these first if missing)</div>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {plat.map(p => <li key={`p-${p}`}>Platform: <code>{p}</code></li>)}
+                {apps.map(a => <li key={`a-${a}`}>App: <code>{a}</code></li>)}
+              </ul>
+              <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
+                Prerequisites are not installed automatically — add any missing ones in the Platform tab, then activate.
+              </div>
+            </div>
+          )}
+          {comps.length === 0 && plat.length === 0 && apps.length === 0 && (
+            <div>Activate this scenario now?</div>
+          )}
+        </div>
+      ),
+      onConfirm: doRun,
+    })
   }
 
   function deactivate(name: string) {
@@ -108,7 +127,7 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
       <ErrorState
         title="Failed to load scenarios"
         message={loadError}
-        onRetry={handleRefresh}
+        onRetry={load}
         retrying={refreshing}
       />
     )
@@ -128,7 +147,7 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
       {loadError && (
         <div className="banner banner-warn" role="alert">
           Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={handleRefresh} disabled={refreshing}>Retry</button>
+          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
         </div>
       )}
 
@@ -146,7 +165,7 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
                 onChange={e => setFilter(e.target.value)}
               />
             )}
-            <button className="btn btn-sm" onClick={handleRefresh} disabled={refreshing}>
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>

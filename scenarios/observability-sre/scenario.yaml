@@ -1,4 +1,5 @@
 name: observability-sre
+verified: true
 displayName: "Observability & SRE"
 description: "Full observability stack with log aggregation, distributed tracing, alerting rules, and SLO dashboards."
 category: observability

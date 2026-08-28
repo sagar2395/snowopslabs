@@ -21,12 +21,19 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
 	"github.com/sagar2395/snowopslabs/internal/store"
 	"github.com/sagar2395/snowopslabs/internal/toolchain"
 )
+
+// RunFunc is an in-process operation the engine runs as a recorded run. It must
+// honour ctx (returning promptly when it is cancelled) and write human-readable
+// progress to out, which is persisted to the run's transcript. A nil return is
+// success; any error is a failure recorded with the error's message.
+type RunFunc func(ctx context.Context, out io.Writer) error
 
 // Spec describes work to submit. It is the only way into the engine.
 type Spec struct {
@@ -41,8 +48,16 @@ type Spec struct {
 	// Actor is who asked for it (server mode). Empty for local CLI use.
 	Actor string
 	// Script is the path to execute, relative to a content root. It is
-	// resolved and containment-checked before anything runs.
+	// resolved and containment-checked before anything runs. Exactly one of
+	// Script or Func is set.
 	Script string
+	// Func is an in-process operation to run as a durable, cancellable, recorded
+	// run — for work the engine orchestrates in Go rather than shelling out to a
+	// single script (a multi-component scenario activation, for instance). It
+	// receives the run's context (cancelled on Cancel/Shutdown/timeout) and a
+	// writer for its transcript. It is held in-process only, never persisted.
+	// Exactly one of Script or Func is set.
+	Func RunFunc
 	// Args are passed to the script as argv. Never a shell string.
 	Args []string
 	// Env is layered over the process environment. Scripts read
@@ -144,9 +159,21 @@ type Engine struct {
 	// metrics, when non-nil, receives run-lifecycle signals.
 	metrics Metrics
 
+	// finishHooks receive a run's terminal record once it has finished, so a
+	// caller can react to outcomes without the engine knowing their domain — the
+	// component inventory (W3-T04) is recorded this way.
+	finishHooks []FinishHook
+
 	wg       sync.WaitGroup
 	shutdown chan struct{}
 }
+
+// FinishHook is called with a run's terminal record once it has reached a final
+// state. It runs synchronously in the worker before the run is considered done —
+// so Shutdown waits for it — which means it must be quick and must not block.
+// The engine stays domain-agnostic: a hook is how a caller learns that, say, a
+// platform.install succeeded and records the component it left behind.
+type FinishHook func(ctx context.Context, r store.Run)
 
 // Metrics receives run-lifecycle signals for observability. It is deliberately
 // tiny and framework-free so the engine does not depend on any metrics library;
@@ -165,6 +192,16 @@ type Option func(*Engine)
 // WithMetrics attaches a metrics sink that receives run-lifecycle signals.
 func WithMetrics(m Metrics) Option {
 	return func(e *Engine) { e.metrics = m }
+}
+
+// WithFinishHook registers a callback invoked with each run's terminal record.
+// Multiple hooks run in registration order. See FinishHook.
+func WithFinishHook(h FinishHook) Option {
+	return func(e *Engine) {
+		if h != nil {
+			e.finishHooks = append(e.finishHooks, h)
+		}
+	}
 }
 
 // WithWorkers sets how many non-conflicting runs execute concurrently.
@@ -316,8 +353,8 @@ func (e *Engine) Submit(ctx context.Context, spec Spec) (string, error) {
 	if spec.Kind == "" {
 		return "", errors.New("run: spec.Kind is required")
 	}
-	if spec.Script == "" {
-		return "", errors.New("run: spec.Script is required")
+	if (spec.Script == "") == (spec.Func == nil) {
+		return "", errors.New("run: exactly one of spec.Script or spec.Func is required")
 	}
 
 	e.mu.Lock()
@@ -329,9 +366,12 @@ func (e *Engine) Submit(ctx context.Context, spec Spec) (string, error) {
 
 	// Resolve the script before creating any record. A typo in a scenario
 	// should be an immediate, clear error — not a queued run that fails later
-	// and leaves a confusing entry in the history.
-	if _, err := e.resolver.Resolve(spec.Script); err != nil {
-		return "", err
+	// and leaves a confusing entry in the history. (An in-process Func has
+	// nothing to resolve.)
+	if spec.Script != "" {
+		if _, err := e.resolver.Resolve(spec.Script); err != nil {
+			return "", err
+		}
 	}
 
 	if spec.LockKey != "" {

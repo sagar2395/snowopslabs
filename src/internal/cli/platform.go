@@ -2,10 +2,12 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"github.com/sagar2395/snowopslabs/internal/platform"
+	platsvc "github.com/sagar2395/snowopslabs/internal/service/platform"
 	"github.com/spf13/cobra"
 )
 
@@ -90,18 +92,17 @@ func resolveTarget(arg string) (category, provider string, err error) {
 }
 
 func platformUpRun(cmd *cobra.Command, args []string) error {
-	// Per-target install: `labctl platform up <category|category/provider>`.
+	// Per-target install: `labctl platform up <category|category/provider>` runs
+	// through the durable engine (recorded, cancellable, followable).
 	if len(args) == 1 {
 		category, provider, err := resolveTarget(args[0])
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Installing %s/%s...\n", category, provider)
-		if err := reg.Install(category, provider, exec); err != nil {
-			return fmt.Errorf("%s/%s install failed: %w", category, provider, err)
-		}
-		fmt.Printf("\n%s/%s installed successfully.\n", category, provider)
-		return nil
+		return runPlatformComponentOp(cmd, "install", category, provider,
+			func(ctx context.Context, svc *platsvc.Service) (string, error) {
+				return svc.Install(ctx, category, provider)
+			})
 	}
 
 	// Install ingress
@@ -131,18 +132,17 @@ func platformUpRun(cmd *cobra.Command, args []string) error {
 }
 
 func platformDownRun(cmd *cobra.Command, args []string) error {
-	// Per-target uninstall: `labctl platform down <category|category/provider>`.
+	// Per-target uninstall: `labctl platform down <category|category/provider>`
+	// runs through the durable engine.
 	if len(args) == 1 {
 		category, provider, err := resolveTarget(args[0])
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Uninstalling %s/%s...\n", category, provider)
-		if err := reg.Uninstall(category, provider, exec); err != nil {
-			return fmt.Errorf("%s/%s uninstall failed: %w", category, provider, err)
-		}
-		fmt.Printf("\n%s/%s uninstalled.\n", category, provider)
-		return nil
+		return runPlatformComponentOp(cmd, "uninstall", category, provider,
+			func(ctx context.Context, svc *platsvc.Service) (string, error) {
+				return svc.Uninstall(ctx, category, provider)
+			})
 	}
 
 	// Uninstall in reverse order
@@ -177,11 +177,19 @@ var platformDownCmd = &cobra.Command{
 	RunE:  platformDownRun,
 }
 
+var platformStatusLive bool
+
 var platformStatusCmd = &cobra.Command{
 	Use:   "status [category|category/provider]",
-	Short: "Show platform component status (all, or one target)",
+	Short: "Show platform component status from the run history; --live probes the cluster",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Default: fast, store-derived state (what labctl has installed). --live
+		// runs each provider's status.sh against the cluster (legacy path).
+		if !platformStatusLive {
+			return platformStatusFromStore(cmd, args)
+		}
+
 		categories := reg.Categories()
 		if len(categories) == 0 {
 			fmt.Println("No platform components found.")
@@ -229,8 +237,10 @@ var platformStatusCmd = &cobra.Command{
 }
 
 func init() {
+	platformStatusCmd.Flags().BoolVar(&platformStatusLive, "live", false, "probe the cluster with each provider's status.sh instead of reading the run history")
 	platformCmd.AddCommand(platformUpCmd)
 	platformCmd.AddCommand(platformDownCmd)
 	platformCmd.AddCommand(platformStatusCmd)
+	platformCmd.AddCommand(platformTeardownCmd)
 	rootCmd.AddCommand(platformCmd)
 }

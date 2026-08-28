@@ -418,6 +418,55 @@ explore:
     - "Try breaking things to see alerts fire"
 ```
 
+### Verified (curation metadata)
+
+Content carries an optional `verified` flag:
+
+```yaml
+verified: true    # confirmed end-to-end on a fresh cluster
+```
+
+This is **curation metadata, not a user-facing badge** — it records which
+scenarios/incidents have been confirmed to activate, pass their checks, and tear
+down cleanly on a fresh cluster, so the nightly e2e job knows what to guard and
+maintainers know what's still to confirm. It is intentionally not surfaced in the
+CLI or UI: shipped content is expected to work, so it isn't labelled for users.
+Absent or `false` simply means "not yet confirmed end-to-end."
+
+### References and snippets
+
+Two optional blocks turn a scenario into a jumping-off point for hands-on
+learning. Both are shown by `labctl scenario info <name>` and are template-
+resolved, so they display with the deployment's real namespaces and domains.
+
+```yaml
+references:                            # links to the upstream tool/docs
+  - label: "KEDA — ScaledObject specification"
+    url: "https://keda.sh/docs/latest/reference/scaledobject-spec/"
+    note: "Optional one-liner on why this link is relevant."
+
+snippets:                              # applyable manifest fragments
+  - label: "KEDA ScaledObject for go-api"
+    description: "Optional context shown above the manifest."
+    path: manifests/scaledobject.yaml  # a file in the scenario dir, OR:
+  - label: "A quick inline manifest"
+    yaml: |
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: demo
+        namespace: "{{.MonitoringNamespace}}"
+```
+
+- A `reference` needs a `label` and an `http(s)` `url`; `note` is optional.
+- A `snippet` needs a `label` and **exactly one** of `yaml` (inline manifest
+  text) or `path` (a file relative to the scenario directory — reuse the
+  existing `manifests/` convention rather than duplicating). `labctl validate`
+  fails if a `path` does not resolve, naming the file and the snippet.
+- Snippet bodies are template-resolved, so a `path` snippet can reuse the same
+  manifest the engine applies, and an inline `yaml` snippet can reference
+  `{{.MonitoringNamespace}}` etc. — it prints ready to `kubectl apply -f -`.
+
 ### Template Variables
 
 URLs and commands support Go template variables:

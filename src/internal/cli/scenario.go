@@ -3,14 +3,16 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"text/tabwriter"
 	"time"
 
+	resultspkg "github.com/sagar2395/snowopslabs/internal/results"
 	"github.com/sagar2395/snowopslabs/internal/scaffold"
 	scenariopkg "github.com/sagar2395/snowopslabs/internal/scenario"
+	scnsvc "github.com/sagar2395/snowopslabs/internal/service/scenario"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 	"github.com/spf13/cobra"
 )
@@ -85,20 +87,26 @@ var scenarioUpCmd = &cobra.Command{
 	Short: "Activate a scenario",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		name := args[0]
 		// Make sure the scenario's prerequisite apps are actually running before
 		// we install into them. Without --deploy-prereqs this returns an error
 		// naming the exact commands to fix it.
-		if s, err := scenes.Get(args[0]); err == nil {
-			if err := ensureAppsDeployed(cmd.Context(), s.Prerequisites.Apps, scenarioDeployPrereqs); err != nil {
-				return err
-			}
+		s, err := scenes.Get(name)
+		if err != nil {
+			return err
 		}
-		err := scenes.Up(args[0], exec, scenarioUpForce)
-		if errors.Is(err, scenariopkg.ErrAlreadyActive) {
-			fmt.Fprintf(os.Stderr, "Scenario %s is already active. Re-run with --force to reinstall.\n", args[0])
+		if err := ensureAppsDeployed(cmd.Context(), s.Prerequisites.Apps, scenarioDeployPrereqs); err != nil {
+			return err
+		}
+		// An already-active scenario is a friendly no-op unless --force (which
+		// re-installs; components are idempotent).
+		if s.Active && !scenarioUpForce {
+			fmt.Fprintf(os.Stderr, "Scenario %s is already active. Re-run with --force to reinstall.\n", name)
 			return nil
 		}
-		return err
+		return runScenarioOp(cmd, "activate", name, func(ctx context.Context, svc *scnsvc.Service) (string, error) {
+			return svc.Activate(ctx, name, scenarioUpForce)
+		})
 	},
 }
 
@@ -107,7 +115,28 @@ var scenarioDownCmd = &cobra.Command{
 	Short: "Deactivate a scenario",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return scenes.Down(args[0], exec)
+		name := args[0]
+		if s, err := scenes.Get(name); err == nil && !s.Active {
+			fmt.Fprintf(os.Stderr, "Scenario %s is not active.\n", name)
+			return nil
+		}
+		return runScenarioOp(cmd, "deactivate", name, func(ctx context.Context, svc *scnsvc.Service) (string, error) {
+			return svc.Deactivate(ctx, name)
+		})
+	},
+}
+
+var scenarioResetCmd = &cobra.Command{
+	Use:   "reset [scenario-name]",
+	Short: "Fast retry: tear the scenario down and re-activate it in one step",
+	Long: `Resets a scenario for another attempt without a full lab teardown:
+it deactivates the scenario (if active) and re-activates it, both as recorded,
+cancellable runs. Because component installs are idempotent, a retry converges
+in seconds rather than minutes.`,
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runScenarioReset(cmd, args[0])
 	},
 }
 
@@ -169,7 +198,8 @@ With --watch, checks are re-run every --interval until they all pass or
 	RunE: func(cmd *cobra.Command, args []string) error {
 		runner := newCheckRunner()
 		ctx := context.Background()
-		deadline := time.Now().Add(verifyTimeout)
+		startedAt := time.Now()
+		deadline := startedAt.Add(verifyTimeout)
 
 		for {
 			results, err := scenes.Verify(ctx, args[0], runner)
@@ -179,6 +209,7 @@ With --watch, checks are re-run every --interval until they all pass or
 			printCheckResults(results)
 			if checks.AllPass(results) {
 				fmt.Printf("All %d checks passed.\n", len(results))
+				recordScenarioVerify(args[0], results, startedAt)
 				return nil
 			}
 			failed := 0
@@ -192,6 +223,7 @@ With --watch, checks are re-run every --interval until they all pass or
 					fmt.Fprintln(os.Stderr, "\nChecks can fail while pods are still starting. Re-run with --watch to wait,")
 					fmt.Fprintln(os.Stderr, "or inspect with: kubectl get pods -A")
 				}
+				recordScenarioVerify(args[0], results, startedAt)
 				return fmt.Errorf("%d of %d checks failed", failed, len(results))
 			}
 			fmt.Printf("\n%d of %d checks failing — retrying in %s (until %s)...\n\n",
@@ -199,6 +231,33 @@ With --watch, checks are re-run every --interval until they all pass or
 			time.Sleep(verifyInterval)
 		}
 	},
+}
+
+// recordScenarioVerify appends a scenario-verification record to the results
+// history — the scenario's objectives plus each check's pass/fail — so `results`
+// and the UI can show whether the user actually solved the scenario (W4-T02).
+// Best-effort: a history write must never fail the verify command itself.
+func recordScenarioVerify(name string, results []checks.Result, startedAt time.Time) {
+	var objectives []string
+	if s, err := scenes.Get(name); err == nil {
+		objectives = s.Objectives
+	}
+	rec := resultspkg.NewScenarioRecord(name, "", objectives, checkOutcomes(results), startedAt, time.Now())
+	_ = resultspkg.NewStore(filepath.Join(cfg.ProjectRoot, ".labctl", "history")).Append(rec)
+}
+
+// checkOutcomes flattens check results into the compact display shape the
+// results store records.
+func checkOutcomes(results []checks.Result) []resultspkg.CheckOutcome {
+	out := make([]resultspkg.CheckOutcome, 0, len(results))
+	for _, r := range results {
+		detail := r.Error
+		if detail == "" && !r.Pass {
+			detail = fmt.Sprintf("got %s, want %s", orDash(r.Got), orDash(r.Want))
+		}
+		out = append(out, resultspkg.CheckOutcome{Name: r.Name, Pass: r.Pass, Detail: detail})
+	}
+	return out
 }
 
 // newCheckRunner builds a check runner wired to the lab's config: the
@@ -333,6 +392,9 @@ var scenarioInfoCmd = &cobra.Command{
 			}
 		}
 
+		renderReferences(os.Stdout, s.References)
+		renderSnippets(os.Stdout, s.Snippets, s.Dir, scenes.ResolveTemplate)
+
 		return nil
 	},
 }
@@ -351,6 +413,7 @@ func init() {
 	scenarioCmd.AddCommand(scenarioListCmd)
 	scenarioCmd.AddCommand(scenarioUpCmd)
 	scenarioCmd.AddCommand(scenarioDownCmd)
+	scenarioCmd.AddCommand(scenarioResetCmd)
 	scenarioCmd.AddCommand(scenarioStatusCmd)
 	scenarioCmd.AddCommand(scenarioInfoCmd)
 	scenarioCmd.AddCommand(scenarioVerifyCmd)

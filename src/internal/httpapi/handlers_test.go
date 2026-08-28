@@ -96,7 +96,10 @@ func TestHandleComponentUp_InvalidName(t *testing.T) {
 
 func TestRespondError_HasCodeField(t *testing.T) {
 	w := httptest.NewRecorder()
-	respondError(w, http.StatusBadRequest, "invalid_input", "bad value")
+	// No version tag on the request → the backward-compatible v1 {error,code}
+	// envelope, which is what this test asserts.
+	r := httptest.NewRequest(http.MethodGet, "/api/apps", nil)
+	respondError(w, r, http.StatusBadRequest, "invalid_input", "bad value")
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
@@ -179,5 +182,25 @@ func TestHandleAppDeploy_AcceptedIncludesJobID(t *testing.T) {
 	}
 	if body["jobId"] == "" {
 		t.Error("expected non-empty jobId in 202 response")
+	}
+}
+
+func TestAppURL(t *testing.T) {
+	cases := []struct {
+		name, app, domain string
+		deployed          bool
+		want              string
+	}{
+		{"deployed with domain", "echo-server", "k3d.local", true, "http://echo-server.k3d.local"},
+		{"not deployed", "echo-server", "k3d.local", false, ""},
+		{"no domain suffix", "echo-server", "", true, ""},
+		{"go-api", "go-api", "kind.local", true, "http://go-api.kind.local"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := appURL(c.app, c.domain, c.deployed); got != c.want {
+				t.Errorf("appURL(%q,%q,%v) = %q, want %q", c.app, c.domain, c.deployed, got, c.want)
+			}
+		})
 	}
 }

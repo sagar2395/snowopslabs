@@ -21,6 +21,7 @@ import (
 
 	"github.com/sagar2395/snowopslabs/internal/executor"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/sagar2395/snowopslabs/pkg/scenario"
 )
 
 // ErrIncidentActive is returned by Inject when another incident is active.
@@ -31,9 +32,12 @@ var ErrNoActive = errors.New("no incident is active")
 
 // Fault is the parsed fault.yaml of one incident.
 type Fault struct {
-	Name          string        `yaml:"name" json:"name"`
-	DisplayName   string        `yaml:"displayName" json:"displayName"`
-	Description   string        `yaml:"description" json:"description"`
+	Name        string `yaml:"name" json:"name"`
+	DisplayName string `yaml:"displayName" json:"displayName"`
+	Description string `yaml:"description" json:"description"`
+	// Verified marks the incident confirmed end-to-end on a fresh cluster
+	// (W4-T07). Absent/false is unverified.
+	Verified      bool          `yaml:"verified,omitempty" json:"verified"`
 	Category      string        `yaml:"category" json:"category"` // workload | network | resources | storage | config
 	Severity      string        `yaml:"severity" json:"severity"` // low | medium | high
 	Target        Target        `yaml:"target" json:"target"`
@@ -43,6 +47,12 @@ type Fault struct {
 	// 049). inject.sh arms the matching PrometheusRule from alerts/rule.yaml;
 	// `incident status` reports whether the page went out.
 	ExpectAlert string `yaml:"expectAlert,omitempty" json:"expectAlert,omitempty"`
+
+	// References and Snippets (M2) present upstream docs and applyable manifest
+	// fragments to whoever is working the incident. They reuse the shared SDK
+	// types so scenarios and incidents display them identically.
+	References []scenario.Reference `yaml:"references,omitempty" json:"references,omitempty"`
+	Snippets   []scenario.Snippet   `yaml:"snippets,omitempty" json:"snippets,omitempty"`
 
 	Dir string `yaml:"-" json:"-"`
 }
@@ -54,9 +64,13 @@ type Target struct {
 	Workload  string `yaml:"workload" json:"workload"`
 }
 
-// Prerequisites gate injection.
+// Prerequisites name what must already be present for the fault to inject,
+// detect and resolve correctly. Platform components (e.g. "ingress" when the
+// detection check calls the app through the ingress) are not auto-installed —
+// the UI surfaces them so the user installs them first.
 type Prerequisites struct {
-	Apps []string `yaml:"apps" json:"apps"`
+	Platform []string `yaml:"platform,omitempty" json:"platform,omitempty"`
+	Apps     []string `yaml:"apps" json:"apps"`
 }
 
 var validCategories = map[string]bool{
@@ -93,6 +107,12 @@ func (f *Fault) Validate() error {
 		if filepath.IsAbs(f.Detection.Script) || strings.Contains(filepath.ToSlash(f.Detection.Script), "..") {
 			add("detection script %q must be a relative path inside the fault directory", f.Detection.Script)
 		}
+	}
+	for _, msg := range scenario.ValidateReferences(f.References) {
+		add("%s", msg)
+	}
+	for _, msg := range scenario.ValidateSnippets(f.Snippets) {
+		add("%s", msg)
 	}
 
 	if len(errs) > 0 {
@@ -261,6 +281,39 @@ func (e *Engine) clearActive() {
 }
 
 // --- operations ----------------------------------------------------------------
+
+// Preflight checks a fault's prerequisites before injection. Exported so the
+// durable inject path (which submits inject.sh through the run engine) can gate
+// itself with exactly the checks Inject applies.
+func (e *Engine) Preflight(f *Fault) error { return e.preflight(f) }
+
+// MarkInjected records a fault as the active incident. The durable inject path
+// runs inject.sh through the run engine and, on success, calls this to persist
+// the active-incident state that hints, status and scoring read — the state
+// Inject writes inline on the legacy path.
+func (e *Engine) MarkInjected(name string, silent bool) error {
+	if _, err := e.Get(name); err != nil {
+		return err
+	}
+	return e.saveActive(&Active{Fault: name, InjectedAt: time.Now().UTC(), Silent: silent})
+}
+
+// RecordScriptResolved scores and clears the active incident after resolve.sh
+// has run through the engine — the durable analogue of the tail of Resolve. It
+// is a no-op when the named fault is not the active one, so force-resolving an
+// already-clean lab is harmless.
+func (e *Engine) RecordScriptResolved(name, user string) {
+	active, err := e.Active()
+	if err != nil || active == nil || active.Fault != name {
+		return
+	}
+	f, err := e.Get(name)
+	if err != nil {
+		return
+	}
+	e.finishRun(active, f, "auto", user)
+	e.clearActive()
+}
 
 // preflight checks the fault's prerequisites before injection.
 func (e *Engine) preflight(f *Fault) error {
@@ -452,6 +505,13 @@ func (e *Engine) resolveCheck(c checks.Check) checks.Check {
 	c.Query = e.resolveTemplate(c.Query)
 	c.Value = e.resolveTemplate(c.Value)
 	return c
+}
+
+// ResolveTemplate expands the template variables an author may use in an
+// incident's display fields (references, snippets), mirroring the scenario
+// engine's method so the CLI renders both content kinds the same way.
+func (e *Engine) ResolveTemplate(input string) string {
+	return e.resolveTemplate(input)
 }
 
 func (e *Engine) resolveTemplate(input string) string {

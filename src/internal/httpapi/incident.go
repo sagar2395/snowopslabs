@@ -36,14 +36,17 @@ func (s *Server) incidentRunner() *checks.Runner {
 func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 	active, err := s.incidents.Active()
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		respondError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	faults := s.incidents.List()
 	if faults == nil {
 		faults = []*incident.Fault{}
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	// The incident list is a composite (catalog + live active state), not a plain
+	// collection, so it keeps its shape on both versions; it still gains an ETag
+	// for conditional revalidation.
+	writeJSONCached(w, r, http.StatusOK, map[string]interface{}{
 		"faults": faults,
 		"active": active,
 	})
@@ -52,7 +55,7 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIncidentInject(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 	if !isValidName(name) {
-		respondError(w, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid fault name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid fault name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
 		return
 	}
 	s.injectAndRespond(w, r, name)
@@ -62,7 +65,7 @@ func (s *Server) handleIncidentInjectRandom(w http.ResponseWriter, r *http.Reque
 	seed, _ := strconv.ParseInt(r.URL.Query().Get("seed"), 10, 64)
 	f, err := s.incidents.PickRandom(seed, r.URL.Query().Get("category"))
 	if err != nil {
-		respondError(w, http.StatusConflict, "no_eligible_fault", err.Error())
+		respondError(w, r, http.StatusConflict, "no_eligible_fault", err.Error())
 		return
 	}
 	s.injectAndRespond(w, r, f.Name)
@@ -76,11 +79,11 @@ func (s *Server) injectAndRespond(w http.ResponseWriter, r *http.Request, name s
 	if err != nil {
 		switch {
 		case errors.Is(err, incident.ErrIncidentActive):
-			respondError(w, http.StatusConflict, "incident_active", err.Error())
+			respondError(w, r, http.StatusConflict, "incident_active", err.Error())
 		case f == nil:
-			respondError(w, http.StatusNotFound, "not_found", err.Error())
+			respondError(w, r, http.StatusNotFound, "not_found", err.Error())
 		default:
-			respondError(w, http.StatusInternalServerError, "inject_failed", err.Error())
+			respondError(w, r, http.StatusInternalServerError, "inject_failed", err.Error())
 		}
 		return
 	}
@@ -103,7 +106,7 @@ func (s *Server) handleIncidentStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		respondError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 
@@ -125,11 +128,11 @@ func (s *Server) handleIncidentHint(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, incident.ErrNoActive):
-			respondError(w, http.StatusConflict, "no_active_incident", err.Error())
+			respondError(w, r, http.StatusConflict, "no_active_incident", err.Error())
 		case errors.Is(err, incident.ErrNoMoreHints):
-			respondError(w, http.StatusConflict, "no_more_hints", err.Error())
+			respondError(w, r, http.StatusConflict, "no_more_hints", err.Error())
 		default:
-			respondError(w, http.StatusInternalServerError, "internal_error", err.Error())
+			respondError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 		}
 		return
 	}
@@ -140,7 +143,7 @@ func (s *Server) handleIncidentHint(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIncidentHistory(w http.ResponseWriter, r *http.Request) {
 	recs, err := s.incidents.History()
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		respondError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
 	if recs == nil {
@@ -152,20 +155,20 @@ func (s *Server) handleIncidentHistory(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleIncidentResolve(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 	if name != "" && !isValidName(name) {
-		respondError(w, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid fault name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid fault name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
 		return
 	}
 	f, err := s.incidents.Resolve(name, s.exec, actingUser(r))
 	if err != nil {
 		if errors.Is(err, incident.ErrNoActive) {
-			respondError(w, http.StatusConflict, "no_active_incident", err.Error())
+			respondError(w, r, http.StatusConflict, "no_active_incident", err.Error())
 			return
 		}
 		if f == nil {
-			respondError(w, http.StatusNotFound, "not_found", err.Error())
+			respondError(w, r, http.StatusNotFound, "not_found", err.Error())
 			return
 		}
-		respondError(w, http.StatusInternalServerError, "resolve_failed", err.Error())
+		respondError(w, r, http.StatusInternalServerError, "resolve_failed", err.Error())
 		return
 	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{"status": "resolved", "fault": f.Name})

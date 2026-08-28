@@ -2,12 +2,15 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -23,6 +26,7 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/runtime"
 	"github.com/sagar2395/snowopslabs/internal/scenario"
 	"github.com/sagar2395/snowopslabs/internal/services"
+	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
 // Server is the API server that backs the web UI.
@@ -38,12 +42,19 @@ type Server struct {
 	upgrader  websocket.Upgrader
 	uiFS      fs.FS
 
+	// runStore is the durable run store the run console reads (W3/W6). It is the
+	// same database labctl writes through the run engine, so the UI shows runs
+	// regardless of which process created them. Opened best-effort; nil disables
+	// the /runs endpoints (they answer 503) rather than refusing to boot.
+	runStore *store.Store
+
 	// Auth (task 062). authEnabled mirrors LABCTL_AUTH at construction time;
 	// when false, the middleware is a pass-through and behaviour is unchanged.
 	authEnabled bool
 	users       *auth.Store
 	sessions    *auth.SessionStore
 	userLoadErr error
+	loginLimit  *loginLimiter
 
 	// metrics is set via WithMetrics when the /metrics endpoint is enabled;
 	// nil (the default) leaves the endpoint and request instrumentation off.
@@ -58,6 +69,13 @@ type ServerOption func(*Server)
 // instrumentation, recording into the given metric set.
 func WithMetrics(app *metrics.App) ServerOption {
 	return func(s *Server) { s.metrics = app }
+}
+
+// WithRunStore supplies the run store the /runs endpoints read from. Tests use
+// it to inject a temp store; in production NewServer opens the default store
+// best-effort when no store is provided.
+func WithRunStore(st *store.Store) ServerOption {
+	return func(s *Server) { s.runStore = st }
 }
 
 // NewServer creates a new API server. The embeddedUI parameter should be the
@@ -82,9 +100,22 @@ func NewServer(cfg *config.Config, exec *executor.Executor, registry *platform.R
 	for _, opt := range opts {
 		opt(s)
 	}
+	// Open the durable run store best-effort unless a test injected one. A
+	// failure here leaves the /runs endpoints returning 503 rather than
+	// preventing the server from booting — the rest of the UI is unaffected.
+	if s.runStore == nil {
+		if path, err := store.DefaultPath(); err == nil {
+			if st, err := store.Open(context.Background(), path); err == nil {
+				s.runStore = st
+			} else {
+				slog.Warn("run store unavailable; the run console will be empty", "error", err, "path", path)
+			}
+		}
+	}
 	if auth.Enabled() {
 		s.authEnabled = true
 		s.sessions = auth.NewSessionStore(0)
+		s.loginLimit = newLoginLimiter(loginMaxAttempts, loginWindow)
 		// Load users best-effort; an unreadable file leaves an empty store and
 		// the server logs a warning at start rather than refusing to boot.
 		if store, err := auth.LoadStore(auth.DefaultUsersPath(cfg.ProjectRoot)); err == nil {
@@ -109,21 +140,131 @@ func NewServer(cfg *config.Config, exec *executor.Executor, registry *platform.R
 
 // Start starts the HTTP server.
 func (s *Server) Start(addr string) error {
-	srv := &http.Server{
-		Addr:         addr,
-		Handler:      s.router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+	return s.httpServer(addr).ListenAndServe()
+}
+
+// StartTLS starts the server over HTTPS using the given certificate and key.
+func (s *Server) StartTLS(addr, certFile, keyFile string) error {
+	return s.httpServer(addr).ListenAndServeTLS(certFile, keyFile)
+}
+
+func (s *Server) httpServer(addr string) *http.Server {
+	// WriteTimeout is deliberately unset: the event stream (WebSocket and SSE)
+	// is a long-lived response that a write deadline would sever. Read/idle
+	// timeouts still bound slow-loris and idle connections.
+	return &http.Server{
+		Addr:        addr,
+		Handler:     s.router,
+		ReadTimeout: 15 * time.Second,
+		IdleTimeout: 60 * time.Second,
 	}
-	return srv.ListenAndServe()
+}
+
+// CheckBind refuses a network-exposed bind when authentication is off. Binding
+// anything other than loopback (including the empty host, which means all
+// interfaces) exposes cluster-control endpoints; without auth that is a footgun,
+// so the server declines to start and explains how to proceed.
+func CheckBind(host string, authEnabled bool) error {
+	if authEnabled || IsLoopbackHost(host) {
+		return nil
+	}
+	shown := host
+	if shown == "" {
+		shown = "0.0.0.0 (all interfaces)"
+	}
+	return fmt.Errorf(
+		"refusing to bind %s without authentication: it exposes cluster-control endpoints to the network; "+
+			"enable auth (set LABCTL_AUTH=true and add a user with 'labctl users add') or bind to 127.0.0.1",
+		shown)
+}
+
+// IsLoopbackHost reports whether host refers only to the local machine. An empty
+// host means "all interfaces" and is therefore NOT loopback.
+func IsLoopbackHost(host string) bool {
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func (s *Server) setupRoutes() {
 	s.router = mux.NewRouter()
 
-	// API routes
-	api := s.router.PathPrefix("/api").Subrouter()
+	// The same handler set is mounted under two prefixes: /api/v2 (the versioned
+	// surface third parties and the UI should target) and /api (the unversioned
+	// alias the current UI still uses). gorilla/mux matches in registration
+	// order, so /api/v2 — the more specific prefix — MUST be registered first;
+	// otherwise the /api subrouter would swallow /api/v2/* requests.
+	s.registerAPI(s.router.PathPrefix("/api/v2").Subrouter(), apiV2)
+	s.registerAPI(s.router.PathPrefix("/api").Subrouter(), apiV1)
+
+	// Prometheus scrape endpoint — top-level (no /api auth or JSON middleware),
+	// registered before the UI catch-all. Only present when metrics are enabled.
+	// No .Methods() restriction: the handler itself enforces GET/HEAD and
+	// answers 405 otherwise, so a POST reaches it instead of falling through to
+	// the SPA catch-all.
+	if s.metrics != nil {
+		s.router.Handle("/metrics", s.metrics.Handler())
+	}
+
+	// Serve UI — use embedded FS if available, fall back to filesystem for dev.
+	var uiFS http.FileSystem
+	if s.uiFS != nil {
+		if _, err := fs.Stat(s.uiFS, "index.html"); err == nil {
+			uiFS = http.FS(s.uiFS)
+		}
+	}
+	if uiFS == nil {
+		uiFS = http.Dir(s.cfg.ProjectRoot + "/ui/dist")
+	}
+	s.router.PathPrefix("/").Handler(spaHandler(uiFS))
+}
+
+// spaHandler serves static UI assets, falling back to index.html for any path
+// that is not an existing file. The web UI is a single-page app with real
+// client-side routes (e.g. /scenarios); a deep link or a refresh must return
+// the app shell so the router can render the right view, rather than a 404 from
+// the file server. API and /metrics routes are registered before this catch-all,
+// so they are never shadowed by the fallback.
+func spaHandler(fsys http.FileSystem) http.Handler {
+	fileServer := http.FileServer(fsys)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
+		if name == "" {
+			name = "index.html"
+		}
+		f, err := fsys.Open(name)
+		if err != nil {
+			// Unknown path — hand the SPA shell to the client router.
+			rr := new(http.Request)
+			*rr = *r
+			rr.URL = new(url.URL)
+			*rr.URL = *r.URL
+			rr.URL.Path = "/"
+			fileServer.ServeHTTP(w, rr)
+			return
+		}
+		_ = f.Close()
+		fileServer.ServeHTTP(w, r)
+	})
+}
+
+// registerAPI wires the shared middleware chain and the full route table onto
+// one API subrouter. It is called once per version prefix so /api and /api/v2
+// serve identical behaviour today; future versions can diverge by branching
+// inside handlers on apiVersion(r) without duplicating the table.
+func (s *Server) registerAPI(api *mux.Router, version string) {
+	// Middleware, outermost first. Request ID and API version are context tags
+	// set before anything can reject the request, so even CORS/auth failures get
+	// a correlation ID and the right error envelope. Access logging wraps the
+	// rest so every request — served or rejected — produces one log line.
+	api.Use(s.requestIDMiddleware)
+	api.Use(apiVersionMiddleware(version))
+	api.Use(s.accessLogMiddleware)
 	api.Use(corsMiddleware)
 	api.Use(jsonMiddleware)
 	// Auth middleware is a pass-through when LABCTL_AUTH is off, so the local
@@ -191,32 +332,24 @@ func (s *Server) setupRoutes() {
 	api.HandleFunc("/services", s.handleListServices).Methods("GET", "OPTIONS")
 	api.HandleFunc("/services/{name}/up", s.handleServiceUp).Methods("POST", "OPTIONS")
 	api.HandleFunc("/services/{name}/down", s.handleServiceDown).Methods("POST", "OPTIONS")
+	api.HandleFunc("/traffic", s.handleTrafficInfo).Methods("GET", "OPTIONS")
+	api.HandleFunc("/traffic/start", s.handleTrafficStart).Methods("POST", "OPTIONS")
+	api.HandleFunc("/traffic/stop", s.handleTrafficStop).Methods("POST", "OPTIONS")
+	// Durable run history + live transcript — what the run console renders. The
+	// literal-then-wildcard ordering rule applies, but /runs/{id} and its
+	// subpaths don't collide with a literal here.
+	api.HandleFunc("/runs", s.handleRunsList).Methods("GET", "OPTIONS")
+	api.HandleFunc("/runs/{id}", s.handleRunGet).Methods("GET", "OPTIONS")
+	api.HandleFunc("/runs/{id}/logs", s.handleRunLogs).Methods("GET", "OPTIONS")
+	api.HandleFunc("/runs/{id}/cancel", s.handleRunCancel).Methods("POST", "OPTIONS")
 	api.HandleFunc("/runtimes", s.handleListRuntimes).Methods("GET", "OPTIONS")
 	api.HandleFunc("/runtimes/{name}/activate", s.handleRuntimeActivate).Methods("POST", "OPTIONS")
 	api.HandleFunc("/runtimes/{name}/deactivate", s.handleRuntimeDeactivate).Methods("POST", "OPTIONS")
 
 	api.HandleFunc("/ws", s.handleWebSocket)
-
-	// Prometheus scrape endpoint — top-level (no /api auth or JSON middleware),
-	// registered before the UI catch-all. Only present when metrics are enabled.
-	// No .Methods() restriction: the handler itself enforces GET/HEAD and
-	// answers 405 otherwise, so a POST reaches it instead of falling through to
-	// the SPA catch-all.
-	if s.metrics != nil {
-		s.router.Handle("/metrics", s.metrics.Handler())
-	}
-
-	// Serve UI — use embedded FS if available, fall back to filesystem for dev
-	var uiHandler http.Handler
-	if s.uiFS != nil {
-		if _, err := fs.Stat(s.uiFS, "index.html"); err == nil {
-			uiHandler = http.FileServer(http.FS(s.uiFS))
-		}
-	}
-	if uiHandler == nil {
-		uiHandler = http.FileServer(http.Dir(s.cfg.ProjectRoot + "/ui/dist"))
-	}
-	s.router.PathPrefix("/").Handler(uiHandler)
+	// Server-Sent Events fallback for the same event stream, with the same
+	// ?after=<seq> cursor semantics (WebSockets are blocked by some proxies).
+	api.HandleFunc("/stream", s.handleStreamSSE).Methods("GET", "OPTIONS")
 }
 
 // originAllowed reports whether a browser-supplied Origin header is trusted:
@@ -260,7 +393,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		// can't trigger cluster actions on localhost; CLI clients send no
 		// Origin and are unaffected.
 		if (r.Method == "POST" || r.Method == "DELETE") && origin != "" && !originAllowed(r) {
-			respondError(w, http.StatusForbidden, "forbidden_origin", "cross-origin requests are not allowed")
+			respondError(w, r, http.StatusForbidden, "forbidden_origin", "cross-origin requests are not allowed")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -274,7 +407,9 @@ func jsonMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// ErrorResponse is the standard JSON envelope for all 4xx/5xx responses.
+// ErrorResponse is the legacy (v1) JSON error envelope, kept for the /api alias
+// so existing clients are unaffected. /api/v2 emits RFC 7807 problem+json
+// instead (see respondProblem).
 type ErrorResponse struct {
 	Error string `json:"error"`
 	Code  string `json:"code,omitempty"`
@@ -285,6 +420,15 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
-func respondError(w http.ResponseWriter, status int, code, msg string) {
+// respondError writes an error in the envelope appropriate to the request's API
+// version: RFC 7807 problem+json under /api/v2, the legacy {error,code} shape
+// under /api. code is a stable machine slug (see knownProblemSlugs); msg is the
+// human-readable detail. The version is read from the request context, so unit
+// tests that call a handler directly (no version tag) get the v1 shape.
+func respondError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	if apiVersionFrom(r.Context()) == apiV2 {
+		respondProblem(w, r, status, code, msg)
+		return
+	}
 	respondJSON(w, status, ErrorResponse{Error: msg, Code: code})
 }

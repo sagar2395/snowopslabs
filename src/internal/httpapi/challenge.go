@@ -42,7 +42,7 @@ func (s *Server) handleListChallenges(w http.ResponseWriter, r *http.Request) {
 			ParTime:     c.ParTime,
 		})
 	}
-	respondJSON(w, http.StatusOK, out)
+	respondCatalog(w, r, out)
 }
 
 func (s *Server) handleChallengeInfo(w http.ResponseWriter, r *http.Request) {

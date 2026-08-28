@@ -50,7 +50,7 @@ Runbooks are written as their wave is implemented.
 | R02 | [Doctor & preflight](R02-doctor-and-preflight.md) | W1 | **ready** |
 | R03 | [Content authoring & validation](R03-content-authoring-and-validation.md) | W2 | **ready** |
 | R04 | [Lab lifecycle reliability](R04-lab-lifecycle.md) | W3 | **ready** (reliability slice) |
-| R05 | Platform components | W3 | deferred (with durable-engine migration) |
+| R05 | [Platform components](R05-platform-components.md) | W3 | **ready** (durable service slice) |
 | R06 | Scenario loop | W4 | planned |
 | R07 | Game day & incidents | W4 | planned |
 | R08 | API & security | W5 | planned |

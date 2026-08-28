@@ -57,10 +57,14 @@ type Scenario struct {
 	// schema versions; see SupportedScenarioAPIVersions.
 	APIVersion string `yaml:"apiVersion,omitempty" json:"apiVersion,omitempty"`
 
-	Name          string        `yaml:"name" json:"name"`
-	DisplayName   string        `yaml:"displayName" json:"displayName"`
-	Description   string        `yaml:"description" json:"description"`
-	Category      string        `yaml:"category" json:"category"`
+	Name        string `yaml:"name" json:"name"`
+	DisplayName string `yaml:"displayName" json:"displayName"`
+	Description string `yaml:"description" json:"description"`
+	Category    string `yaml:"category" json:"category"`
+	// Verified marks content confirmed end-to-end on a fresh cluster (W4-T07).
+	// Absent/false is unverified — usable, but the UI and CLI flag it so a user
+	// knows it hasn't been vouched for yet.
+	Verified      bool          `yaml:"verified,omitempty" json:"verified"`
 	Prerequisites Prerequisites `yaml:"prerequisites" json:"prerequisites"`
 	Runtimes      []string      `yaml:"runtimes" json:"runtimes"`
 	Components    []Component   `yaml:"components" json:"components"`
@@ -70,6 +74,13 @@ type Scenario struct {
 	Objectives []string       `yaml:"objectives,omitempty" json:"objectives,omitempty"`
 	Stages     []Stage        `yaml:"stages,omitempty" json:"stages,omitempty"`
 	Checks     []checks.Check `yaml:"checks,omitempty" json:"checks,omitempty"`
+
+	// References and Snippets (M2) turn a scenario into a jumping-off point for
+	// hands-on learning: References link the upstream tool/docs behind the
+	// scenario, and Snippets are applyable manifest fragments the learner can
+	// `kubectl apply -f -` while working the exercise.
+	References []Reference `yaml:"references,omitempty" json:"references,omitempty"`
+	Snippets   []Snippet   `yaml:"snippets,omitempty" json:"snippets,omitempty"`
 
 	// Runtime fields (not from YAML)
 	Dir    string `yaml:"-" json:"-"`
@@ -123,6 +134,76 @@ type ExploreURL struct {
 type ExploreCommand struct {
 	Label   string `yaml:"label" json:"label"`
 	Command string `yaml:"command" json:"command"`
+}
+
+// Reference is a link to upstream tool or docs relevant to a scenario or
+// incident. Part of the shared SDK surface so incidents reuse it (M2).
+type Reference struct {
+	Label string `yaml:"label" json:"label"`
+	URL   string `yaml:"url" json:"url"`
+	Note  string `yaml:"note,omitempty" json:"note,omitempty"`
+}
+
+// Snippet is an applyable manifest fragment presented to the learner. Exactly
+// one of YAML (inline manifest text) or Path (a manifest file relative to the
+// item's directory) is set; both are template-resolved before display so a
+// snippet is applyable as-is. Reused by scenarios and incidents (M2).
+type Snippet struct {
+	Label       string `yaml:"label" json:"label"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	YAML        string `yaml:"yaml,omitempty" json:"yaml,omitempty"`
+	Path        string `yaml:"path,omitempty" json:"path,omitempty"`
+}
+
+// ValidateReferences reports every structural problem in a reference list. The
+// where prefix (e.g. "reference") names the field in messages so both scenarios
+// and incidents can share this without leaking each other's context.
+func ValidateReferences(refs []Reference) []string {
+	var errs []string
+	for i, r := range refs {
+		at := fmt.Sprintf("reference %d", i+1)
+		if strings.TrimSpace(r.Label) != "" {
+			at = fmt.Sprintf("reference %q", r.Label)
+		}
+		if strings.TrimSpace(r.Label) == "" {
+			errs = append(errs, at+": label is required")
+		}
+		if strings.TrimSpace(r.URL) == "" {
+			errs = append(errs, at+": url is required")
+		} else if !strings.HasPrefix(r.URL, "http://") && !strings.HasPrefix(r.URL, "https://") {
+			errs = append(errs, fmt.Sprintf("%s: url %q must start with http:// or https://", at, r.URL))
+		}
+	}
+	return errs
+}
+
+// ValidateSnippets reports every structural problem in a snippet list: each
+// snippet needs a label and exactly one of yaml or path, and a path must be a
+// relative location inside the item directory (existence is checked by the
+// loader, which knows the directory). It does no filesystem I/O.
+func ValidateSnippets(snips []Snippet) []string {
+	var errs []string
+	for i, s := range snips {
+		at := fmt.Sprintf("snippet %d", i+1)
+		if strings.TrimSpace(s.Label) != "" {
+			at = fmt.Sprintf("snippet %q", s.Label)
+		}
+		if strings.TrimSpace(s.Label) == "" {
+			errs = append(errs, at+": label is required")
+		}
+		hasYAML := strings.TrimSpace(s.YAML) != ""
+		hasPath := strings.TrimSpace(s.Path) != ""
+		switch {
+		case hasYAML && hasPath:
+			errs = append(errs, at+": set either yaml or path, not both")
+		case !hasYAML && !hasPath:
+			errs = append(errs, at+": one of yaml or path is required")
+		}
+		if hasPath && unsafePath(s.Path) {
+			errs = append(errs, fmt.Sprintf("%s: path %q must be a relative path inside the item directory", at, s.Path))
+		}
+	}
+	return errs
 }
 
 // AllComponents returns the scenario's components in install order,
@@ -240,6 +321,9 @@ func (s *Scenario) Validate() error {
 			add("check %q: script %q must be a relative path inside the scenario directory", c.Name, c.Script)
 		}
 	}
+
+	errs = append(errs, ValidateReferences(s.References)...)
+	errs = append(errs, ValidateSnippets(s.Snippets)...)
 
 	if len(errs) > 0 {
 		name := s.Name
