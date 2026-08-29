@@ -1,4 +1,23 @@
-# SnowOps Labs
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)"  srcset="docs/assets/brand/logo-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/logo-light.png">
+    <img alt="SnowOps Labs" src="docs/assets/brand/logo-dark.png" width="440">
+  </picture>
+</p>
+
+<p align="center">
+  <em>Stand up a production-shaped Kubernetes cluster · break it on purpose · fix it · get graded.</em>
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-38bdf8.svg"></a>
+  <a href="https://github.com/sagar2395/snowopslabs/actions/workflows/ci.yaml"><img alt="CI" src="https://github.com/sagar2395/snowopslabs/actions/workflows/ci.yaml/badge.svg"></a>
+  <a href="https://github.com/sagar2395/snowopslabs/releases"><img alt="Release" src="https://img.shields.io/github/v/release/sagar2395/snowopslabs?color=818cf8&sort=semver"></a>
+  <img alt="Platforms: macOS, Linux, WSL2" src="https://img.shields.io/badge/platforms-macOS%20·%20Linux%20·%20WSL2-64748b">
+  <img alt="Go 1.24+" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
+  <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-4ade80.svg"></a>
+</p>
 
 **SnowOps Labs is a Kubernetes platform-engineering simulator.** It stands up a
 realistic, production-shaped cluster on your laptop in minutes, breaks it in
