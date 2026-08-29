@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="SnowOps Labs">
+    <defs>
+      <linearGradient id="tile-fav" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stop-color="#38bdf8"/><stop offset="1" stop-color="#818cf8"/>
+      </linearGradient>
+      <g id="arm-fav" fill="none" stroke="#f8fafc" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M32 32 V10"/>
+        <path d="M32 21 l4.6 -3.4 M32 21 l-4.6 -3.4"/>
+        <path d="M32 15 l3.2 -2.4 M32 15 l-3.2 -2.4"/>
+      </g>
+    </defs>
+    <rect x="0" y="0" width="64" height="64" rx="15" fill="url(#tile-fav)"/>
+    <g opacity="0.96"><use href="#arm-fav" transform="rotate(0 32 32)"/><use href="#arm-fav" transform="rotate(60 32 32)"/><use href="#arm-fav" transform="rotate(120 32 32)"/><use href="#arm-fav" transform="rotate(180 32 32)"/><use href="#arm-fav" transform="rotate(240 32 32)"/><use href="#arm-fav" transform="rotate(300 32 32)"/></g>
+    <circle cx="32" cy="32" r="3.1" fill="#f8fafc"/></svg>

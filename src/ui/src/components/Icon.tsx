@@ -37,7 +37,15 @@ const PATHS: Record<IconName, JSX.Element> = {
   results: <><line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" /></>,
   leaderboard: <><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></>,
 
-  snowflake: <><line x1="12" y1="2" x2="12" y2="22" /><line x1="2" y1="12" x2="22" y2="12" /><path d="m20 16-4-4 4-4M4 8l4 4-4 4M16 4l-4 4-4-4M8 20l4-4 4 4" /></>,
+  // A six-fold crystal built from one arm rotated 60° at a time — the same
+  // glyph as the brand mark, favicon and logo lockups (docs/assets/brand).
+  snowflake: <>{[0, 60, 120, 180, 240, 300].map((d) => (
+    <g key={d} transform={`rotate(${d} 12 12)`}>
+      <path d="M12 12V4" />
+      <path d="M12 8l1.7-1.3M12 8l-1.7-1.3" />
+      <path d="M12 5.6l1.2-0.9M12 5.6l-1.2-0.9" />
+    </g>
+  ))}<circle cx="12" cy="12" r="1.15" fill="currentColor" stroke="none" /></>,
   command: <><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" /></>,
   menu: <><line x1="4" y1="6" x2="20" y2="6" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="18" x2="20" y2="18" /></>,
   search: <><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></>,
