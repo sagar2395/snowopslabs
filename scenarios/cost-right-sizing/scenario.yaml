@@ -1,5 +1,6 @@
 apiVersion: scenario.snowops.net/v2
 name: cost-right-sizing
+verified: true
 displayName: "Cost & Capacity: Right-Sizing Over-Provisioned Resources"
 description: "Deploy go-api with deliberately over-provisioned CPU and memory requests, observe the inflated cost in OpenCost, then right-size the requests to a realistic baseline. Checks verify that requests were reduced to the target thresholds while go-api stays healthy under traffic. Teaches the observe-measure-reduce loop that keeps platform costs rational."
 category: cost

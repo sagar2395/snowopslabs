@@ -1,4 +1,5 @@
 name: service-selector-broken
+verified: true
 displayName: "Service selector mismatch: empty endpoints"
 description: "go-api returns 503s through the ingress, but every pod is Running and Ready and nothing was deployed. The Service exists. The pods exist. They just don't know about each other anymore."
 category: config
@@ -7,6 +8,8 @@ target:
   namespace: go-api
   workload: go-api
 prerequisites:
+  platform:
+    - ingress
   apps:
     - go-api
 detection:

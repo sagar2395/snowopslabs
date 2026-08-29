@@ -1,43 +1,27 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { api } from '../api/client'
+import { qk } from '../lib/queryClient'
+import { useApiQuery } from '../hooks/useApiQuery'
 import type { LearnPathSummary, LearnPath, LearnProgress, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 
 interface LearnProps {
   notify: NotifyFn
-  refreshTick: number
 }
 
-export function Learn({ notify, refreshTick }: LearnProps) {
-  const [paths, setPaths] = useState<LearnPathSummary[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+export function Learn({ notify }: LearnProps) {
+  const { data: paths = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.learnPaths, api.listLearnPaths)
   const [selected, setSelected] = useState<{ path: LearnPath; progress: LearnProgress } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
+  const [openingPath, setOpeningPath] = useState<string | null>(null)
   const [starting, setStarting] = useState<string | null>(null)
-
-  const load = useCallback(async () => {
-    try {
-      const list = await api.listLearnPaths()
-      setPaths(list ?? [])
-      setLoadError(null)
-      setLoaded(true)
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { if (refreshTick > 0) load() }, [refreshTick, load])
+  const [completingIdx, setCompletingIdx] = useState<number | null>(null)
 
   async function openPath(name: string) {
     setDetailLoading(true)
+    setOpeningPath(name)
     setSelected(null)
     try {
       const [path, progress] = await Promise.all([
@@ -49,6 +33,7 @@ export function Learn({ notify, refreshTick }: LearnProps) {
       notify('error', 'Failed to load path', e instanceof Error ? e.message : String(e))
     } finally {
       setDetailLoading(false)
+      setOpeningPath(null)
     }
   }
 
@@ -65,6 +50,24 @@ export function Learn({ notify, refreshTick }: LearnProps) {
       notify('error', 'Failed to start path', e instanceof Error ? e.message : String(e))
     } finally {
       setStarting(null)
+    }
+  }
+
+  // Completing a module is the core of the in-UI progression: the learner works
+  // through a path end to end without dropping to the CLI.
+  async function completeModule(name: string, idx: number) {
+    setCompletingIdx(idx)
+    try {
+      const progress = await api.completeLearnModule(name, idx)
+      setSelected(prev => (prev && prev.path.name === name ? { ...prev, progress } : prev))
+      if (progress.nextIdx === -1) {
+        notify('success', 'Path complete', `You finished "${name}". Nicely done.`)
+      }
+      load()
+    } catch (e) {
+      notify('error', 'Failed to complete module', e instanceof Error ? e.message : String(e))
+    } finally {
+      setCompletingIdx(null)
     }
   }
 
@@ -87,7 +90,7 @@ export function Learn({ notify, refreshTick }: LearnProps) {
       <ErrorState
         title="Failed to load learning paths"
         message={loadError}
-        onRetry={() => { setRefreshing(true); load() }}
+        onRetry={load}
         retrying={refreshing}
       />
     )
@@ -97,87 +100,89 @@ export function Learn({ notify, refreshTick }: LearnProps) {
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>Retry</button>
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>Retry</button>
+          </span>
         </div>
       )}
 
       <div className="card">
         <div className="card-header">
           <span className="card-title">Learning Paths ({paths.length})</span>
-          <button className="btn btn-sm" onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+          <button className="btn btn-sm" onClick={load} disabled={refreshing}>
+            <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
 
         {paths.length === 0 ? (
           <div className="empty-state">
-            No learning paths found.
+            <span className="empty-icon"><Icon name="learn" size={24} /></span>
+            <div>No learning paths found.</div>
             <div className="empty-hint">Paths are discovered from <code>learn/&lt;name&gt;/path.yaml</code>.</div>
           </div>
         ) : (
-          paths.map(p => {
-            const pct = progressPct(p)
-            const done = p.completedCount === p.moduleCount && p.moduleCount > 0
-            return (
-              <div key={p.name} className="scenario-row">
-                <div className="scenario-info">
-                  <div className="scenario-name">{p.displayName || p.name}</div>
-                  {p.description && (
-                    <div className="scenario-desc">
-                      {p.description.length > 120 ? p.description.slice(0, 120) + '…' : p.description}
+          <div className="card-body">
+            {paths.map(p => {
+              const pct = progressPct(p)
+              const done = p.completedCount === p.moduleCount && p.moduleCount > 0
+              return (
+                <div key={p.name} className="scenario-row">
+                  <div className="scenario-info">
+                    <div className="scenario-name">{p.displayName || p.name}</div>
+                    {p.description && (
+                      <div className="scenario-desc">
+                        {p.description.length > 120 ? p.description.slice(0, 120) + '…' : p.description}
+                      </div>
+                    )}
+                    <div className="scenario-tags">
+                      {(p.tags || []).map(tag => (
+                        <Badge key={tag} variant="category">{tag}</Badge>
+                      ))}
+                      <span className="hint-text">{p.moduleCount} modules · ~{p.estimatedMinutes} min</span>
                     </div>
-                  )}
-                  <div className="scenario-tags" style={{ gap: 6, marginTop: 6 }}>
-                    {(p.tags || []).map(tag => (
-                      <Badge key={tag} variant="category">{tag}</Badge>
-                    ))}
-                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>
-                      {p.moduleCount} modules · ~{p.estimatedMinutes} min
-                    </span>
-                  </div>
-                  {p.moduleCount > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ flex: 1, height: 6, background: 'var(--surface)', borderRadius: 3, overflow: 'hidden' }}>
-                          <div style={{ width: `${pct}%`, height: '100%', background: done ? 'var(--success)' : 'var(--accent)', transition: 'width 0.3s' }} />
+                    {p.moduleCount > 0 && (
+                      <div className="mt-3 maxw-sm">
+                        <div className="progress">
+                          <div className="progress-track">
+                            <div className={`progress-fill${done ? ' is-done' : ''}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="progress-pct">{pct}%</span>
                         </div>
-                        <span style={{ fontSize: 12, color: 'var(--muted)', minWidth: 40 }}>{pct}%</span>
+                        <div className="hint-text mt-1">{p.completedCount}/{p.moduleCount} completed</div>
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2 }}>
-                        {p.completedCount}/{p.moduleCount} completed
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <Badge variant={done ? 'running' : p.completedCount > 0 ? 'category' : 'stopped'}>
-                  {done ? 'Complete' : p.completedCount > 0 ? 'In Progress' : 'Not Started'}
-                </Badge>
-                <div className="scenario-actions">
-                  {p.completedCount === 0 && (
-                    <button
-                      className="btn btn-sm btn-primary"
-                      disabled={starting === p.name}
-                      onClick={() => startPath(p.name)}
-                    >
-                      {starting === p.name ? 'Starting…' : 'Start'}
+                    )}
+                  </div>
+                  <Badge variant={done ? 'running' : p.completedCount > 0 ? 'category' : 'stopped'}>
+                    {done ? 'Complete' : p.completedCount > 0 ? 'In Progress' : 'Not Started'}
+                  </Badge>
+                  <div className="scenario-actions">
+                    {p.completedCount === 0 && (
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={starting === p.name}
+                        onClick={() => startPath(p.name)}
+                      >
+                        {starting === p.name ? 'Starting…' : 'Start'}
+                      </button>
+                    )}
+                    <button className="btn btn-sm" onClick={() => openPath(p.name)} disabled={openingPath === p.name}>
+                      {openingPath === p.name ? 'Loading…' : 'Details'}
                     </button>
-                  )}
-                  <button className="btn btn-sm" onClick={() => openPath(p.name)}>
-                    {detailLoading ? 'Loading…' : 'Details'}
-                  </button>
+                  </div>
                 </div>
-              </div>
-            )
-          })
+              )
+            })}
+          </div>
         )}
       </div>
 
       {/* Path detail modal */}
       {(detailLoading || selected) && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget && !detailLoading) setSelected(null) }}>
-          <div className="modal-card" role="dialog" aria-modal="true" aria-label="Learning path details" style={{ maxWidth: 640 }}>
-            <button className="modal-close" aria-label="Close" onClick={() => setSelected(null)}>×</button>
+          <div className="modal-card" role="dialog" aria-modal="true" aria-label="Learning path details">
+            <button className="modal-close" aria-label="Close" onClick={() => setSelected(null)}><Icon name="x" size={18} /></button>
 
             {detailLoading ? (
               <div className="loading" role="status">Loading…</div>
@@ -189,6 +194,11 @@ export function Learn({ notify, refreshTick }: LearnProps) {
                     {(selected.path as LearnPath & { tags?: string[] }).tags?.map((t: string) => (
                       <Badge key={t} variant="category">{t}</Badge>
                     ))}
+                    {selected.progress.started && (
+                      <span className="hint-text">
+                        {selected.progress.completed?.length ?? 0}/{selected.path.modules.length} complete
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -200,32 +210,34 @@ export function Learn({ notify, refreshTick }: LearnProps) {
 
                 <div className="modal-section">
                   <h3>Modules</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div className="module-list">
                     {selected.path.modules.map((m, idx) => {
                       const status = moduleStatus(selected.progress, idx)
                       return (
                         <div
                           key={m.name}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 12,
-                            padding: '8px 12px', borderRadius: 6,
-                            background: status === 'next' ? 'var(--surface-raised, var(--surface))' : 'transparent',
-                            border: `1px solid ${status === 'next' ? 'var(--accent)' : 'var(--border)'}`,
-                            opacity: status === 'locked' ? 0.5 : 1,
-                          }}
+                          className={`module-item${status === 'next' ? ' is-next' : ''}${status === 'locked' ? ' is-locked' : ''}`}
                         >
-                          <span style={{ fontSize: 16, minWidth: 20 }}>
-                            {status === 'done' ? '✓' : status === 'next' ? '▶' : String(idx + 1)}
+                          <span className={`module-marker${status === 'done' ? ' is-done' : ''}${status === 'next' ? ' is-next' : ''}`}>
+                            {status === 'done' ? <Icon name="check" size={14} /> : status === 'next' ? <Icon name="play" size={13} /> : idx + 1}
                           </span>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 500 }}>{m.displayName || m.name}</div>
-                            <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                              {m.action.type} · {m.action.ref}
-                            </div>
+                          <div className="module-info">
+                            <div className="module-name">{m.displayName || m.name}</div>
+                            <div className="module-sub">{m.action.type} · {m.action.ref}</div>
                           </div>
-                          <Badge variant={status === 'done' ? 'running' : status === 'next' ? 'category' : 'stopped'}>
-                            {status === 'done' ? 'Done' : status === 'next' ? 'Next' : status === 'locked' ? 'Locked' : 'Pending'}
-                          </Badge>
+                          {status === 'next' ? (
+                            <button
+                              className="btn btn-sm btn-primary"
+                              disabled={completingIdx !== null}
+                              onClick={() => completeModule(selected.path.name, idx)}
+                            >
+                              {completingIdx === idx ? 'Marking…' : 'Mark complete'}
+                            </button>
+                          ) : (
+                            <Badge variant={status === 'done' ? 'running' : 'stopped'}>
+                              {status === 'done' ? 'Done' : status === 'locked' ? 'Locked' : 'Pending'}
+                            </Badge>
+                          )}
                         </div>
                       )
                     })}
@@ -233,7 +245,7 @@ export function Learn({ notify, refreshTick }: LearnProps) {
                 </div>
 
                 <div className="card-footer">
-                  {!selected.progress.started && (
+                  {!selected.progress.started ? (
                     <button
                       className="btn btn-primary"
                       disabled={starting === selected.path.name}
@@ -241,6 +253,18 @@ export function Learn({ notify, refreshTick }: LearnProps) {
                     >
                       {starting === selected.path.name ? 'Starting…' : 'Start Path'}
                     </button>
+                  ) : selected.progress.nextIdx != null && selected.progress.nextIdx >= 0 ? (
+                    <button
+                      className="btn btn-primary"
+                      disabled={completingIdx !== null}
+                      onClick={() => completeModule(selected.path.name, selected.progress.nextIdx!)}
+                    >
+                      {completingIdx === selected.progress.nextIdx
+                        ? 'Marking…'
+                        : `Complete “${selected.path.modules[selected.progress.nextIdx]?.displayName || selected.path.modules[selected.progress.nextIdx]?.name || 'module'}” & continue`}
+                    </button>
+                  ) : (
+                    <Badge variant="running"><Icon name="check" size={13} /> Path complete</Badge>
                   )}
                   <button className="btn" onClick={() => setSelected(null)}>Close</button>
                 </div>

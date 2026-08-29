@@ -118,6 +118,13 @@ func runDoctor(ctx context.Context, out io.Writer, runner toolchain.Runner) erro
 		fmt.Fprintln(out, "    run 'labctl hosts add' (one-time, needs sudo). Not needed for the UI at :3939.")
 	}
 
+	if isWSL() {
+		fmt.Fprintln(out, "\nWSL notes:")
+		for _, n := range wslDoctorNotes() {
+			fmt.Fprintf(out, "  - %s\n", n)
+		}
+	}
+
 	fmt.Fprintln(out, "\n✓ Everything SnowOps Labs needs is installed and current.")
 	return nil
 }

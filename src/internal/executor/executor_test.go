@@ -3,7 +3,10 @@ package executor
 
 import (
 	"bytes"
+	"io"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 )
 
@@ -44,6 +47,32 @@ func TestSetEnv_Overwrite(t *testing.T) {
 	if exec.Env["KEY"] != "second" {
 		t.Errorf("Env[KEY]: got %q, want %q", exec.Env["KEY"], "second")
 	}
+}
+
+// TestSetEnv_ConcurrentWithBuildEnv models the HTTP server, where one handler
+// calls SetEnv (e.g. traffic tunables) while other handlers run commands and
+// snapshot the environment via buildEnv. Before Env was guarded by a mutex this
+// tripped "concurrent map read and map write"; run with -race to guard against
+// regressions.
+func TestSetEnv_ConcurrentWithBuildEnv(t *testing.T) {
+	t.Parallel()
+	e := New(t.TempDir())
+	e.Stdout = io.Discard
+	e.Stderr = io.Discard
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			e.SetEnv("TRAFFIC_RPS", "10")
+		}()
+		go func() {
+			defer wg.Done()
+			_ = e.RunCommand("true") // RunCommand -> buildEnv reads e.Env
+		}()
+	}
+	wg.Wait()
 }
 
 func TestRunCommand_Echo(t *testing.T) {
@@ -233,6 +262,61 @@ func TestRunScriptStreamed_SuccessPath_EmitsEvents(t *testing.T) {
 	}
 	if !types["action_end"] {
 		t.Error("expected action_end event")
+	}
+}
+
+// TestStreamOutput_LongLineNotTruncated guards against the bufio.Scanner
+// regression: a single line larger than the old 1 MiB cap used to silently drop
+// that line and everything after it from both the writer and the broadcast
+// stream. A sentinel line printed *after* the huge line must survive.
+func TestStreamOutput_LongLineNotTruncated(t *testing.T) {
+	const longLen = 2 * 1024 * 1024 // 2 MiB, well past the old 1 MiB cap
+
+	var buf bytes.Buffer
+	e := New(t.TempDir())
+	e.Stdout = &buf
+	e.Stderr = &buf
+
+	var outputs []string
+	ch := e.Broadcast.Subscribe()
+	done := make(chan struct{})
+	go func() {
+		for ev := range ch {
+			if ev.Type == "action_output" {
+				outputs = append(outputs, ev.Output)
+			}
+		}
+		close(done)
+	}()
+
+	// The shell generates the 2 MiB line itself (passing it as an argv entry
+	// would blow ARG_MAX): fill it from /dev/zero, then print a sentinel line
+	// *after* it that must survive the long line.
+	script := "head -c 2097152 /dev/zero | tr '\\0' 'x'; printf '\\nSENTINEL_END\\n'"
+	_, err := e.RunCommandStreamed("t", "bash", "-c", script)
+	if err != nil {
+		t.Fatalf("RunCommandStreamed: %v", err)
+	}
+	e.Broadcast.Unsubscribe(ch)
+	<-done
+
+	if !strings.Contains(buf.String(), "SENTINEL_END") {
+		t.Errorf("writer lost output after a >1MiB line (got %d bytes, no sentinel)", buf.Len())
+	}
+	var sawLong, sawSentinel bool
+	for _, o := range outputs {
+		if len(o) == longLen {
+			sawLong = true
+		}
+		if o == "SENTINEL_END" {
+			sawSentinel = true
+		}
+	}
+	if !sawLong {
+		t.Error("broadcast stream did not carry the full 2MiB line")
+	}
+	if !sawSentinel {
+		t.Error("broadcast stream lost the sentinel line after the long line")
 	}
 }
 

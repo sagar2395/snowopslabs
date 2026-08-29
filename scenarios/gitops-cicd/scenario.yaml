@@ -1,4 +1,5 @@
 name: gitops-cicd
+verified: true
 displayName: "GitOps & CI/CD"
 description: "ArgoCD-based GitOps deployment with Application CRDs for declarative app management."
 category: delivery
@@ -62,8 +63,9 @@ explore:
     - label: "Sync go-api application"
       command: "kubectl -n argocd patch application go-api --type merge -p '{\"operation\":{\"initiatedBy\":{\"username\":\"admin\"},\"sync\":{\"revision\":\"HEAD\"}}}'"
   tips:
-    - "Login: username 'admin', password from the command above"
-    - "ArgoCD watches the local git repo for changes to Helm values"
-    - "Modify apps/go-api/deploy/helm/values-dev.yaml and watch ArgoCD detect drift"
-    - "Use 'kubectl -n argocd get applications' to see sync status"
-    - "ArgoCD Applications are defined in manifests/argocd-applications.yaml"
+    - "Login: username 'admin', password from the 'Get ArgoCD admin password' command above."
+    - "Source of truth: ArgoCD syncs from the GitHub repo (github.com/sagar2395/snowopslabs @ HEAD), NOT your local working copy. It watches apps/go-api/deploy/helm and apps/echo-server/deploy/helm."
+    - "To make an edit sync: commit and push it to that repo — or fork the repo, set 'repoURL' in manifests/argocd-applications.yaml to your fork, and re-apply the manifest."
+    - "Two Applications are defined in manifests/argocd-applications.yaml (go-api, echo-server), each with automated sync (prune + selfHeal)."
+    - "See sync/health status: kubectl -n argocd get applications. Force a sync now with the 'Sync go-api application' command above."
+    - "Because selfHeal is on, editing the live resources directly (kubectl edit) is reverted by ArgoCD — change the git source instead."

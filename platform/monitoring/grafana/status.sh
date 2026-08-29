@@ -29,4 +29,6 @@ echo "  - External: http://grafana.${DOMAIN_SUFFIX:-k3d.local}"
 echo "  - Internal: http://grafana.$NAMESPACE.svc.cluster.local:80"
 echo ""
 echo "ConfigMaps:"
-kubectl get configmap -n $NAMESPACE | grep -E "grafana|dashboard"
+# `|| true`: a status command must not fail just because grep matched nothing
+# (no dashboards yet). Without it, set -o pipefail makes an empty match exit 1.
+kubectl get configmap -n $NAMESPACE | grep -E "grafana|dashboard" || true

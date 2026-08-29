@@ -16,6 +16,7 @@
     "displayName": { "type": "string" },
     "description": { "type": "string" },
     "category": { "type": "string" },
+    "verified": { "type": "boolean", "description": "True when this scenario has been confirmed end-to-end (activates, checks pass, tears down cleanly) on a fresh cluster. Absent/false means unverified — usable but not yet vouched for." },
     "prerequisites": {
       "type": "object",
       "additionalProperties": false,
@@ -41,6 +42,8 @@
       }
     },
     "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
+    "references": { "type": "array", "items": { "$ref": "#/$defs/reference" }, "description": "Links to upstream tool/docs relevant to this scenario (KEDA, Istio, Prometheus, …)." },
+    "snippets": { "type": "array", "items": { "$ref": "#/$defs/snippet" }, "description": "Applyable manifest snippets the learner can 'kubectl apply -f -' during the exercise. Template-resolved like explore.commands." },
     "explore": {
       "type": "object",
       "additionalProperties": false,
@@ -53,6 +56,32 @@
   },
   "not": { "required": ["components", "stages"] },
   "$defs": {
+    "reference": {
+      "type": "object",
+      "required": ["label", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "type": "string" },
+        "url": { "type": "string", "pattern": "^https?://" },
+        "note": { "type": "string" }
+      }
+    },
+    "snippet": {
+      "type": "object",
+      "required": ["label"],
+      "additionalProperties": false,
+      "description": "Exactly one of 'yaml' (inline manifest text) or 'path' (a manifest file relative to the scenario directory).",
+      "properties": {
+        "label": { "type": "string" },
+        "description": { "type": "string" },
+        "yaml": { "type": "string" },
+        "path": { "type": "string" }
+      },
+      "oneOf": [
+        { "required": ["yaml"], "not": { "required": ["path"] } },
+        { "required": ["path"], "not": { "required": ["yaml"] } }
+      ]
+    },
     "component": {
       "type": "object",
       "required": ["name", "type"],

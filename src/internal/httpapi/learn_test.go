@@ -2,10 +2,12 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sagar2395/snowopslabs/internal/config"
@@ -87,6 +89,64 @@ func TestHandleLearnStart(t *testing.T) {
 	s.handleLearnStart(w, req)
 	if w.Code != http.StatusOK {
 		t.Fatalf("start: status %d, body: %s", w.Code, w.Body)
+	}
+}
+
+// decodeProgress unmarshals a progress payload and fails the test on error.
+func decodeProgress(t *testing.T, body string) map[string]any {
+	t.Helper()
+	var got map[string]any
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("decode progress: %v (body: %s)", err, body)
+	}
+	return got
+}
+
+// start/progress/complete must all return the same derived-field shape so the
+// UI can trust `started`/`nextIdx`/`total` regardless of which one produced it.
+func TestHandleLearn_ProgressShapeConsistent(t *testing.T) {
+	s := newLearnServer(t)
+	start := func() map[string]any {
+		req := httptest.NewRequest(http.MethodPost, "/api/learn/paths/test-path/start", nil)
+		req = setVars(req, map[string]string{"name": "test-path"})
+		w := httptest.NewRecorder()
+		s.handleLearnStart(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("start: status %d, body: %s", w.Code, w.Body)
+		}
+		return decodeProgress(t, w.Body.String())
+	}
+	got := start()
+	if got["started"] != true {
+		t.Errorf("start: started=%v, want true", got["started"])
+	}
+	if got["total"] != float64(1) {
+		t.Errorf("start: total=%v, want 1", got["total"])
+	}
+	if got["nextIdx"] != float64(0) {
+		t.Errorf("start: nextIdx=%v, want 0 (first module)", got["nextIdx"])
+	}
+
+	// Completing the only module advances nextIdx to -1 (path finished) and
+	// records the module index as completed — the end-to-end UI progression.
+	body := strings.NewReader(`{"moduleIdx":0}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/learn/paths/test-path/complete", body)
+	req = setVars(req, map[string]string{"name": "test-path"})
+	w := httptest.NewRecorder()
+	s.handleLearnMarkComplete(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("complete: status %d, body: %s", w.Code, w.Body)
+	}
+	done := decodeProgress(t, w.Body.String())
+	if done["started"] != true {
+		t.Errorf("complete: started=%v, want true", done["started"])
+	}
+	if done["nextIdx"] != float64(-1) {
+		t.Errorf("complete: nextIdx=%v, want -1 (all done)", done["nextIdx"])
+	}
+	completed, _ := done["completed"].([]any)
+	if len(completed) != 1 || completed[0] != float64(0) {
+		t.Errorf("complete: completed=%v, want [0]", done["completed"])
 	}
 }
 

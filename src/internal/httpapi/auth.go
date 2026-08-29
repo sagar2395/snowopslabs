@@ -4,6 +4,8 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/sagar2395/snowopslabs/internal/auth"
 	"github.com/sagar2395/snowopslabs/internal/results"
@@ -34,11 +36,11 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 
 		sess, ok := s.sessions.Get(auth.TokenFromRequest(r))
 		if !ok {
-			respondError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+			respondError(w, r, http.StatusUnauthorized, "unauthorized", "authentication required")
 			return
 		}
 		if !auth.Authorize(sess.Role, r.Method, r.URL.Path) {
-			respondError(w, http.StatusForbidden, "forbidden_role",
+			respondError(w, r, http.StatusForbidden, "forbidden_role",
 				"this action requires the operator role")
 			return
 		}
@@ -46,10 +48,31 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// isAuthEndpoint reports whether path is one of the always-open auth endpoints,
+// under either the /api or /api/v2 prefix (checked longest-first). These must
+// stay reachable without a session, or nobody could ever log in.
 func isAuthEndpoint(path string) bool {
-	return path == "/api/auth/me" ||
-		path == "/api/auth/login" ||
-		path == "/api/auth/logout"
+	for _, prefix := range []string{"/api/v2", "/api"} {
+		if rest, ok := strings.CutPrefix(path, prefix); ok {
+			switch rest {
+			case "/auth/me", "/auth/login", "/auth/logout":
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isSecureRequest reports whether the request arrived over a secure transport,
+// so the session cookie can carry the Secure flag when — and only when — the
+// browser would send it back. Direct TLS sets r.TLS; a TLS-terminating proxy
+// signals it via X-Forwarded-Proto. Plain localhost HTTP stays non-Secure so
+// the cookie still works there.
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
 // authMeResponse describes the current auth state for the UI.
@@ -89,36 +112,51 @@ type loginRequest struct {
 // POST /api/auth/login — verify credentials, create a session, set the cookie.
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.authEnabled {
-		respondError(w, http.StatusBadRequest, "auth_disabled", "authentication is not enabled")
+		respondError(w, r, http.StatusBadRequest, "auth_disabled", "authentication is not enabled")
 		return
 	}
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid_request", "invalid JSON body")
+		respondError(w, r, http.StatusBadRequest, "invalid_request", "invalid JSON body")
 		return
 	}
 	if req.Username == "" || req.Password == "" {
-		respondError(w, http.StatusBadRequest, "invalid_request", "username and password are required")
+		respondError(w, r, http.StatusBadRequest, "invalid_request", "username and password are required")
 		return
+	}
+	// Rate-limit by client address before doing any (expensive, memory-hard)
+	// password verification, so a credential-stuffing loop is cut off cheaply.
+	limitKey := clientAddr(r)
+	if s.loginLimit != nil {
+		if ok, retryAfter := s.loginLimit.allow(limitKey); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int(retryAfter.Seconds())+1))
+			respondError(w, r, http.StatusTooManyRequests, "too_many_requests",
+				"too many login attempts; try again later")
+			return
+		}
 	}
 	u, ok := s.users.Authenticate(req.Username, req.Password)
 	if !ok {
-		respondError(w, http.StatusUnauthorized, "invalid_credentials", "invalid username or password")
+		respondError(w, r, http.StatusUnauthorized, "invalid_credentials", "invalid username or password")
 		return
+	}
+	// A correct login clears the caller's rate-limit window.
+	if s.loginLimit != nil {
+		s.loginLimit.reset(limitKey)
 	}
 	sess, err := s.sessions.Create(u.Name, u.Role)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "session_error", "could not create session")
+		respondError(w, r, http.StatusInternalServerError, "session_error", "could not create session")
 		return
 	}
-	// Secure is intentionally omitted: the lab UI is served over plain HTTP on
-	// localhost, where a browser would never send a Secure cookie. HttpOnly and
-	// SameSite=Strict are the meaningful protections in this transport.
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see note above
+	//nolint:gosec // G124: Secure is set under TLS; localhost HTTP omits it so
+	// the cookie still works there. HttpOnly + SameSite=Strict always apply.
+	http.SetCookie(w, &http.Cookie{
 		Name:     auth.CookieName,
 		Value:    sess.Token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 		Expires:  sess.Expires,
 	})
@@ -137,12 +175,13 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.sessions.Delete(auth.TokenFromRequest(r))
-	// Secure omitted for the same localhost-HTTP reason as the login handler.
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: see login handler note
+	//nolint:gosec // G124: see the login handler — Secure is conditional on TLS.
+	http.SetCookie(w, &http.Cookie{
 		Name:     auth.CookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 	})

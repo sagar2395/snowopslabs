@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sagar2395/snowopslabs/internal/incident"
+	incsvc "github.com/sagar2395/snowopslabs/internal/service/incident"
 	"github.com/spf13/cobra"
 )
 
@@ -86,18 +87,38 @@ a reproducible pick across a team.`,
 			name = f.Name
 		}
 
+		f, err := incEng.Get(name)
+		if err != nil {
+			return err
+		}
+
 		// A fault breaks a running workload; if its target is one of our apps and
 		// it isn't deployed, inject would fail cryptically. Check first (or deploy
 		// it with --deploy-prereqs).
-		if tgt, err := incEng.Get(name); err == nil && appExists(tgt.Target.Namespace) {
-			if err := ensureAppsDeployed(cmd.Context(), []string{tgt.Target.Namespace}, injectDeployPrereqs); err != nil {
+		if appExists(f.Target.Namespace) {
+			if err := ensureAppsDeployed(cmd.Context(), []string{f.Target.Namespace}, injectDeployPrereqs); err != nil {
 				return err
 			}
 		}
 
-		f, err := incEng.Inject(name, exec, injectForce, injectSilent)
-		if err != nil {
+		// Guard with the same checks the legacy path applied, then run inject.sh
+		// through the durable engine and, on success, record the active incident.
+		if active, aerr := incEng.Active(); aerr != nil {
+			return aerr
+		} else if active != nil && !injectForce {
+			return fmt.Errorf("%w: %s (resolve it first, or use --force)", incident.ErrIncidentActive, active.Fault)
+		}
+		if err := incEng.Preflight(f); err != nil {
 			return err
+		}
+		target := incsvc.Target{Namespace: f.Target.Namespace, Workload: f.Target.Workload}
+		if err := runIncidentOp(cmd, "inject", name, target, func(ctx context.Context, svc *incsvc.Service) (string, error) {
+			return svc.Inject(ctx, name, target)
+		}); err != nil {
+			return err
+		}
+		if err := incEng.MarkInjected(name, injectSilent); err != nil {
+			return fmt.Errorf("recording active incident: %w", err)
 		}
 
 		fmt.Println()
@@ -175,10 +196,29 @@ var incidentResolveCmd = &cobra.Command{
 		if len(args) == 1 {
 			name = args[0]
 		}
-		f, err := incEng.Resolve(name, exec, "")
+		// With no name, resolve the active incident (an explicit name works even
+		// if the active state was lost — the escape hatch).
+		if name == "" {
+			active, err := incEng.Active()
+			if err != nil {
+				return err
+			}
+			if active == nil {
+				return fmt.Errorf("%w (pass a fault name to force-resolve anyway)", incident.ErrNoActive)
+			}
+			name = active.Fault
+		}
+		f, err := incEng.Get(name)
 		if err != nil {
 			return err
 		}
+		target := incsvc.Target{Namespace: f.Target.Namespace, Workload: f.Target.Workload}
+		if err := runIncidentOp(cmd, "resolve", name, target, func(ctx context.Context, svc *incsvc.Service) (string, error) {
+			return svc.Resolve(ctx, name, target)
+		}); err != nil {
+			return err
+		}
+		incEng.RecordScriptResolved(name, "")
 		fmt.Printf("\nIncident %s resolved via its resolve.sh. The lab should be healthy again.\n", f.Name)
 		return nil
 	},
@@ -261,6 +301,29 @@ var incidentHistoryCmd = &cobra.Command{
 	},
 }
 
+var incidentInfoCmd = &cobra.Command{
+	Use:   "info [fault-name]",
+	Short: "Show a fault's details, upstream references, and applyable snippets",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		f, err := incEng.Get(args[0])
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Name:        %s\n", f.Name)
+		fmt.Printf("Display:     %s\n", f.DisplayName)
+		fmt.Printf("Category:    %s\n", f.Category)
+		fmt.Printf("Severity:    %s\n", f.Severity)
+		fmt.Printf("Target:      %s/%s\n", f.Target.Namespace, f.Target.Workload)
+		if f.Description != "" {
+			fmt.Printf("Description: %s\n", f.Description)
+		}
+		renderReferences(os.Stdout, f.References)
+		renderSnippets(os.Stdout, f.Snippets, f.Dir, incEng.ResolveTemplate)
+		return nil
+	},
+}
+
 func init() {
 	incidentSolutionCmd.Flags().BoolVar(&solutionYes, "yes", false, "skip the spoiler confirmation")
 	incidentInjectCmd.Flags().BoolVar(&injectDeployPrereqs, "deploy-prereqs", false, "build and deploy the target app if it is not already running")
@@ -271,6 +334,7 @@ func init() {
 	incidentInjectCmd.Flags().StringVar(&injectCategory, "category", "", "restrict --random to a category (workload|network|resources|storage|config)")
 
 	incidentCmd.AddCommand(incidentListCmd)
+	incidentCmd.AddCommand(incidentInfoCmd)
 	incidentCmd.AddCommand(incidentInjectCmd)
 	incidentCmd.AddCommand(incidentStatusCmd)
 	incidentCmd.AddCommand(incidentResolveCmd)

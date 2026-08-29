@@ -40,3 +40,52 @@ func TestRepoContentValidates(t *testing.T) {
 		t.Fatalf("expected in-repo scenarios and incidents, got %+v", counts)
 	}
 }
+
+// TestVerifiedContentSet locks the curated verified set (W4-T07): the scenarios
+// and incidents confirmed end-to-end are marked verified, and the ones that
+// aren't (the disruptive drills; the less-exercised incidents) are explicitly
+// unverified. If someone flips a flag, this fails so the change is deliberate.
+func TestVerifiedContentSet(t *testing.T) {
+	c, err := Load(repoRoot(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	unverifiedScenarios := map[string]bool{
+		"node-drain-drill":      true,
+		"cluster-upgrade-drill": true,
+	}
+	verifiedScenarios := 0
+	for _, s := range c.Scenarios() {
+		if s.Verified {
+			verifiedScenarios++
+			if unverifiedScenarios[s.Name] {
+				t.Errorf("scenario %q is marked verified but is in the unverified set", s.Name)
+			}
+		} else if !unverifiedScenarios[s.Name] {
+			t.Errorf("scenario %q is unverified but not in the known unverified set — verify it or add it", s.Name)
+		}
+	}
+	if verifiedScenarios != 11 {
+		t.Errorf("verified scenarios = %d, want 11 (the confirmed set)", verifiedScenarios)
+	}
+
+	unverifiedIncidents := map[string]bool{
+		"oom-kill":       true,
+		"noisy-neighbor": true,
+	}
+	verifiedIncidents := 0
+	for _, f := range c.Incidents() {
+		if f.Verified {
+			verifiedIncidents++
+			if unverifiedIncidents[f.Name] {
+				t.Errorf("incident %q is marked verified but is in the unverified set", f.Name)
+			}
+		} else if !unverifiedIncidents[f.Name] {
+			t.Errorf("incident %q is unverified but not in the known unverified set", f.Name)
+		}
+	}
+	if verifiedIncidents != 4 {
+		t.Errorf("verified incidents = %d, want 4 (the go-api-targeting confirmed set)", verifiedIncidents)
+	}
+}

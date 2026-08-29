@@ -1,46 +1,27 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
+import { qk } from '../lib/queryClient'
+import { useApiQuery } from '../hooks/useApiQuery'
 import type { Scenario, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import { useJobRunner } from '../hooks/useJobRunner'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 interface ScenariosProps {
   notify: NotifyFn
-  refreshTick: number
   requestConfirm: (req: ConfirmRequest) => void
 }
 
-export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProps) {
-  const [scenarios, setScenarios] = useState<Scenario[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const [loaded, setLoaded] = useState(false)
+export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
+  const { data: scenarios = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.scenarios, api.listScenarios)
   const [filter, setFilter] = useState('')
   const [detail, setDetail] = useState<Scenario | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const { busy, run } = useJobRunner(notify)
   const modalCloseRef = useRef<HTMLButtonElement>(null)
   const detailOpener = useRef<Element | null>(null)
-
-  const load = useCallback(async () => {
-    try {
-      const list = await api.listScenarios()
-      setScenarios(list ?? [])
-      setLoadError(null)
-      setLoaded(true)
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
-  useEffect(() => { if (refreshTick > 0) load() }, [refreshTick, load])
 
   // Modal: Esc to close, focus management
   useEffect(() => {
@@ -60,11 +41,6 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
 
   function closeDetail() { setDetail(null) }
 
-  async function handleRefresh() {
-    setRefreshing(true)
-    await load()
-  }
-
   async function openDetail(name: string) {
     setDetailLoading(true)
     setDetail({ name, displayName: name, description: '', category: '', active: false })
@@ -79,8 +55,48 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
     }
   }
 
-  function activate(name: string) {
-    run(name, `Activate ${name}`, () => api.scenarioUp(name), () => load())
+  // Activating shows a requirements preview first: what the scenario will install
+  // and what it expects to already be present. Prerequisites are not auto-installed.
+  async function activate(name: string) {
+    let s: Scenario | null = null
+    try { s = await api.getScenario(name) } catch { /* fall back to a plain confirm */ }
+    const plat = s?.prerequisites?.platform ?? []
+    const apps = s?.prerequisites?.apps ?? []
+    const comps = s?.components ?? []
+    const doRun = () => run(name, `Activate ${name}`, () => api.scenarioUp(name), () => load())
+    requestConfirm({
+      title: `Activate ${s?.displayName || name}?`,
+      danger: false,
+      confirmLabel: 'Activate',
+      message: (
+        <div className="stack-3">
+          {comps.length > 0 && (
+            <div>
+              <div className="field-label">This will install</div>
+              <ul>
+                {comps.map(c => (
+                  <li key={c.name}>{c.name} <span className="hint-text">({c.type}{c.namespace ? ` → ${c.namespace}` : ''})</span></li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {(plat.length > 0 || apps.length > 0) && (
+            <div>
+              <div className="field-label">Requires (install these first if missing)</div>
+              <ul>
+                {plat.map(p => <li key={`p-${p}`}>Platform: <code>{p}</code></li>)}
+                {apps.map(a => <li key={`a-${a}`}>App: <code>{a}</code></li>)}
+              </ul>
+              <div className="field-help">Prerequisites are not installed automatically — add any missing ones in the Platform tab, then activate.</div>
+            </div>
+          )}
+          {comps.length === 0 && plat.length === 0 && apps.length === 0 && (
+            <div>Activate this scenario now?</div>
+          )}
+        </div>
+      ),
+      onConfirm: doRun,
+    })
   }
 
   function deactivate(name: string) {
@@ -108,7 +124,7 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
       <ErrorState
         title="Failed to load scenarios"
         message={loadError}
-        onRetry={handleRefresh}
+        onRetry={load}
         retrying={refreshing}
       />
     )
@@ -127,72 +143,81 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={handleRefresh} disabled={refreshing}>Retry</button>
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>Retry</button>
+          </span>
         </div>
       )}
 
       <div className="card">
         <div className="card-header">
           <span className="card-title">Scenarios ({visible.length}{q ? ` of ${scenarios.length}` : ''})</span>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="card-tools">
             {scenarios.length > 3 && (
-              <input
-                type="search"
-                className="search-input"
-                placeholder="Filter scenarios…"
-                aria-label="Filter scenarios"
-                value={filter}
-                onChange={e => setFilter(e.target.value)}
-              />
+              <span className="search-field">
+                <Icon name="search" size={15} className="search-icon" />
+                <input
+                  type="search"
+                  className="search-input"
+                  placeholder="Filter scenarios…"
+                  aria-label="Filter scenarios"
+                  value={filter}
+                  onChange={e => setFilter(e.target.value)}
+                />
+              </span>
             )}
-            <button className="btn btn-sm" onClick={handleRefresh} disabled={refreshing}>
-              {refreshing ? 'Refreshing…' : 'Refresh'}
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>
+              <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
         </div>
 
         {visible.length === 0 ? (
           <div className="empty-state">
-            {q ? <>No scenarios match “{filter}”.</> : <>No scenarios found.<div className="empty-hint">Scenarios are discovered from <code>scenarios/&lt;name&gt;/scenario.yaml</code>.</div></>}
+            <span className="empty-icon"><Icon name="scenarios" size={24} /></span>
+            {q ? <div>No scenarios match “{filter}”.</div> : <><div>No scenarios found.</div><div className="empty-hint">Scenarios are discovered from <code>scenarios/&lt;name&gt;/scenario.yaml</code>.</div></>}
           </div>
         ) : (
-          visible.map(s => (
-            <div key={s.name} className="scenario-row">
-              <div className="scenario-info">
-                <div className="scenario-name">{s.displayName || s.name}</div>
-                {s.description && (
-                  <div className="scenario-desc">
-                    {s.description.length > 120 ? s.description.slice(0, 120) + '…' : s.description}
+          <div className="card-body">
+            {visible.map(s => (
+              <div key={s.name} className="scenario-row">
+                <div className="scenario-info">
+                  <div className="scenario-name">{s.displayName || s.name}</div>
+                  {s.description && (
+                    <div className="scenario-desc">
+                      {s.description.length > 120 ? s.description.slice(0, 120) + '…' : s.description}
+                    </div>
+                  )}
+                  <div className="scenario-tags">
+                    {s.category && <Badge variant="category">{s.category}</Badge>}
+                    {(s.runtimes || []).map(r => (
+                      <Badge key={r} variant="runtime">{r}</Badge>
+                    ))}
                   </div>
-                )}
-                <div className="scenario-tags">
-                  {s.category && <Badge variant="category">{s.category}</Badge>}
-                  {(s.runtimes || []).map(r => (
-                    <Badge key={r} variant="runtime">{r}</Badge>
-                  ))}
+                </div>
+                <Badge variant={s.active ? 'running' : 'stopped'}>{s.active ? 'Active' : 'Inactive'}</Badge>
+                <div className="scenario-actions">
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={s.active || busy[s.name]}
+                    onClick={() => activate(s.name)}
+                  >
+                    {busy[s.name] ? 'Working…' : (<><Icon name="play" size={14} />Activate</>)}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-danger"
+                    disabled={!s.active || busy[s.name]}
+                    onClick={() => deactivate(s.name)}
+                  >
+                    Deactivate
+                  </button>
+                  <button className="btn btn-sm" onClick={() => openDetail(s.name)}>Details</button>
                 </div>
               </div>
-              <Badge variant={s.active ? 'running' : 'stopped'}>{s.active ? 'Active' : 'Inactive'}</Badge>
-              <div className="scenario-actions">
-                <button
-                  className="btn btn-sm btn-primary"
-                  disabled={s.active || busy[s.name]}
-                  onClick={() => activate(s.name)}
-                >
-                  {busy[s.name] ? 'Working…' : 'Activate'}
-                </button>
-                <button
-                  className="btn btn-sm btn-danger"
-                  disabled={!s.active || busy[s.name]}
-                  onClick={() => deactivate(s.name)}
-                >
-                  Deactivate
-                </button>
-                <button className="btn btn-sm" onClick={() => openDetail(s.name)}>Details</button>
-              </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
 
@@ -200,7 +225,7 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
       {detail && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) closeDetail() }}>
           <div className="modal-card" role="dialog" aria-modal="true" aria-label={`${detail.displayName || detail.name} details`}>
-            <button ref={modalCloseRef} className="modal-close" aria-label="Close details" onClick={closeDetail}>×</button>
+            <button ref={modalCloseRef} className="modal-close" aria-label="Close details" onClick={closeDetail}><Icon name="x" size={18} /></button>
 
             {detailLoading ? (
               <div className="loading" role="status">Loading…</div>
@@ -238,33 +263,37 @@ export function Scenarios({ notify, refreshTick, requestConfirm }: ScenariosProp
                 {detail.components && detail.components.length > 0 && (
                   <div className="modal-section">
                     <h3>Components</h3>
-                    <table className="modal-table">
-                      <thead>
-                        <tr><th>Name</th><th>Type</th><th>Namespace</th><th>Details</th></tr>
-                      </thead>
-                      <tbody>
-                        {detail.components.map(c => (
-                          <tr key={c.name}>
-                            <td>{c.name}</td>
-                            <td><Badge variant="category">{c.type}</Badge></td>
-                            <td style={{ color: 'var(--muted)' }}>{c.namespace || 'default'}</td>
-                            <td style={{ color: 'var(--muted)', fontSize: 12 }}>{c.chart || c.path || c.script || ''}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="table-scroll">
+                      <table className="data-table">
+                        <thead>
+                          <tr><th>Name</th><th>Type</th><th>Namespace</th><th>Details</th></tr>
+                        </thead>
+                        <tbody>
+                          {detail.components.map(c => (
+                            <tr key={c.name}>
+                              <td>{c.name}</td>
+                              <td><Badge variant="category">{c.type}</Badge></td>
+                              <td className="td-muted">{c.namespace || 'default'}</td>
+                              <td className="td-muted">{c.chart || c.path || c.script || ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 
                 {detail.explore?.urls && detail.explore.urls.length > 0 && (
                   <div className="modal-section">
                     <h3>Explore URLs</h3>
-                    {detail.explore.urls.map(u => (
-                      <div key={u.label} style={{ marginBottom: 6 }}>
-                        <a href={u.url} target="_blank" rel="noopener noreferrer">{u.label}</a>
-                        <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 8 }}>{u.url}</span>
-                      </div>
-                    ))}
+                    <div className="stack-2">
+                      {detail.explore.urls.map(u => (
+                        <div key={u.label} className="row-flex">
+                          <a href={u.url} target="_blank" rel="noopener noreferrer">{u.label}</a>
+                          <span className="hint-text">{u.url}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 

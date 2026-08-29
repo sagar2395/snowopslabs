@@ -21,8 +21,59 @@ import (
 const (
 	KindIncident  = "incident"
 	KindChallenge = "challenge"
-	KindModule    = "module" // a learn path module completion
+	KindModule    = "module"   // a learn path module completion
+	KindScenario  = "scenario" // a scenario verification (W4-T02)
 )
+
+// CheckOutcome is one check's result as recorded in a scenario verification. It
+// is a compact, display-ready shape (not the full checks.Result) so the results
+// view can show which checks passed without depending on the checks package.
+type CheckOutcome struct {
+	Name   string `json:"name"`
+	Pass   bool   `json:"pass"`
+	Detail string `json:"detail,omitempty"`
+}
+
+// NewScenarioRecord builds a results Record for a scenario verification. It
+// captures the scenario's objectives and each check's pass/fail so the results
+// view can show what was being verified and how far the user got — the "did I
+// actually solve it?" feedback (W4-T02). Score is the percentage of checks that
+// passed; Outcome is passed only when every check passed.
+func NewScenarioRecord(name, user string, objectives []string, checks []CheckOutcome, startedAt, endedAt time.Time) Record {
+	passed := 0
+	for _, c := range checks {
+		if c.Pass {
+			passed++
+		}
+	}
+	outcome := "failed"
+	score := -1
+	if len(checks) > 0 {
+		if passed == len(checks) {
+			outcome = "passed"
+		}
+		score = passed * 100 / len(checks)
+	}
+	meta := map[string]interface{}{
+		"checks":       checks,
+		"checksPassed": passed,
+		"checksTotal":  len(checks),
+	}
+	if len(objectives) > 0 {
+		meta["objectives"] = objectives
+	}
+	return Record{
+		Kind:      KindScenario,
+		Name:      name,
+		User:      UserOr(user),
+		StartedAt: startedAt,
+		EndedAt:   endedAt,
+		Elapsed:   int64(endedAt.Sub(startedAt).Seconds()),
+		Score:     score,
+		Outcome:   outcome,
+		Meta:      meta,
+	}
+}
 
 // Record is the unified run record.
 type Record struct {

@@ -183,6 +183,25 @@ func ServiceExists(ctx context.Context, namespace, name string) bool {
 	return err == nil
 }
 
+// HelmReleaseExists reports whether a Helm 3 release named `release` currently
+// exists in `namespace`. Helm 3 records each release as one or more Secrets
+// labelled `owner=helm,name=<release>`, so a matching Secret means the release
+// is present on the cluster.
+//
+// This is how we tell apart components that SHARE a namespace: prometheus,
+// grafana, loki and tempo all install into the monitoring namespace, so plain
+// namespace existence reads "installed" for all four the moment any one of them
+// lands. A missing namespace makes kubectl error, which returns false — exactly
+// what we want after a cluster teardown.
+func HelmReleaseExists(ctx context.Context, namespace, release string) bool {
+	if namespace == "" || release == "" {
+		return false
+	}
+	out, err := kubectl(ctx, "get", "secret", "-n", namespace,
+		"-l", "owner=helm,name="+release, "--no-headers")
+	return err == nil && strings.TrimSpace(out) != ""
+}
+
 // GetCurrentContext returns the current kubectl context name.
 func GetCurrentContext(ctx context.Context) (string, error) {
 	return kubectl(ctx, "config", "current-context")

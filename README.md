@@ -56,6 +56,8 @@ is the signal you would see in production.
   - **Docker Desktop:** Settings → Resources → raise Memory to 8 GB
 - `kubectl`, `helm` 3, and `k3d`
 - Go 1.24+ and Node 22+ to build from source
+- **Windows users:** run everything inside **WSL2** (Ubuntu recommended), not
+  native Windows. See [Running on WSL](#running-on-wsl) below.
 
 ```bash
 make setup-tools              # installs tools for PROFILE (default: k3d)
@@ -120,6 +122,13 @@ labctl ui                             # dashboard at http://localhost:3939
 labctl teardown                       # remove everything (never hangs)
 ```
 
+> **Exposing the UI on a network.** `labctl ui` binds `127.0.0.1` by default and
+> serves plain HTTP — fine for a local machine. To reach it from another host,
+> pass `--bind 0.0.0.0`; the server then **requires authentication** (set
+> `LABCTL_AUTH=true` and add a user with `labctl users add`) and refuses to start
+> otherwise, so an unauthenticated cluster-control API is never exposed. For TLS,
+> pass `--tls-cert` and `--tls-key`.
+>
 > Prefer `make`? `make init` / `make teardown` / `make reset` are equivalent to
 > the `labctl init` / `labctl teardown` / `labctl reset` commands.
 >
@@ -148,6 +157,32 @@ labctl teardown                       # remove everything (never hangs)
 | A tool is missing or too old | `labctl doctor` names each missing/outdated tool and how to fix it. |
 | Teardown left something behind | `labctl teardown` is safe to re-run; for k3d/kind it deletes the whole cluster. |
 | Which runtime should I use? | `k3d` (default, local), `kind` (CI parity), `incluster` (team server). See [runtime profiles](docs/runtime-profiles.md). |
+| On WSL, `labctl ui` doesn't open a browser | Install `wslu` (`sudo apt install wslu`) so `wslview` can hand the URL to Windows; labctl falls back to `powershell.exe`/`cmd.exe` automatically. Or open `http://localhost:3939` in your Windows browser manually. |
+| On WSL, `*.k3d.local` URLs work in WSL but not the Windows browser | The Windows browser reads the **Windows** hosts file. Add the same `127.0.0.1 <host>` lines to `C:\Windows\System32\drivers\etc\hosts` (as Administrator), or use `DOMAIN_SUFFIX=127.0.0.1.nip.io`. `labctl doctor` prints the full WSL guidance. |
+
+## Running on WSL
+
+SnowOps Labs runs on **WSL2** as a normal Linux environment — install the Linux
+tools inside your distro and use it exactly as on Linux. Two Windows-specific
+gotchas to know:
+
+1. **Docker.** Either enable **Docker Desktop → Settings → Resources → WSL
+   Integration** for your distro, or run a native Docker daemon inside WSL. The
+   same ≥4 CPU / 8 GB requirement applies (set it in `.wslconfig` on the Windows
+   side if you use a native daemon).
+2. **Reaching services from a Windows browser.**
+   - The **UI** (`labctl ui`, `http://localhost:3939`) just works — WSL2 forwards
+     `localhost` to Windows. `labctl ui` opens it via `wslview` (install
+     `wslu`: `sudo apt install wslu`) and falls back to `powershell.exe`/`cmd.exe`.
+   - **Ingress hostnames** (`grafana.k3d.local`, …) opened in a *Windows* browser
+     resolve against the **Windows** hosts file, not WSL's. Add the entries to
+     `C:\Windows\System32\drivers\etc\hosts` (as Administrator), reach them from
+     inside WSL with `curl` (where `labctl hosts add` applies), or set
+     `DOMAIN_SUFFIX=127.0.0.1.nip.io` in `.env` to avoid hosts edits entirely.
+   - If WSL rewrites `/etc/hosts` on restart, add `generateHosts=false` under
+     `[network]` in `/etc/wsl.conf`.
+
+`labctl doctor` detects WSL and prints this checklist.
 
 ## Project structure
 

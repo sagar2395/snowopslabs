@@ -51,10 +51,7 @@ func (s *Server) handleLearnPaths(w http.ResponseWriter, r *http.Request) {
 			CompletedCount:   done,
 		})
 	}
-	if out == nil {
-		out = []pathSummary{}
-	}
-	respondJSON(w, http.StatusOK, out)
+	respondCatalog(w, r, out)
 }
 
 func (s *Server) handleLearnPath(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +95,22 @@ func (s *Server) handleLearnPath(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// learnProgressPayload is the single, canonical serialization of a started
+// path's progress. start/progress/complete all return this exact shape so the
+// UI can trust the `started`/`nextIdx`/`total` fields no matter which endpoint
+// produced them (the raw learn.Progress carries none of those derived fields).
+func learnProgressPayload(p *learn.Path, prog *learn.Progress) map[string]interface{} {
+	return map[string]interface{}{
+		"path":      prog.PathName,
+		"started":   true,
+		"completed": prog.CompletedIdxs,
+		"total":     len(p.Modules),
+		"nextIdx":   learn.NextModuleIdx(p, prog),
+		"startedAt": prog.StartedAt,
+		"updatedAt": prog.LastUpdatedAt,
+	}
+}
+
 func (s *Server) handleLearnStart(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 	eng := learnEngine(s)
@@ -106,7 +119,12 @@ func (s *Server) handleLearnStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	respondJSON(w, http.StatusOK, prog)
+	p, err := eng.LoadPath(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	respondJSON(w, http.StatusOK, learnProgressPayload(p, prog))
 }
 
 func (s *Server) handleLearnProgress(w http.ResponseWriter, r *http.Request) {
@@ -126,16 +144,7 @@ func (s *Server) handleLearnProgress(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	nextIdx := learn.NextModuleIdx(p, prog)
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"path":      prog.PathName,
-		"started":   true,
-		"completed": prog.CompletedIdxs,
-		"total":     len(p.Modules),
-		"nextIdx":   nextIdx,
-		"startedAt": prog.StartedAt,
-		"updatedAt": prog.LastUpdatedAt,
-	})
+	respondJSON(w, http.StatusOK, learnProgressPayload(p, prog))
 }
 
 func (s *Server) handleLearnMarkComplete(w http.ResponseWriter, r *http.Request) {
@@ -164,5 +173,5 @@ func (s *Server) handleLearnMarkComplete(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	respondJSON(w, http.StatusOK, prog)
+	respondJSON(w, http.StatusOK, learnProgressPayload(p, prog))
 }

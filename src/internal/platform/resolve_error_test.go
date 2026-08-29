@@ -87,6 +87,35 @@ func TestProviderNamespace_DefaultMonitoringWhenEmpty(t *testing.T) {
 	}
 }
 
+// Shared-namespace providers can't be detected by namespace existence (they all
+// live in the monitoring namespace), so SharesNamespace must flag exactly the
+// monitoring/logging/tracing categories — including nested ones like
+// monitoring/metrics — and nothing else.
+func TestProviderSharesNamespace(t *testing.T) {
+	tests := []struct {
+		category string
+		name     string
+		want     bool
+	}{
+		{"monitoring", "grafana", true},
+		{"monitoring/metrics", "prometheus", true},
+		{"logging", "loki", true},
+		{"tracing", "tempo", true},
+		{"ingress", "traefik", false},
+		{"gitops", "argocd", false},
+		{"secrets", "vault", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.category+"/"+tt.name, func(t *testing.T) {
+			p := Provider{Category: tt.category, Name: tt.name}
+			if got := p.SharesNamespace(); got != tt.want {
+				t.Errorf("SharesNamespace() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestProviderHasScript(t *testing.T) {
 	root := t.TempDir()
 	writeProvider(t, root, "ingress", "traefik", "install.sh", "status.sh")

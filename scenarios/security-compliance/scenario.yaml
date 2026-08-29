@@ -1,4 +1,5 @@
 name: security-compliance
+verified: true
 displayName: "Security & Compliance"
 description: "Policy enforcement with Kyverno, TLS certificates via cert-manager, encrypted secrets with Sealed Secrets, namespace network isolation, and security best-practice policies."
 category: security

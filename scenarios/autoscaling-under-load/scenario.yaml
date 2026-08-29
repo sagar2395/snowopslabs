@@ -1,5 +1,6 @@
 apiVersion: scenario.snowops.net/v2
 name: autoscaling-under-load
+verified: true
 displayName: "Autoscaling Under Load"
 description: "Watch KEDA scale go-api on Prometheus RPS: a spike drives it from 1 to several replicas, then cooldown brings it back. The flagship 'autoscaling actually works' demo, verified under traffic from the load generator."
 category: scalability
@@ -69,6 +70,26 @@ checks:
     query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))'
     operator: "<"
     value: "1.5"
+
+references:
+  - label: "KEDA — ScaledObject specification"
+    url: "https://keda.sh/docs/latest/reference/scaledobject-spec/"
+    note: "Every field in manifests/scaledobject.yaml (min/maxReplicaCount, cooldownPeriod, triggers) is documented here."
+  - label: "KEDA — Prometheus scaler"
+    url: "https://keda.sh/docs/latest/scalers/prometheus/"
+    note: "How the RPS trigger queries Prometheus and computes desired replicas."
+  - label: "Kubernetes — Horizontal Pod Autoscaler walkthrough"
+    url: "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/"
+
+snippets:
+  - label: "KEDA ScaledObject for go-api (the autoscaler this scenario installs)"
+    description: "Scales go-api 1→6 on Prometheus RPS. Edit the threshold and re-apply to change how aggressively it scales."
+    path: manifests/scaledobject.yaml
+  - label: "Inspect the HPA KEDA created"
+    description: "Not a manifest to apply — a quick way to watch the desired/current replica maths live."
+    yaml: |
+      # kubectl -n go-api get hpa keda-hpa-go-api \
+      #   -o custom-columns=NAME:.metadata.name,MIN:.spec.minReplicas,MAX:.spec.maxReplicas,CUR:.status.currentReplicas,TARGET:.status.currentMetrics
 
 explore:
   urls:

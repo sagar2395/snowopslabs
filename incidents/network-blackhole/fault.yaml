@@ -1,4 +1,5 @@
 name: network-blackhole
+verified: true
 displayName: "Network blackhole: service unreachable"
 description: "go-api went dark. Every request through the ingress times out or 5xxes — yet the pods are Running and Ready, logs are quiet, and nothing was deployed. Something is eating the traffic."
 category: network
@@ -7,6 +8,8 @@ target:
   namespace: go-api
   workload: go-api
 prerequisites:
+  platform:
+    - ingress
   apps:
     - go-api
 detection:

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	osexec "os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -101,12 +102,48 @@ func reexecWithSudo() error {
 // writeHostsBlock replaces the managed block in /etc/hosts.
 // Pass an empty string to remove the block.
 func writeHostsBlock(block string) error {
-	data, err := os.ReadFile(hostsFile)
+	if err := writeManagedHostsFile(hostsFile, block); err != nil {
+		return err
+	}
+	if block != "" {
+		fmt.Printf("Added managed block to %s\n", hostsFile)
+	} else {
+		fmt.Printf("Removed managed block from %s\n", hostsFile)
+	}
+	return nil
+}
+
+// writeManagedHostsFile rewrites path with the managed block replaced (or removed
+// when block is empty). The write is atomic — a temp file in the same directory
+// swapped in by rename — so a crash or a full disk can never leave /etc/hosts
+// half-written and unusable. The file's existing permission bits are preserved.
+func writeManagedHostsFile(path, block string) error {
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", hostsFile, err)
+		return fmt.Errorf("reading %s: %w", path, err)
 	}
 
-	lines := strings.Split(string(data), "\n")
+	result := computeHostsContent(string(data), block)
+
+	// Preserve the current mode (0644 for a not-yet-existing file). Ownership
+	// follows the rename's new inode; this runs as root against a root-owned
+	// /etc/hosts, so root:root/​wheel is what we want anyway.
+	perm := os.FileMode(0o644)
+	if fi, statErr := os.Stat(path); statErr == nil {
+		perm = fi.Mode().Perm()
+	}
+
+	if err := atomicWriteFile(path, []byte(result), perm); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	return nil
+}
+
+// computeHostsContent returns the contents of a hosts file with the managed
+// block stripped and, when block is non-empty, the new block appended. It is
+// pure so the block-rewriting logic can be tested without touching /etc/hosts.
+func computeHostsContent(existing, block string) string {
+	lines := strings.Split(existing, "\n")
 	var out []string
 	inBlock := false
 	for _, line := range lines {
@@ -137,15 +174,31 @@ func writeHostsBlock(block string) error {
 	} else {
 		result += "\n"
 	}
+	return result
+}
 
-	if err := os.WriteFile(hostsFile, []byte(result), 0644); err != nil { //nolint:gosec // G703: hostsFile is the fixed /etc/hosts constant; this runs under sudo by design
-		return fmt.Errorf("writing %s: %w", hostsFile, err)
+// atomicWriteFile writes data to a temp file in path's directory and renames it
+// over path, so readers ever see only the complete old or complete new file.
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".snowops-hosts-*")
+	if err != nil {
+		return err
 	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup if we bail before the rename; a no-op once renamed.
+	defer func() { _ = os.Remove(tmpName) }()
 
-	if block != "" {
-		fmt.Printf("Added managed block to %s\n", hostsFile)
-	} else {
-		fmt.Printf("Removed managed block from %s\n", hostsFile)
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
 	}
-	return nil
+	if err := tmp.Chmod(perm); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }

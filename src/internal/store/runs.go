@@ -254,6 +254,27 @@ func (s *Store) ActiveRunForLock(ctx context.Context, lockKey string) (Run, bool
 	return r, true, nil
 }
 
+// LastRunForLock returns the most recent run (any status) that held lockKey, so
+// a service can derive the current state of one thing — is this component
+// installed? — from its own history without scanning every run of that kind.
+// Unlike ActiveRunForLock it includes terminal runs; that is the point.
+func (s *Store) LastRunForLock(ctx context.Context, lockKey string) (Run, bool, error) {
+	if lockKey == "" {
+		return Run{}, false, nil
+	}
+	row := s.db.QueryRowContext(ctx,
+		selectRunColumns+` WHERE lock_key = ? ORDER BY queued_at DESC, id DESC LIMIT 1`,
+		lockKey)
+	r, err := scanRun(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Run{}, false, nil
+	}
+	if err != nil {
+		return Run{}, false, err
+	}
+	return r, true, nil
+}
+
 // RecoverOrphanedRuns marks every non-terminal run as cancelled. Their
 // processes died with the previous server, so leaving them "running" would
 // hold locks forever and lie to the user about what is happening. Called once

@@ -14,18 +14,22 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.102.6",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^7.18.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
     "@testing-library/jest-dom": "^7.0.0",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/jest-axe": "^3.5.9",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "@vitest/coverage-v8": "^2.1.9",
+    "jest-axe": "^11.0.0",
     "jsdom": "^29.1.1",
     "msw": "^2.15.0",
     "typescript": "^5.6.2",

@@ -1,3 +1,5 @@
+import { Icon } from './Icon'
+
 interface ErrorStateProps {
   title?: string
   message: string
@@ -10,11 +12,11 @@ interface ErrorStateProps {
 export function ErrorState({ title = 'Something went wrong', message, onRetry, retrying }: ErrorStateProps) {
   return (
     <div className="error-state" role="alert">
-      <div className="error-state-title">⚠ {title}</div>
+      <div className="error-state-title"><Icon name="alert-triangle" /> {title}</div>
       <div className="error-state-message">{message}</div>
       {onRetry && (
         <button className="btn btn-sm" onClick={onRetry} disabled={retrying}>
-          {retrying ? 'Retrying…' : 'Retry'}
+          {retrying ? 'Retrying…' : (<><Icon name="refresh" size={14} /> Retry</>)}
         </button>
       )}
     </div>

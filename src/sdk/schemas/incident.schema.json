@@ -14,6 +14,7 @@
     },
     "displayName": { "type": "string" },
     "description": { "type": "string" },
+    "verified": { "type": "boolean", "description": "True when this incident has been confirmed end-to-end (injects, its detection check flips, resolves) on a fresh cluster. Absent/false means unverified." },
     "category": {
       "type": "string",
       "enum": ["workload", "network", "resources", "storage", "config"]
@@ -32,6 +33,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "platform": { "type": "array", "items": { "type": "string" }, "description": "Platform components that must be installed first (e.g. \"ingress\" when detection calls the app through the ingress). Not auto-installed." },
         "apps": { "type": "array", "items": { "type": "string" } }
       }
     },
@@ -39,6 +41,39 @@
     "expectAlert": {
       "type": "string",
       "description": "Alertmanager alert this fault should fire. Requires alerts/rule.yaml in the incident directory."
+    },
+    "references": {
+      "type": "array",
+      "description": "Links to upstream tool/docs relevant to this incident (kubectl, Prometheus, the failing controller, …).",
+      "items": {
+        "type": "object",
+        "required": ["label", "url"],
+        "additionalProperties": false,
+        "properties": {
+          "label": { "type": "string" },
+          "url": { "type": "string", "pattern": "^https?://" },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "snippets": {
+      "type": "array",
+      "description": "Applyable manifest snippets that help diagnose or remediate the fault. Template-resolved. Exactly one of 'yaml' or 'path' (relative to the incident directory).",
+      "items": {
+        "type": "object",
+        "required": ["label"],
+        "additionalProperties": false,
+        "properties": {
+          "label": { "type": "string" },
+          "description": { "type": "string" },
+          "yaml": { "type": "string" },
+          "path": { "type": "string" }
+        },
+        "oneOf": [
+          { "required": ["yaml"], "not": { "required": ["path"] } },
+          { "required": ["path"], "not": { "required": ["yaml"] } }
+        ]
+      }
     }
   }
 }

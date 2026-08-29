@@ -35,6 +35,39 @@ INSTALL_DIR="/usr/local/bin"
 # Helpers
 # ---------------------------------------------------------------------------
 
+# is_wsl — succeeds when running under the Windows Subsystem for Linux.
+#
+# Kept pure (reads only WSL_DISTRO_NAME and the two kernel files) so it can be
+# sourced and exercised in isolation by bats. WSL only exists on Linux; the
+# WSL_DISTRO_NAME env var is set by WSL2, and both WSL1/WSL2 kernels carry
+# "microsoft" (or "wsl") in /proc/version and /proc/sys/kernel/osrelease.
+is_wsl() {
+  [ "$OS" = "linux" ] || return 1
+  [ -n "${WSL_DISTRO_NAME:-}" ] && return 0
+  local f
+  for f in /proc/sys/kernel/osrelease /proc/version; do
+    if [ -r "$f" ] && grep -qiE 'microsoft|wsl' "$f" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+# maybe_wsl_notice — when on WSL, remind the user to install wslu (for wslview)
+# so `labctl ui` can hand URLs to the Windows browser, and point at the Windows
+# hosts-file caveat. Printed once at the end of setup; never fails the run.
+maybe_wsl_notice() {
+  is_wsl || return 0
+  echo
+  echo -e "${YELLOW}WSL detected.${NC} A couple of Windows-specific tips:"
+  if ! command -v wslview >/dev/null 2>&1; then
+    echo -e "  - Install ${YELLOW}wslu${NC} so 'labctl ui' can open your Windows browser:"
+    echo "      sudo apt install -y wslu   # Debian/Ubuntu"
+  fi
+  echo "  - Ingress hostnames (e.g. grafana.k3d.local) opened in a Windows browser use"
+  echo "    the WINDOWS hosts file. Run 'labctl doctor' for the full WSL checklist."
+}
+
 # Create /usr/local/bin if absent (default on Apple Silicon Macs).
 ensure_install_dir() {
   if [ ! -d "$INSTALL_DIR" ]; then
@@ -467,6 +500,7 @@ main() {
   esac
 
   echo -e "${GREEN}Setup complete!${NC}"
+  maybe_wsl_notice
 }
 
 main "$@"

@@ -52,6 +52,15 @@ type Config struct {
 	// verification (community default).
 	RegistryIndexURL string
 	RegistryIndexKey string
+
+	// ScriptEnv holds every key defined in the project's .env / runtime.env,
+	// resolved with real environment variables taking precedence over file
+	// values. Callers propagate it to child scripts and Make targets (see
+	// internal/cli.root) so those subprocesses observe the same values the CLI
+	// resolved. This replaces the old side effect where Load mutated the global
+	// process environment via os.Setenv — which leaked one project's values into
+	// the next Load and was not safe to call more than once.
+	ScriptEnv map[string]string
 }
 
 // AppConfig holds per-app configuration from app.env.
@@ -64,7 +73,13 @@ type AppConfig struct {
 	Namespace      string
 }
 
-// Load reads the project configuration from .env, versions.env, and runtime.env.
+// Load reads the project configuration from .env and the profile's runtime.env.
+//
+// Load is pure with respect to the process environment: it never calls
+// os.Setenv, so it can be called repeatedly (a long-running server, an
+// in-process profile switch) or concurrently without one call's values leaking
+// into the next. Resolution precedence for every key is: real environment
+// variable (if set and non-empty) > .env > runtime.env > built-in default.
 func Load(projectRoot string) (*Config, error) {
 	if projectRoot == "" {
 		var err error
@@ -78,11 +93,15 @@ func Load(projectRoot string) (*Config, error) {
 		ProjectRoot: projectRoot,
 	}
 
-	// Load .env (optional)
-	loadEnvFile(filepath.Join(projectRoot, ".env"))
+	// Parse the env files into a local map instead of the global environment.
+	// .env is merged first and wins over runtime.env (mergeEnvFile does not
+	// overwrite keys already present), matching the previous load order.
+	fileVals := map[string]string{}
+	mergeEnvFile(fileVals, filepath.Join(projectRoot, ".env"))
 
-	// Load runtime.env based on profile
-	profile := getEnvOrDefault("PROFILE", "k3d")
+	// The profile selects which runtime.env to load and may itself be set in
+	// .env or the real environment.
+	profile := resolveEnv(fileVals, "PROFILE", "k3d")
 
 	// Validate that the profile directory exists.
 	runtimeDir := filepath.Join(projectRoot, "runtimes", profile)
@@ -91,40 +110,47 @@ func Load(projectRoot string) (*Config, error) {
 			profile, availableProfiles(projectRoot))
 	}
 
-	runtimeEnv := filepath.Join(runtimeDir, "runtime.env")
-	loadEnvFile(runtimeEnv)
+	mergeEnvFile(fileVals, filepath.Join(runtimeDir, "runtime.env"))
 
-	// Populate config from environment
+	// Populate config from the resolved values.
 	cfg.Profile = profile
-	cfg.ClusterName = getEnvOrDefault("CLUSTER_NAME", "snowops")
-	cfg.HTTPPort = getEnvOrDefault("HTTP_PORT", "80")
-	cfg.HTTPSPort = getEnvOrDefault("HTTPS_PORT", "443")
+	cfg.ClusterName = resolveEnv(fileVals, "CLUSTER_NAME", "snowops")
+	cfg.HTTPPort = resolveEnv(fileVals, "HTTP_PORT", "80")
+	cfg.HTTPSPort = resolveEnv(fileVals, "HTTPS_PORT", "443")
 
-	cfg.IngressClass = getEnvOrDefault("INGRESS_CLASS", "traefik")
-	cfg.StorageClass = getEnvOrDefault("STORAGE_CLASS", "local-path")
-	cfg.DomainSuffix = getEnvOrDefault("DOMAIN_SUFFIX", "k3d.local")
-	cfg.RegistryType = getEnvOrDefault("REGISTRY_TYPE", "k3d-import")
-	cfg.MonitoringNamespace = getEnvOrDefault("MONITORING_NAMESPACE", "monitoring")
+	cfg.IngressClass = resolveEnv(fileVals, "INGRESS_CLASS", "traefik")
+	cfg.StorageClass = resolveEnv(fileVals, "STORAGE_CLASS", "local-path")
+	cfg.DomainSuffix = resolveEnv(fileVals, "DOMAIN_SUFFIX", "k3d.local")
+	cfg.RegistryType = resolveEnv(fileVals, "REGISTRY_TYPE", "k3d-import")
+	cfg.MonitoringNamespace = resolveEnv(fileVals, "MONITORING_NAMESPACE", "monitoring")
 
-	cfg.IngressProvider = getEnvOrDefault("INGRESS_PROVIDER", "traefik")
-	cfg.MetricsProvider = getEnvOrDefault("METRICS_PROVIDER", "prometheus")
-	cfg.LoggingProvider = getEnvOrDefault("LOGGING_PROVIDER", "")
-	cfg.TracingProvider = getEnvOrDefault("TRACING_PROVIDER", "")
-	cfg.GitOpsProvider = getEnvOrDefault("GITOPS_PROVIDER", "")
-	cfg.ChaosProvider = getEnvOrDefault("CHAOS_PROVIDER", "")
-	cfg.PolicyProvider = getEnvOrDefault("POLICY_PROVIDER", "")
-	cfg.SecretsProvider = getEnvOrDefault("SECRETS_PROVIDER", "")
-	cfg.MeshProvider = getEnvOrDefault("MESH_PROVIDER", "")
-	cfg.DataProvider = getEnvOrDefault("DATA_PROVIDER", "")
-	cfg.AutoscalingProvider = getEnvOrDefault("AUTOSCALING_PROVIDER", "")
-	cfg.CostProvider = getEnvOrDefault("COST_PROVIDER", "")
+	cfg.IngressProvider = resolveEnv(fileVals, "INGRESS_PROVIDER", "traefik")
+	cfg.MetricsProvider = resolveEnv(fileVals, "METRICS_PROVIDER", "prometheus")
+	cfg.LoggingProvider = resolveEnv(fileVals, "LOGGING_PROVIDER", "")
+	cfg.TracingProvider = resolveEnv(fileVals, "TRACING_PROVIDER", "")
+	cfg.GitOpsProvider = resolveEnv(fileVals, "GITOPS_PROVIDER", "")
+	cfg.ChaosProvider = resolveEnv(fileVals, "CHAOS_PROVIDER", "")
+	cfg.PolicyProvider = resolveEnv(fileVals, "POLICY_PROVIDER", "")
+	cfg.SecretsProvider = resolveEnv(fileVals, "SECRETS_PROVIDER", "")
+	cfg.MeshProvider = resolveEnv(fileVals, "MESH_PROVIDER", "")
+	cfg.DataProvider = resolveEnv(fileVals, "DATA_PROVIDER", "")
+	cfg.AutoscalingProvider = resolveEnv(fileVals, "AUTOSCALING_PROVIDER", "")
+	cfg.CostProvider = resolveEnv(fileVals, "COST_PROVIDER", "")
 
-	cfg.AppName = getEnvOrDefault("APP_NAME", "go-api")
-	cfg.HelmReleaseName = getEnvOrDefault("HELM_RELEASE_NAME", "go-api")
-	cfg.HelmValues = getEnvOrDefault("HELM_VALUES", "values-dev.yaml")
+	cfg.AppName = resolveEnv(fileVals, "APP_NAME", "go-api")
+	cfg.HelmReleaseName = resolveEnv(fileVals, "HELM_RELEASE_NAME", "go-api")
+	cfg.HelmValues = resolveEnv(fileVals, "HELM_VALUES", "values-dev.yaml")
 
-	cfg.RegistryIndexURL = getEnvOrDefault("PACK_REGISTRY_INDEX", "https://snowops.github.io/registry/index.json")
-	cfg.RegistryIndexKey = getEnvOrDefault("PACK_REGISTRY_KEY", "")
+	cfg.RegistryIndexURL = resolveEnv(fileVals, "PACK_REGISTRY_INDEX", "https://snowops.github.io/registry/index.json")
+	cfg.RegistryIndexKey = resolveEnv(fileVals, "PACK_REGISTRY_KEY", "")
+
+	// Expose the resolved value of every file-declared key so callers can pass
+	// them to child processes (scripts, Make) explicitly — the propagation the
+	// old os.Setenv side effect used to provide, now without the global mutation.
+	cfg.ScriptEnv = make(map[string]string, len(fileVals))
+	for k := range fileVals {
+		cfg.ScriptEnv[k] = resolveEnv(fileVals, k, fileVals[k])
+	}
 
 	return cfg, nil
 }
@@ -204,7 +230,11 @@ func findProjectRoot() (string, error) {
 	}
 }
 
-func loadEnvFile(path string) {
+// mergeEnvFile parses a KEY=VALUE env file into dst without touching the global
+// process environment. Keys already present in dst are left untouched, so an
+// earlier merge (e.g. .env) wins over a later one (runtime.env). A missing or
+// unreadable file is silently ignored — both files are optional.
+func mergeEnvFile(dst map[string]string, path string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return
@@ -214,25 +244,58 @@ func loadEnvFile(path string) {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
+		key, val, ok := parseEnvLine(line)
+		if !ok {
 			continue
 		}
-		key := strings.TrimSpace(parts[0])
-		val := strings.TrimSpace(parts[1])
-		// Strip inline comments
-		if idx := strings.Index(val, " #"); idx >= 0 {
-			val = strings.TrimSpace(val[:idx])
-		}
-		// Don't override existing env vars
-		if _, exists := os.LookupEnv(key); !exists {
-			_ = os.Setenv(key, val)
+		if _, exists := dst[key]; !exists {
+			dst[key] = val
 		}
 	}
 }
 
-func getEnvOrDefault(key, defaultVal string) string {
+// parseEnvLine splits one "KEY=VALUE" line and normalises the value. ok is false
+// for a line with no '='. The value is trimmed, unquoted if wrapped in a matching
+// pair of single or double quotes, and — only when unquoted — has a trailing
+// " # inline comment" stripped. Quoting therefore preserves a literal '#' and
+// surrounding whitespace, matching the common .env convention.
+func parseEnvLine(line string) (key, val string, ok bool) {
+	parts := strings.SplitN(line, "=", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	key = strings.TrimSpace(parts[0])
+	if key == "" {
+		return "", "", false
+	}
+	return key, parseEnvValue(parts[1]), true
+}
+
+func parseEnvValue(raw string) string {
+	v := strings.TrimSpace(raw)
+	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') {
+		if i := strings.IndexByte(v[1:], v[0]); i >= 0 {
+			// Content between the opening quote and its matching close; anything
+			// after the closing quote (e.g. a comment) is discarded.
+			return v[1 : 1+i]
+		}
+		// Unterminated quote: fall through and treat as an unquoted value.
+	}
+	if idx := strings.Index(v, " #"); idx >= 0 {
+		v = strings.TrimSpace(v[:idx])
+	}
+	return v
+}
+
+// resolveEnv returns the value for key with real environment variables taking
+// precedence over the parsed file values, and defaultVal when neither supplies a
+// non-empty value. An empty string (from either source) is treated as unset, so
+// a blank assignment falls back to the default — the previous behaviour.
+func resolveEnv(fileVals map[string]string, key, defaultVal string) string {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
+		return v
+	}
+	if v, ok := fileVals[key]; ok && v != "" {
 		return v
 	}
 	return defaultVal

@@ -4,24 +4,49 @@ package cli
 import (
 	"fmt"
 	"io/fs"
+	"net"
 	osExec "os/exec"
 	"runtime"
 
 	"github.com/spf13/cobra"
 
+	"github.com/sagar2395/snowopslabs/internal/auth"
 	"github.com/sagar2395/snowopslabs/internal/httpapi"
 	"github.com/sagar2395/snowopslabs/internal/metrics"
 	"github.com/sagar2395/snowopslabs/internal/webui"
 )
 
-var uiPort string
+var (
+	uiPort    string
+	uiBind    string
+	uiTLSCert string
+	uiTLSKey  string
+)
 
 var uiCmd = &cobra.Command{
 	Use:   "ui",
 	Short: "Launch the web UI dashboard",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		addr := ":" + uiPort
-		url := fmt.Sprintf("http://localhost:%s", uiPort)
+		// Refuse to expose an unauthenticated control API to the network.
+		if err := httpapi.CheckBind(uiBind, auth.Enabled()); err != nil {
+			return err
+		}
+		if (uiTLSCert == "") != (uiTLSKey == "") {
+			return fmt.Errorf("--tls-cert and --tls-key must be provided together")
+		}
+
+		addr := net.JoinHostPort(uiBind, uiPort)
+		scheme := "http"
+		if uiTLSCert != "" {
+			scheme = "https"
+		}
+		// Show localhost for a loopback bind (friendlier link); otherwise the
+		// actual bind host so the user knows what is exposed.
+		host := uiBind
+		if httpapi.IsLoopbackHost(uiBind) {
+			host = "localhost"
+		}
+		url := fmt.Sprintf("%s://%s:%s", scheme, host, uiPort)
 
 		fmt.Printf("Starting labctl web UI at %s\n", url)
 		fmt.Println("Press Ctrl+C to stop.")
@@ -40,28 +65,39 @@ var uiCmd = &cobra.Command{
 		}
 
 		server := httpapi.NewServer(cfg, exec, reg, scenes, incEng, svcReg, rtm, uiFS, opts...)
+		if uiTLSCert != "" {
+			return server.StartTLS(addr, uiTLSCert, uiTLSKey)
+		}
 		return server.Start(addr)
 	},
 }
 
 func openBrowser(url string) {
-	var err error
 	// Opening the browser is fire-and-forget (Start, not Wait): the launched
 	// process outlives this call, so a context would have nothing to cancel.
-	switch runtime.GOOS {
-	case "linux":
-		err = osExec.Command("xdg-open", url).Start() //nolint:noctx
-	case "darwin":
-		err = osExec.Command("open", url).Start() //nolint:noctx
-	case "windows":
-		err = osExec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start() //nolint:noctx
+	// We try candidate openers in order and stop at the first that launches —
+	// on WSL the Windows openers are tried before the Linux xdg-open fallback.
+	candidates := browserCommands(runtime.GOOS, isWSL(), url)
+	var lastErr error
+	for _, c := range candidates {
+		if len(c) == 0 {
+			continue
+		}
+		if err := osExec.Command(c[0], c[1:]...).Start(); err == nil { //nolint:noctx
+			return
+		} else {
+			lastErr = err
+		}
 	}
-	if err != nil {
-		fmt.Printf("Could not open browser: %v\n", err)
+	if lastErr != nil {
+		fmt.Printf("Could not open browser (%v). Open %s manually.\n", lastErr, url)
 	}
 }
 
 func init() {
 	uiCmd.Flags().StringVar(&uiPort, "port", "3939", "port to serve the UI on")
+	uiCmd.Flags().StringVar(&uiBind, "bind", "127.0.0.1", "address to bind (use 0.0.0.0 to expose on the network; requires auth)")
+	uiCmd.Flags().StringVar(&uiTLSCert, "tls-cert", "", "path to a TLS certificate (PEM); enables HTTPS when set with --tls-key")
+	uiCmd.Flags().StringVar(&uiTLSKey, "tls-key", "", "path to the TLS private key (PEM)")
 	rootCmd.AddCommand(uiCmd)
 }

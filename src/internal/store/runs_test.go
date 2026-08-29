@@ -398,6 +398,61 @@ func TestActiveRunForLock(t *testing.T) {
 	})
 }
 
+func TestLastRunForLock(t *testing.T) {
+	ctx := context.Background()
+	base := time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC)
+
+	t.Run("returns the newest run for the key, terminal included", func(t *testing.T) {
+		s := newStore(t)
+		// Two completed runs on one key, plus a run on another key.
+		if err := s.CreateRun(ctx, Run{ID: "old", Kind: "platform.install", LockKey: "k", QueuedAt: base}); err != nil {
+			t.Fatalf("CreateRun: %v", err)
+		}
+		if err := s.FinishRun(ctx, "old", StatusSucceeded, intPtr(0), "", base, time.Second); err != nil {
+			t.Fatalf("FinishRun: %v", err)
+		}
+		if err := s.CreateRun(ctx, Run{ID: "new", Kind: "platform.uninstall", LockKey: "k", QueuedAt: base.Add(time.Minute)}); err != nil {
+			t.Fatalf("CreateRun: %v", err)
+		}
+		if err := s.FinishRun(ctx, "new", StatusSucceeded, intPtr(0), "", base.Add(time.Minute), time.Second); err != nil {
+			t.Fatalf("FinishRun: %v", err)
+		}
+		if err := s.CreateRun(ctx, Run{ID: "other", Kind: "platform.install", LockKey: "other", QueuedAt: base.Add(2 * time.Minute)}); err != nil {
+			t.Fatalf("CreateRun: %v", err)
+		}
+
+		got, found, err := s.LastRunForLock(ctx, "k")
+		if err != nil {
+			t.Fatalf("LastRunForLock: %v", err)
+		}
+		if !found || got.ID != "new" {
+			t.Fatalf("got %q (found=%v), want the newest run 'new'", got.ID, found)
+		}
+	})
+
+	t.Run("no runs for the key", func(t *testing.T) {
+		s := newStore(t)
+		_, found, err := s.LastRunForLock(ctx, "absent")
+		if err != nil {
+			t.Fatalf("LastRunForLock: %v", err)
+		}
+		if found {
+			t.Error("expected no run for an unused key")
+		}
+	})
+
+	t.Run("empty key returns nothing", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.CreateRun(ctx, Run{ID: "a", Kind: "test"}); err != nil {
+			t.Fatalf("CreateRun: %v", err)
+		}
+		_, found, err := s.LastRunForLock(ctx, "")
+		if err != nil || found {
+			t.Errorf("empty key: found=%v err=%v, want (false, nil)", found, err)
+		}
+	})
+}
+
 func TestListRuns(t *testing.T) {
 	ctx := context.Background()
 	base := time.Date(2026, 7, 26, 10, 0, 0, 0, time.UTC)

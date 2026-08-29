@@ -45,6 +45,25 @@ func (p *Provider) Namespace() string {
 	}
 }
 
+// SharesNamespace reports whether this provider shares its namespace with other
+// providers. Monitoring, logging and tracing providers all install into the one
+// monitoring namespace (see Namespace), so their presence can't be told apart by
+// namespace existence — callers must detect these per-component (e.g. by Helm
+// release) instead. Every other category owns its namespace, so namespace
+// existence is a sufficient signal.
+func (p *Provider) SharesNamespace() bool {
+	top := p.Category
+	if i := strings.Index(top, "/"); i >= 0 {
+		top = top[:i]
+	}
+	switch top {
+	case "monitoring", "logging", "tracing":
+		return true
+	default:
+		return false
+	}
+}
+
 // Registry discovers and manages platform component providers.
 type Registry struct {
 	ProjectRoot  string

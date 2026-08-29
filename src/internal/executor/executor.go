@@ -17,6 +17,12 @@ import (
 )
 
 // Executor runs shell scripts from the project, streaming output to the caller.
+//
+// A single Executor is shared across all HTTP handlers (see internal/httpapi),
+// which run concurrently, so Env must be accessed under envMu: SetEnv writes it
+// and buildEnv reads it. Without the lock a request that sets traffic tunables
+// races every other in-flight command's env snapshot — a concurrent map
+// read/write that crashes the process.
 type Executor struct {
 	ProjectRoot string
 	Env         map[string]string
@@ -24,6 +30,7 @@ type Executor struct {
 	Stderr      io.Writer
 	Broadcast   *Broadcaster
 	actionSeq   int64
+	envMu       sync.RWMutex
 }
 
 // New creates an Executor rooted at projectRoot.
@@ -201,19 +208,33 @@ func (e *Executor) runStreamedWith(actionID, actionLabel, cmdStr, name string, a
 
 func (e *Executor) streamOutput(wg *sync.WaitGroup, actionID, actionLabel string, r io.Reader, stream string, w io.Writer) {
 	defer wg.Done()
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		fmt.Fprintln(w, line)
-		e.Broadcast.Send(ActionEvent{
-			ID:        actionID,
-			Type:      "action_output",
-			Action:    actionLabel,
-			Output:    line,
-			Stream:    stream,
-			Timestamp: time.Now(),
-		})
+	// bufio.Reader.ReadString, not bufio.Scanner: a Scanner silently stops at its
+	// token-size cap (default 64 KiB, raised to 1 MiB here) and, because its Err()
+	// was never checked, a single over-long line — a base64 secret, a
+	// `kubectl get -o yaml`, a helm diff — dropped that line AND every line after
+	// it from the live log stream. ReadString has no line-length limit, so no
+	// output is lost; a pathological unbounded line is bounded only by its own
+	// length in memory, an acceptable trade for never losing command output.
+	reader := bufio.NewReader(r)
+	for {
+		chunk, err := reader.ReadString('\n')
+		if len(chunk) > 0 {
+			line := strings.TrimRight(chunk, "\r\n")
+			fmt.Fprintln(w, line)
+			e.Broadcast.Send(ActionEvent{
+				ID:        actionID,
+				Type:      "action_output",
+				Action:    actionLabel,
+				Output:    line,
+				Stream:    stream,
+				Timestamp: time.Now(),
+			})
+		}
+		if err != nil {
+			// io.EOF is the normal end of the pipe; any read error also ends the
+			// stream. The final line arrives here when it has no trailing newline.
+			return
+		}
 	}
 }
 
@@ -272,8 +293,11 @@ func (e *Executor) RunKubectl(args ...string) error {
 	return e.RunCommand("kubectl", args...)
 }
 
-// SetEnv adds an environment variable to pass to executed commands.
+// SetEnv adds an environment variable to pass to executed commands. Safe for
+// concurrent use with buildEnv (invoked by every Run* method).
 func (e *Executor) SetEnv(key, value string) {
+	e.envMu.Lock()
+	defer e.envMu.Unlock()
 	e.Env[key] = value
 }
 
@@ -296,6 +320,8 @@ func (e *Executor) CaptureOutput(name string, args ...string) (string, error) {
 
 func (e *Executor) buildEnv() []string {
 	env := os.Environ()
+	e.envMu.RLock()
+	defer e.envMu.RUnlock()
 	for k, v := range e.Env {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}

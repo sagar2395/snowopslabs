@@ -1,13 +1,15 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
-import type { ChallengeSummary, ChallengeStatus, ChallengeRunRecord, NotifyFn } from '../types'
+import { qk } from '../lib/queryClient'
+import { useApiQuery } from '../hooks/useApiQuery'
+import type { ChallengeRunRecord, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 interface ChallengesProps {
   notify: NotifyFn
-  refreshTick: number
   requestConfirm: (req: ConfirmRequest) => void
 }
 
@@ -22,58 +24,36 @@ function formatDate(iso: string) {
 }
 
 // Challenges are timed, scored, interactive runs. Playing one (start/hint/submit/
-// abort) is a CLI-only workflow today — the HTTP API exposes only the read
-// endpoints — so this view is intentionally read-only: it lists challenges,
-// shows any active run and past results, and points to the exact `labctl`
-// command to play. See docs / `labctl challenge --help`.
-export function Challenges({ refreshTick }: ChallengesProps) {
-  const [challenges, setChallenges] = useState<ChallengeSummary[]>([])
-  const [status, setStatus] = useState<ChallengeStatus | null>(null)
-  const [history, setHistory] = useState<ChallengeRunRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+// abort) is a CLI-only workflow today, so this view is intentionally read-only.
+export function Challenges({ notify: _notify }: ChallengesProps) {
+  const { data, loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.challenges, async () => {
+    const [list, st, hist] = await Promise.all([
+      api.listChallenges(),
+      api.getChallengeStatus(),
+      api.getChallengeHistory(),
+    ])
+    return { challenges: list ?? [], status: st, history: hist ?? [] }
+  })
+  const challenges = data?.challenges ?? []
+  const status = data?.status ?? null
+  const history = data?.history ?? []
+
   const [elapsed, setElapsed] = useState(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
-  const load = useCallback(async () => {
-    try {
-      const [list, st, hist] = await Promise.all([
-        api.listChallenges(),
-        api.getChallengeStatus(),
-        api.getChallengeHistory(),
-      ])
-      setChallenges(list ?? [])
-      setStatus(st)
-      setHistory(hist ?? [])
-      setLoadError(null)
-      setLoaded(true)
-      // Seed elapsed from server if a challenge is active
-      if (st.active && st.startedAt) {
-        const secs = Math.floor((Date.now() - new Date(st.startedAt).getTime()) / 1000)
-        setElapsed(Math.max(0, secs))
-      }
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
+  useEffect(() => {
+    if (status?.active && status.startedAt) {
+      const secs = Math.floor((Date.now() - new Date(status.startedAt).getTime()) / 1000)
+      setElapsed(Math.max(0, secs))
     }
-  }, [])
+  }, [status?.active, status?.startedAt])
 
-  useEffect(() => { load() }, [load])
-  useEffect(() => { if (refreshTick > 0) load() }, [refreshTick, load])
-
-  // Live timer when a challenge is active
   useEffect(() => {
     if (status?.active) {
       timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000)
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current)
-        timerRef.current = null
-      }
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
     }
     return () => {
       if (timerRef.current) {
@@ -106,7 +86,7 @@ export function Challenges({ refreshTick }: ChallengesProps) {
       <ErrorState
         title="Failed to load challenges"
         message={loadError}
-        onRetry={() => { setRefreshing(true); load() }}
+        onRetry={load}
         retrying={refreshing}
       />
     )
@@ -118,39 +98,43 @@ export function Challenges({ refreshTick }: ChallengesProps) {
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>Retry</button>
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>Retry</button>
+          </span>
         </div>
       )}
 
       {/* Challenges are played from the CLI; the UI is a read-only scoreboard. */}
       <div className="banner banner-info" role="note">
-        Challenges are timed and played from the command line. Start one with{' '}
-        <code>labctl challenge start &lt;name&gt;</code>, then{' '}
-        <code>labctl challenge submit</code> to grade it. This view tracks progress and results.
+        <Icon name="info" size={16} className="banner-icon" />
+        <span className="banner-body">
+          Challenges are timed and played from the command line. Start one with{' '}
+          <code>labctl challenge start &lt;name&gt;</code>, then{' '}
+          <code>labctl challenge submit</code> to grade it. This view tracks progress and results.
+        </span>
       </div>
 
       {/* Active challenge banner */}
       {status?.active && (
-        <div className="card" style={{ borderColor: 'var(--accent)', marginBottom: 16 }}>
+        <div className="card card-accent">
           <div className="card-header">
-            <span className="card-title" style={{ color: 'var(--accent)' }}>
+            <span className="card-title card-title-accent">
               Challenge in progress: {active?.displayName ?? status.challenge}
             </span>
-            <span style={{ fontSize: 24, fontVariantNumeric: 'tabular-nums', fontWeight: 700, color: 'var(--accent)' }}>
+            <span className="timer">
               {formatElapsed(elapsed)}
               {active && parSeconds(active.parTime) > 0 && (
-                <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>
-                  / par {active.parTime}
-                </span>
+                <span className="timer-par">/ par {active.parTime}</span>
               )}
             </span>
           </div>
-          <div style={{ padding: '0 16px 16px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div className="row-flex">
             {status.hintsUsed != null && status.hintsUsed > 0 && (
               <Badge variant="category">{status.hintsUsed} hint{status.hintsUsed !== 1 ? 's' : ''} used</Badge>
             )}
-            <span style={{ color: 'var(--muted)', fontSize: 13 }}>
+            <span className="hint-inline">
               Grade or stop from the CLI: <code>labctl challenge submit</code> ·{' '}
               <code>labctl challenge hint</code> · <code>labctl challenge abort</code>
             </span>
@@ -162,63 +146,62 @@ export function Challenges({ refreshTick }: ChallengesProps) {
       <div className="card">
         <div className="card-header">
           <span className="card-title">Challenges ({challenges.length})</span>
-          <button className="btn btn-sm" onClick={() => { setRefreshing(true); load() }} disabled={refreshing}>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+          <button className="btn btn-sm" onClick={load} disabled={refreshing}>
+            <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
 
         {challenges.length === 0 ? (
           <div className="empty-state">
-            No challenges found.
+            <span className="empty-icon"><Icon name="challenges" size={24} /></span>
+            <div>No challenges found.</div>
             <div className="empty-hint">Challenges are discovered from <code>challenges/&lt;name&gt;/challenge.yaml</code>.</div>
           </div>
         ) : (
-          challenges.map(c => {
-            const isActive = status?.active && status.challenge === c.name
-            const best = history
-              .filter(r => r.challenge === c.name && r.outcome === 'passed')
-              .reduce((m, r) => (!m || r.score > m.score) ? r : m, null as ChallengeRunRecord | null)
-            return (
-              <div key={c.name} className="scenario-row">
-                <div className="scenario-info">
-                  <div className="scenario-name">{c.displayName || c.name}</div>
-                  {c.description && (
-                    <div className="scenario-desc">
-                      {c.description.length > 120 ? c.description.slice(0, 120) + '…' : c.description}
+          <div className="card-body">
+            {challenges.map(c => {
+              const isActive = status?.active && status.challenge === c.name
+              const best = history
+                .filter(r => r.challenge === c.name && r.outcome === 'passed')
+                .reduce((m, r) => (!m || r.score > m.score) ? r : m, null as ChallengeRunRecord | null)
+              return (
+                <div key={c.name} className="scenario-row">
+                  <div className="scenario-info">
+                    <div className="scenario-name">{c.displayName || c.name}</div>
+                    {c.description && (
+                      <div className="scenario-desc">
+                        {c.description.length > 120 ? c.description.slice(0, 120) + '…' : c.description}
+                      </div>
+                    )}
+                    <div className="scenario-tags">
+                      {c.category && <Badge variant="category">{c.category}</Badge>}
+                      <span className="hint-text">par {c.parTime}</span>
+                      {best && (
+                        <span className="hint-text">· best score: <strong className="value">{best.score}</strong></span>
+                      )}
                     </div>
-                  )}
-                  <div className="scenario-tags" style={{ marginTop: 6 }}>
-                    {c.category && <Badge variant="category">{c.category}</Badge>}
-                    <span style={{ color: 'var(--muted)', fontSize: 12 }}>par {c.parTime}</span>
-                    {best && (
-                      <span style={{ color: 'var(--muted)', fontSize: 12 }}>
-                        · best score: <strong style={{ color: 'var(--fg)' }}>{best.score}</strong>
-                      </span>
+                    {!isActive && (
+                      <div className="cli-hint mt-2"><code>labctl challenge start {c.name}</code></div>
                     )}
                   </div>
-                  {!isActive && (
-                    <div style={{ marginTop: 6 }}>
-                      <code style={{ fontSize: 12 }}>labctl challenge start {c.name}</code>
-                    </div>
-                  )}
+                  <Badge variant={isActive ? 'running' : best ? 'category' : 'stopped'}>
+                    {isActive ? 'Active' : best ? 'Attempted' : 'Not Started'}
+                  </Badge>
                 </div>
-                <Badge variant={isActive ? 'running' : best ? 'category' : 'stopped'}>
-                  {isActive ? 'Active' : best ? 'Attempted' : 'Not Started'}
-                </Badge>
-              </div>
-            )
-          })
+              )
+            })}
+          </div>
         )}
       </div>
 
       {/* History */}
       {history.length > 0 && (
-        <div className="card" style={{ marginTop: 16 }}>
+        <div className="card">
           <div className="card-header">
             <span className="card-title">Run History</span>
           </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table className="modal-table" style={{ width: '100%' }}>
+          <div className="table-scroll">
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Challenge</th>
@@ -234,8 +217,8 @@ export function Challenges({ refreshTick }: ChallengesProps) {
                 {history.map((r, i) => (
                   <tr key={i}>
                     <td>{r.challenge}</td>
-                    <td style={{ color: 'var(--muted)', fontSize: 12 }}>{formatDate(r.startedAt)}</td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{formatElapsed(r.elapsedSeconds)}</td>
+                    <td className="td-muted td-nowrap">{formatDate(r.startedAt)}</td>
+                    <td className="tnum">{formatElapsed(r.elapsedSeconds)}</td>
                     <td>{r.hintsUsed}</td>
                     <td>{r.checksPassed}/{r.checksTotal}</td>
                     <td><Badge variant={scoreVariant(r.score)}>{r.score}</Badge></td>
