@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { AuthStatus } from '../types'
 import { api } from '../api/client'
+import { Icon } from './Icon'
 
 interface LoginProps {
   onLoggedIn: (status: AuthStatus) => void
@@ -35,7 +36,10 @@ export function Login({ onLoggedIn }: LoginProps) {
   return (
     <div className="login-shell">
       <form className="card login-card" onSubmit={onSubmit} aria-label="Sign in">
-        <h1 className="login-title">Sign in to <span className="accent">SnowOps Labs</span> / labctl</h1>
+        <div className="login-brand">
+          <span className="brand-mark" aria-hidden="true"><Icon name="snowflake" size={18} /></span>
+          <h1 className="login-title">Sign in to <span className="accent">SnowOps Labs</span></h1>
+        </div>
 
         {error && (
           <div className="error-state" role="alert">

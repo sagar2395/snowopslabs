@@ -12,6 +12,7 @@ import { CommandPalette, type Command } from './components/CommandPalette'
 import { Login } from './components/Login'
 import { LogPanel } from './components/LogPanel'
 import { ConfirmDialog, type ConfirmRequest } from './components/ConfirmDialog'
+import { Icon, type IconName } from './components/Icon'
 import { Dashboard } from './views/Dashboard'
 import { Scenarios } from './views/Scenarios'
 import { Incidents } from './views/Incidents'
@@ -24,29 +25,50 @@ import { Leaderboard } from './views/Leaderboard'
 import { Traffic } from './views/Traffic'
 import { Runs } from './views/Runs'
 import { api } from './api/client'
+import { qk } from './lib/queryClient'
 import { completeJob, reconcileJobs, hasTrackedJobs, trackJob } from './lib/jobs'
 
 // Each section is a real, deep-linkable route. `path` is the URL segment; the
-// nav renders in this order and arrow keys cycle through it.
-type NavItem = { path: string; label: string }
-const NAV: NavItem[] = [
-  { path: 'dashboard',   label: 'Dashboard'   },
-  { path: 'scenarios',   label: 'Scenarios'   },
-  { path: 'incidents',   label: 'Incidents'   },
-  { path: 'platform',    label: 'Platform'    },
-  { path: 'apps',        label: 'Apps'        },
-  { path: 'runs',        label: 'Runs'        },
-  { path: 'traffic',     label: 'Traffic'     },
-  { path: 'learn',       label: 'Learn'       },
-  { path: 'challenges',  label: 'Challenges'  },
-  { path: 'results',     label: 'Results'     },
-  { path: 'leaderboard', label: 'Leaderboard' },
+// nav renders in `NAV_GROUPS` order and arrow keys cycle the flattened list.
+type NavItem = { path: string; label: string; icon: IconName }
+type NavGroup = { label: string; items: NavItem[] }
+
+// Grouped so eleven sections read as three intents rather than one long strip.
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Operate',
+    items: [
+      { path: 'dashboard', label: 'Dashboard', icon: 'dashboard' },
+      { path: 'platform',  label: 'Platform',  icon: 'platform' },
+      { path: 'apps',      label: 'Apps',      icon: 'apps' },
+      { path: 'runs',      label: 'Runs',      icon: 'runs' },
+      { path: 'traffic',   label: 'Traffic',   icon: 'traffic' },
+    ],
+  },
+  {
+    label: 'Practice',
+    items: [
+      { path: 'scenarios',  label: 'Scenarios',  icon: 'scenarios' },
+      { path: 'incidents',  label: 'Incidents',  icon: 'incidents' },
+      { path: 'learn',      label: 'Learn',      icon: 'learn' },
+      { path: 'challenges', label: 'Challenges', icon: 'challenges' },
+    ],
+  },
+  {
+    label: 'Analyze',
+    items: [
+      { path: 'results',     label: 'Results',     icon: 'results' },
+      { path: 'leaderboard', label: 'Leaderboard', icon: 'leaderboard' },
+    ],
+  },
 ]
+
+// Flattened, in render order — used for arrow-key nav, the command palette, and
+// resolving the current page's title.
+const NAV: NavItem[] = NAV_GROUPS.flatMap(g => g.items)
 
 // Shared state the layout owns and every view reads, delivered through the
 // router Outlet so views stay plain components (no prop drilling through routes).
-// Data fetching itself lives in the query cache (useQuery), not here — the
-// layout only invalidates it on run completion.
 export type AppOutletContext = {
   notify: (level: NotifLevel, title: string, detail?: string) => void
   requestConfirm: (req: ConfirmRequest) => void
@@ -76,7 +98,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
     if (this.state.error) {
       return (
         <div className="error-state" role="alert">
-          <div className="error-state-title">⚠ This view crashed</div>
+          <div className="error-state-title"><Icon name="alert-triangle" /> This view crashed</div>
           <div className="error-state-message">{this.state.error.message}</div>
           <button className="btn btn-sm" onClick={() => this.setState({ error: null })}>Reload view</button>
         </div>
@@ -100,12 +122,12 @@ function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void 
   const [liveCluster, setLiveCluster] = useState<ClusterInfo | null>(null)
   const [lastStatusAt, setLastStatusAt] = useState<number | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   const notify = useCallback((level: NotifLevel, title: string, detail?: string) => {
     const id = ++notifSeq
     setNotifications(prev => [...prev, { id, level, title, detail }])
-    // Errors linger longer (they matter more) but still auto-dismiss so failed
-    // popups don't pile up on screen; other toasts clear quickly.
+    // Errors linger longer (they matter more) but still auto-dismiss.
     setTimeout(() => dismiss(id), level === 'error' ? 18000 : 8000)
   }, [])
 
@@ -120,9 +142,8 @@ function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void 
     })
   }, [])
 
-  // Debounced cache invalidation — coalesces bursts of action_end events
-  // (e.g. platform-up's per-component sub-actions) into one refetch. Every
-  // mounted view's useQuery reruns, so the whole UI reflects the new state.
+  // Debounced cache invalidation — coalesces bursts of action_end events into
+  // one refetch. Every mounted view's useQuery reruns.
   const bumpTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bumpRefresh = useCallback(() => {
     if (bumpTimer.current) return
@@ -157,10 +178,26 @@ function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void 
     }
   }, [appendLog, bumpRefresh])
 
+  // The live status frame (pushed every 5 s) carries no per-component state, but
+  // its signature — connection, context, k8s version, node count — shifts when
+  // the cluster is torn down, reset, or the runtime is switched *out of band*
+  // (e.g. from the CLI). When it does, the platform/apps/status the cache holds
+  // may be stale (a torn-down cluster still shows components as "Installed"), so
+  // refetch the cluster-derived views. The first frame just seeds the baseline.
+  const prevClusterSig = useRef<string | null>(null)
   const onClusterStatus = useCallback((info: ClusterInfo | null) => {
     setLiveCluster(info)
     setLastStatusAt(Date.now())
-  }, [])
+    const sig = info
+      ? `${info.connected ? 1 : 0}|${info.context}|${info.k8sVersion}|${info.nodeCount}`
+      : 'none'
+    if (prevClusterSig.current !== null && prevClusterSig.current !== sig) {
+      queryClient.invalidateQueries({ queryKey: qk.platform })
+      queryClient.invalidateQueries({ queryKey: qk.status })
+      queryClient.invalidateQueries({ queryKey: qk.dashboards })
+    }
+    prevClusterSig.current = sig
+  }, [queryClient])
 
   // Detect disconnected → connected transitions to re-sync missed events.
   const prevWsStatus = useRef<WSStatus>('connecting')
@@ -170,7 +207,6 @@ function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void 
     setWsStatus(s)
     if (s === 'connected' && prev === 'disconnected') {
       notify('info', 'Reconnected', 'Live updates restored — refreshing data.')
-      // Settle any jobs that finished while we were offline.
       if (hasTrackedJobs()) {
         api.getJobs().then(reconcileJobs).catch(() => { /* next event will settle them */ })
       }
@@ -192,15 +228,27 @@ function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void 
     return () => document.removeEventListener('keydown', onKey)
   }, [])
 
+  // Close the mobile drawer whenever the route changes.
+  useEffect(() => { setDrawerOpen(false) }, [location.pathname])
+
+  // Esc closes the mobile drawer.
+  useEffect(() => {
+    if (!drawerOpen) return
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') setDrawerOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [drawerOpen])
+
   // Palette commands: jump to any section, plus a couple of quick actions.
   const commands: Command[] = [
     ...NAV.map(n => ({
       id: `go-${n.path}`,
       label: `Go to ${n.label}`,
       hint: `/${n.path}`,
+      icon: n.icon,
       run: () => navigate(`/${n.path}`),
     })),
-    { id: 'refresh', label: 'Refresh data', hint: 'reload all views', run: () => { queryClient.invalidateQueries() } },
+    { id: 'refresh', label: 'Refresh data', hint: 'reload all views', icon: 'refresh' as IconName, run: () => { queryClient.invalidateQueries() } },
   ]
 
   // Load runtimes once
@@ -249,11 +297,12 @@ function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void 
 
   // Arrow-key navigation across the nav links, matching the section order.
   function onNavKeyDown(e: React.KeyboardEvent) {
-    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     const current = location.pathname.replace(/^\//, '') || 'dashboard'
     const idx = NAV.findIndex(n => n.path === current)
     if (idx === -1) return
-    const delta = e.key === 'ArrowRight' ? 1 : -1
+    e.preventDefault()
+    const delta = e.key === 'ArrowDown' ? 1 : -1
     const next = NAV[(idx + delta + NAV.length) % NAV.length]
     navigate(`/${next.path}`)
     document.getElementById(`nav-${next.path}`)?.focus()
@@ -261,6 +310,9 @@ function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void 
 
   const connDot = wsStatus === 'connected' ? 'green' : wsStatus === 'connecting' ? 'yellow' : 'red'
   const connLabel = wsStatus === 'connected' ? 'Connected' : wsStatus === 'connecting' ? 'Connecting…' : 'Disconnected'
+
+  const current = location.pathname.replace(/^\//, '') || 'dashboard'
+  const pageTitle = NAV.find(n => n.path === current)?.label ?? 'SnowOps Labs'
 
   const ctx: AppOutletContext = { notify, requestConfirm: setConfirm, liveCluster, lastStatusAt }
 
@@ -271,94 +323,130 @@ function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void 
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} />
 
-      {/* Header */}
-      <header className="app-header">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">❄</span>
-          <h1 className="brand-name"><span className="accent">SnowOps</span> Labs</h1>
+      {/* Sidebar — brand, grouped nav, and runtime/connection footer. On mobile
+          it slides in as a drawer over the content. */}
+      <aside className={`sidebar${drawerOpen ? ' is-open' : ''}`}>
+        <div className="sidebar-brand">
+          <span className="brand-mark" aria-hidden="true"><Icon name="snowflake" size={18} /></span>
+          <span className="brand-name"><span className="accent">SnowOps</span> Labs</span>
         </div>
-        <div className="header-right">
-          {runtimes.length > 0 && (
-            <select
-              className="runtime-select"
-              value={activeRuntime}
-              disabled={runtimeBusy}
-              aria-label="Active runtime"
-              onChange={e => handleRuntimeChange(e.target.value)}
-            >
-              {!activeRuntime && <option value="">select runtime…</option>}
-              {runtimes.map(r => (
-                <option key={r} value={r}>{r}{r === activeRuntime ? ' (active)' : ''}</option>
+
+        <nav className="sidebar-nav" aria-label="Sections" onKeyDown={onNavKeyDown}>
+          {NAV_GROUPS.map(group => (
+            <div className="nav-group" key={group.label}>
+              <div className="nav-group-label">{group.label}</div>
+              {group.items.map(n => (
+                <NavLink
+                  key={n.path}
+                  id={`nav-${n.path}`}
+                  to={`/${n.path}`}
+                  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                >
+                  <Icon name={n.icon} size={18} className="nav-item-icon" />
+                  {n.label}
+                </NavLink>
               ))}
-            </select>
+            </div>
+          ))}
+        </nav>
+
+        <div className="sidebar-footer">
+          {runtimes.length > 0 && (
+            <div className="runtime-select-wrap">
+              <span className="runtime-select-label" id="runtime-label">Runtime</span>
+              <select
+                className="runtime-select"
+                value={activeRuntime}
+                disabled={runtimeBusy}
+                aria-labelledby="runtime-label"
+                onChange={e => handleRuntimeChange(e.target.value)}
+              >
+                {!activeRuntime && <option value="">select runtime…</option>}
+                {runtimes.map(r => (
+                  <option key={r} value={r}>{r}{r === activeRuntime ? ' (active)' : ''}</option>
+                ))}
+              </select>
+            </div>
           )}
           <div className="conn-indicator" role="status" aria-live="polite">
             <span className={`dot dot-${connDot}`} aria-hidden="true" />
             <span>{connLabel}</span>
           </div>
-          <button
-            type="button"
-            className="cmdk-trigger"
-            aria-label="Open command palette"
-            aria-keyshortcuts="Meta+K Control+K"
-            onClick={() => setPaletteOpen(true)}
-          >
-            <span>Jump to</span>
-            <span className="cmdk-kbd" aria-hidden="true">⌘K</span>
-          </button>
-          <ThemeToggle />
-          {auth.authEnabled && (
-            <div className="auth-indicator">
-              {auth.user && (
-                <span className="auth-user">
-                  {auth.user}{auth.role ? ` (${auth.role})` : ''}
-                </span>
-              )}
-              <button className="btn btn-sm" onClick={onLogout}>Log out</button>
-            </div>
-          )}
         </div>
-      </header>
+      </aside>
 
-      {/* Designed offline state: a non-blocking banner with a live spinner that
-          makes clear the app is actively reconnecting (and it recovers on its
-          own — see onStatusChange, which invalidates the cache on reconnect). */}
-      {wsStatus === 'disconnected' && (
-        <div className="banner banner-warn banner-reconnecting" role="alert">
-          Live updates unavailable — reconnecting to the labctl server…
-        </div>
+      {/* Drawer scrim (mobile only, shown via CSS when the drawer is open). */}
+      {drawerOpen && (
+        <button
+          type="button"
+          className="sidebar-scrim is-open"
+          aria-label="Close navigation"
+          onClick={() => setDrawerOpen(false)}
+        />
       )}
 
-      {/* Nav — real links to deep-linkable routes */}
-      <nav className="nav-tabs" aria-label="Sections" onKeyDown={onNavKeyDown}>
-        {NAV.map(n => (
-          <NavLink
-            key={n.path}
-            id={`nav-${n.path}`}
-            to={`/${n.path}`}
-            className={({ isActive }) => `nav-tab${isActive ? ' active' : ''}`}
+      {/* Main column: sticky topbar + content. */}
+      <div className="app-main-col">
+        <header className="topbar">
+          <button
+            type="button"
+            className="icon-btn-square"
+            aria-label="Open navigation"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(o => !o)}
           >
-            {n.label}
-          </NavLink>
-        ))}
-      </nav>
+            <Icon name="menu" size={20} />
+          </button>
+          <h1 className="topbar-title">{pageTitle}</h1>
+          <div className="topbar-spacer" />
+          <div className="topbar-actions">
+            <button
+              type="button"
+              className="cmdk-trigger"
+              aria-label="Open command palette"
+              aria-keyshortcuts="Meta+K Control+K"
+              onClick={() => setPaletteOpen(true)}
+            >
+              <Icon name="command" size={14} />
+              <span>Jump to</span>
+              <span className="cmdk-kbd" aria-hidden="true">⌘K</span>
+            </button>
+            <ThemeToggle />
+            {auth.authEnabled && (
+              <div className="auth-indicator">
+                {auth.user && (
+                  <span className="auth-user">
+                    {auth.user}{auth.role ? ` (${auth.role})` : ''}
+                  </span>
+                )}
+                <button className="btn btn-sm" onClick={onLogout}>Log out</button>
+              </div>
+            )}
+          </div>
+        </header>
 
-      {/* Content — the active route renders here, sharing app state via context.
-          The boundary is keyed by path so navigating away clears a crash. */}
-      <main className="main-content" id="main-content" tabIndex={-1}>
-        <ErrorBoundary key={location.pathname}>
-          <Outlet context={ctx} />
-        </ErrorBoundary>
-      </main>
+        {/* Non-blocking offline state — a live spinner makes clear the app is
+            actively reconnecting (and recovers on its own; see onStatusChange). */}
+        {wsStatus === 'disconnected' && (
+          <div className="banner banner-warn banner-reconnecting" role="alert">
+            <span className="banner-icon" aria-hidden="true" />
+            <span className="banner-body">Live updates unavailable — reconnecting to the labctl server…</span>
+          </div>
+        )}
 
-      {/* Log panel */}
+        <main className="main-content" id="main-content" tabIndex={-1}>
+          <ErrorBoundary key={location.pathname}>
+            <Outlet context={ctx} />
+          </ErrorBoundary>
+        </main>
+      </div>
+
       <LogPanel entries={logEntries} onClear={() => setLogEntries([])} />
     </div>
   )
 }
 
-// Thin route elements: adapt the shared outlet context to each view's props, so
-// the view components themselves stay unchanged and independently testable.
+// Thin route elements: adapt the shared outlet context to each view's props.
 function DashboardRoute() {
   const { notify, liveCluster, lastStatusAt, requestConfirm } = useApp()
   return <Dashboard notify={notify} liveCluster={liveCluster} lastStatusAt={lastStatusAt} requestConfirm={requestConfirm} />
@@ -405,9 +493,7 @@ function LeaderboardRoute() {
 }
 
 /** Resolves authentication before mounting the app (which uses the WebSocket
- *  hook), so React hooks never run conditionally. While auth is null we're
- *  still loading; on a transient error we fall back to a permissive status so
- *  a hiccup can't lock the user out. */
+ *  hook), so React hooks never run conditionally. */
 export default function App() {
   const [auth, setAuth] = useState<AuthStatus | null>(null)
 

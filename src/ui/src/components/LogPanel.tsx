@@ -1,10 +1,13 @@
 import { useRef, useState, useEffect } from 'react'
 import type { LogEntry } from '../types'
+import { Icon } from './Icon'
 
 interface LogPanelProps {
   entries: LogEntry[]
   onClear: () => void
 }
+
+const COLLAPSED_H = 40
 
 export function LogPanel({ entries, onClear }: LogPanelProps) {
   const [open, setOpen] = useState(false)
@@ -13,6 +16,15 @@ export function LogPanel({ entries, onClear }: LogPanelProps) {
   const bodyRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
   const dragStart = useRef({ y: 0, h: 0 })
+
+  // Publish the panel's live height to a CSS variable so .main-content reserves
+  // exactly the space the panel occupies — no dead gap when collapsed, no
+  // content hidden behind it when expanded. (Fixes the old static 320px pad.)
+  const effectiveHeight = open ? panelHeight : COLLAPSED_H
+  useEffect(() => {
+    document.documentElement.style.setProperty('--log-h', `${effectiveHeight}px`)
+    return () => { document.documentElement.style.setProperty('--log-h', `${COLLAPSED_H}px`) }
+  }, [effectiveHeight])
 
   // Auto-scroll on new entries
   useEffect(() => {
@@ -74,6 +86,7 @@ export function LogPanel({ entries, onClear }: LogPanelProps) {
           aria-expanded={open}
           aria-controls="log-panel-body"
         >
+          <Icon name="terminal" size={15} />
           <span className="log-panel-title">
             Command Output {entries.length > 0 ? `(${entries.length})` : ''}
           </span>
@@ -95,7 +108,7 @@ export function LogPanel({ entries, onClear }: LogPanelProps) {
             aria-controls="log-panel-body"
             onClick={() => setOpen(o => !o)}
           >
-            {open ? '▼' : '▲'}
+            <Icon name={open ? 'chevron-down' : 'chevron-up'} size={16} />
           </button>
         </div>
       </div>
@@ -105,7 +118,7 @@ export function LogPanel({ entries, onClear }: LogPanelProps) {
           {entries.map(e => (
             <div key={e.id} className={`log-line log-${e.level}`}>
               <span className="log-ts">{e.ts}</span>
-              {e.text}
+              <span>{e.text}</span>
             </div>
           ))}
         </div>

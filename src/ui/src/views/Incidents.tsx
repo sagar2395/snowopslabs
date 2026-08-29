@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // Incidents view — browse the fault library, inject one, work it, reveal hints
-// progressively, and resolve, all from the UI. This is the operational heart of
-// the "solve incidents" loop: the inject/resolve/hint endpoints are synchronous
-// (not durable jobs), so we drive them directly and manage our own busy state.
+// progressively, and resolve, all from the UI. The inject/resolve/hint endpoints
+// are synchronous (not durable jobs), so we drive them directly and manage our
+// own busy state.
 //
 // Silent mode is honoured: while an injected fault is unresolved and silent, its
-// identity stays hidden here (the list endpoint knows the name, but showing it
-// would spoil the exercise) until a detection check confirms it's resolved.
+// identity stays hidden until a detection check confirms it's resolved.
 import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
 import { qk } from '../lib/queryClient'
@@ -15,6 +14,7 @@ import { useApiQuery } from '../hooks/useApiQuery'
 import type { Fault, IncidentStatus, IncidentHint, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 interface IncidentsProps {
@@ -51,7 +51,7 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
   const active = data?.active ?? null
 
   const [filter, setFilter] = useState('')
-  const [busy, setBusy] = useState<string | null>(null)  // action key currently running
+  const [busy, setBusy] = useState<string | null>(null)
   const [status, setStatus] = useState<IncidentStatus | null>(null)
   const [checking, setChecking] = useState(false)
   const [hints, setHints] = useState<IncidentHint[]>([])
@@ -59,14 +59,13 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
   const modalCloseRef = useRef<HTMLButtonElement>(null)
   const detailOpener = useRef<Element | null>(null)
 
-  // Reset the per-incident working state whenever the active fault changes
-  // (injected, resolved, or swapped) so stale hints/status can't bleed across.
+  // Reset per-incident state when the active fault changes.
   useEffect(() => {
     setHints([])
     setStatus(null)
   }, [active?.fault, active?.injectedAt])
 
-  // Modal focus + Esc, mirroring the Scenarios view.
+  // Modal focus + Esc.
   useEffect(() => {
     if (!detail) return
     detailOpener.current = document.activeElement
@@ -77,6 +76,7 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
       document.removeEventListener('keydown', onKey)
       if (detailOpener.current instanceof HTMLElement) detailOpener.current.focus()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail !== null])
 
   const resolved = status?.resolved === true
@@ -138,7 +138,7 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
       setStatus(st)
       if (st.resolved) {
         notify('success', 'Detection check passes', 'The fault is resolved — nice work.')
-        load()  // pull fresh active state (now cleared/resolved)
+        load()
       } else if (st.active) {
         notify('info', 'Still broken', st.check?.explanation || st.check?.error || 'The detection check does not pass yet.')
       }
@@ -155,7 +155,6 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
       setHints(prev => (prev.some(p => p.index === h.index) ? prev : [...prev, h]))
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      // "no more hints" is an expected terminal state, not an error to alarm on.
       notify(/no more hints/i.test(msg) ? 'info' : 'error', 'Hint', msg)
     } finally { setBusy(null) }
   }
@@ -181,77 +180,85 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>Retry</button>
+          </span>
         </div>
       )}
 
       {/* Active incident console */}
       {active ? (
-        <div className="card" style={{ borderColor: 'var(--accent)', marginBottom: 16 }}>
+        <div className="card card-accent">
           <div className="card-header">
-            <span className="card-title" style={{ color: 'var(--accent)' }}>
+            <span className="card-title card-title-accent">
               {hideIdentity ? 'Active incident — hidden (silent mode)' : `Active: ${activeFault?.displayName || active.fault}`}
             </span>
-            <span style={{ color: 'var(--muted)', fontSize: 12 }}>injected {relTime(active.injectedAt)}</span>
+            <span className="hint-text">injected {relTime(active.injectedAt)}</span>
           </div>
-          <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="stack-3">
             {!hideIdentity && activeFault && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div className="row-flex">
                 <Badge variant="category">{activeFault.category}</Badge>
                 <Badge variant={SEVERITY_VARIANT[activeFault.severity] ?? 'category'}>{activeFault.severity}</Badge>
-                {activeFault.description && <span style={{ color: 'var(--muted)', fontSize: 13 }}>{activeFault.description}</span>}
+                {activeFault.description && <span className="hint-inline">{activeFault.description}</span>}
               </div>
             )}
             {hideIdentity && (
-              <div style={{ color: 'var(--muted)', fontSize: 13 }}>
+              <div className="hint-inline">
                 A fault is running but its identity is hidden. Read the symptoms, form a hypothesis, then check whether you&rsquo;ve resolved it.
               </div>
             )}
 
             {/* Detection check result */}
             {status?.check && (
-              <div className={`banner ${resolved ? 'banner-info' : 'banner-warn'}`} role="status" style={{ margin: 0 }}>
-                {resolved
-                  ? <>✓ Detection check <code>{status.check.name}</code> passes — resolved.</>
-                  : <>✗ Not resolved yet — <code>{status.check.name}</code> fails{status.check.explanation ? `: ${status.check.explanation}` : status.check.error ? `: ${status.check.error}` : ''}.</>}
+              <div className={`banner check-banner ${resolved ? 'banner-success' : 'banner-warn'}`} role="status">
+                <Icon name={resolved ? 'check-circle' : 'alert-triangle'} size={16} className="banner-icon" />
+                <span className="banner-body">
+                  {resolved
+                    ? <>Detection check <code>{status.check.name}</code> passes — resolved.</>
+                    : <>Not resolved yet — <code>{status.check.name}</code> fails{status.check.explanation ? `: ${status.check.explanation}` : status.check.error ? `: ${status.check.error}` : ''}.</>}
+                </span>
               </div>
             )}
 
             {/* Revealed hints */}
             {hints.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div className="stack-2">
                 {hints.map(h => (
-                  <div key={h.index} style={{ fontSize: 13, padding: '8px 12px', border: '1px solid var(--border)', borderRadius: 6, background: 'var(--surface)' }}>
-                    <strong style={{ color: 'var(--muted)', fontSize: 11 }}>HINT {h.index}/{h.total}</strong>
-                    <div style={{ marginTop: 2 }}>{h.text}</div>
+                  <div key={h.index} className="hint-card">
+                    <span className="hint-card-label">HINT {h.index}/{h.total}</span>
+                    <div className="hint-card-text">{h.text}</div>
                   </div>
                 ))}
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <div className="row-flex">
               <button className="btn btn-sm" onClick={checkStatus} disabled={checking || !!busy}>
-                {checking ? 'Checking…' : 'Check if resolved'}
+                {checking ? 'Checking…' : (<><Icon name="target" size={14} />Check if resolved</>)}
               </button>
               <button className="btn btn-sm" onClick={revealHint} disabled={!!busy || checking || hintsExhausted}>
+                <Icon name="lightbulb" size={14} />
                 {busy === 'hint' ? 'Revealing…' : hintsExhausted ? 'No more hints' : hints.length > 0 ? 'Reveal next hint' : 'Reveal a hint'}
               </button>
               <button className="btn btn-sm btn-primary" onClick={resolve} disabled={!!busy || checking}>
                 {busy === 'resolve' ? 'Resolving…' : 'Resolve'}
               </button>
-              <span style={{ color: 'var(--muted)', fontSize: 12 }}>
-                Hints cost score when the fault is run as a challenge.
-              </span>
+              <span className="hint-text">Hints cost score when the fault is run as a challenge.</span>
             </div>
           </div>
         </div>
       ) : (
-        <div className="banner banner-info" role="note" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          <span>No active incident. Inject one below to start diagnosing — or let the lab surprise you.</span>
-          <button className="btn btn-sm" onClick={injectRandom} disabled={busy === 'inject:random'}>
-            {busy === 'inject:random' ? 'Injecting…' : 'Inject random'}
-          </button>
+        <div className="banner banner-info" role="note">
+          <Icon name="info" size={16} className="banner-icon" />
+          <span className="banner-body">No active incident. Inject one below to start diagnosing — or let the lab surprise you.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={injectRandom} disabled={busy === 'inject:random'}>
+              {busy === 'inject:random' ? 'Injecting…' : (<><Icon name="zap" size={14} />Inject random</>)}
+            </button>
+          </span>
         </div>
       )}
 
@@ -259,68 +266,73 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
       <div className="card">
         <div className="card-header">
           <span className="card-title">Incident library ({visible.length}{q ? ` of ${faults.length}` : ''})</span>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
-              className="runtime-select"
-              type="search"
-              placeholder="Filter…"
-              aria-label="Filter incidents"
-              value={filter}
-              onChange={e => setFilter(e.target.value)}
-              style={{ minWidth: 160 }}
-            />
-            <button className="btn btn-sm" onClick={load} disabled={refreshing}>{refreshing ? 'Refreshing…' : 'Refresh'}</button>
+          <div className="card-tools">
+            <span className="search-field">
+              <Icon name="search" size={15} className="search-icon" />
+              <input
+                className="search-input"
+                type="search"
+                placeholder="Filter…"
+                aria-label="Filter incidents"
+                value={filter}
+                onChange={e => setFilter(e.target.value)}
+              />
+            </span>
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>
+              <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
           </div>
         </div>
 
         {visible.length === 0 ? (
           <div className="empty-state">
+            <span className="empty-icon"><Icon name="incidents" size={24} /></span>
             {faults.length === 0
-              ? <>No incidents found.<div className="empty-hint">Faults are discovered from <code>incidents/&lt;name&gt;/fault.yaml</code>.</div></>
-              : <>No incidents match “{filter}”.</>}
+              ? <><div>No incidents found.</div><div className="empty-hint">Faults are discovered from <code>incidents/&lt;name&gt;/fault.yaml</code>.</div></>
+              : <div>No incidents match “{filter}”.</div>}
           </div>
         ) : (
-          visible.map(f => {
-            const isActive = active?.fault === f.name
-            return (
-              <div key={f.name} className="scenario-row">
-                <div className="scenario-info">
-                  <div className="scenario-name">
-                    {f.displayName || f.name}
-                    {f.verified
-                      ? <span title="Verified content" style={{ marginLeft: 6, color: 'var(--success)', fontSize: 12 }}>✓ verified</span>
-                      : <span title="Unverified content" style={{ marginLeft: 6, color: 'var(--muted)', fontSize: 12 }}>unverified</span>}
-                  </div>
-                  {f.description && (
-                    <div className="scenario-desc">
-                      {f.description.length > 120 ? f.description.slice(0, 120) + '…' : f.description}
+          <div className="card-body">
+            {visible.map(f => {
+              const isActive = active?.fault === f.name
+              return (
+                <div key={f.name} className="scenario-row">
+                  <div className="scenario-info">
+                    <div className="scenario-name">
+                      {f.displayName || f.name}
+                      {f.verified
+                        ? <span className="verified-yes" title="Verified content"><Icon name="check" size={12} /> verified</span>
+                        : <span className="verified-no" title="Unverified content">unverified</span>}
                     </div>
-                  )}
-                  <div className="scenario-tags" style={{ marginTop: 6 }}>
-                    <Badge variant="category">{f.category}</Badge>
-                    <Badge variant={SEVERITY_VARIANT[f.severity] ?? 'category'}>{f.severity}</Badge>
-                  </div>
-                  {requiresLabel(f) && (
-                    <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
-                      Requires: {requiresLabel(f)}
+                    {f.description && (
+                      <div className="scenario-desc">
+                        {f.description.length > 120 ? f.description.slice(0, 120) + '…' : f.description}
+                      </div>
+                    )}
+                    <div className="scenario-tags">
+                      <Badge variant="category">{f.category}</Badge>
+                      <Badge variant={SEVERITY_VARIANT[f.severity] ?? 'category'}>{f.severity}</Badge>
                     </div>
-                  )}
+                    {requiresLabel(f) && (
+                      <div className="scenario-meta">Requires: {requiresLabel(f)}</div>
+                    )}
+                  </div>
+                  {isActive && <Badge variant="running">Active</Badge>}
+                  <div className="scenario-actions">
+                    <button
+                      className="btn btn-sm btn-primary"
+                      disabled={!!active || busy === `inject:${f.name}`}
+                      title={active ? 'Resolve the active incident first' : undefined}
+                      onClick={() => inject(f.name, f.displayName || f.name)}
+                    >
+                      {busy === `inject:${f.name}` ? 'Injecting…' : (<><Icon name="zap" size={14} />Inject</>)}
+                    </button>
+                    <button className="btn btn-sm" onClick={() => setDetail(f)}>Details</button>
+                  </div>
                 </div>
-                {isActive && <Badge variant="running">Active</Badge>}
-                <div className="scenario-actions">
-                  <button
-                    className="btn btn-sm btn-primary"
-                    disabled={!!active || busy === `inject:${f.name}`}
-                    title={active ? 'Resolve the active incident first' : undefined}
-                    onClick={() => inject(f.name, f.displayName || f.name)}
-                  >
-                    {busy === `inject:${f.name}` ? 'Injecting…' : 'Inject'}
-                  </button>
-                  <button className="btn btn-sm" onClick={() => setDetail(f)}>Details</button>
-                </div>
-              </div>
-            )
-          })
+              )
+            })}
+          </div>
         )}
       </div>
 
@@ -328,7 +340,7 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
       {detail && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setDetail(null) }}>
           <div className="modal-card" role="dialog" aria-modal="true" aria-label={`${detail.displayName || detail.name} details`}>
-            <button ref={modalCloseRef} className="modal-close" aria-label="Close details" onClick={() => setDetail(null)}>×</button>
+            <button ref={modalCloseRef} className="modal-close" aria-label="Close details" onClick={() => setDetail(null)}><Icon name="x" size={18} /></button>
             <div className="modal-header">
               <h2>{detail.displayName || detail.name}</h2>
               <div className="modal-meta">
@@ -351,7 +363,7 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
                     <Badge key={`a-${a}`} variant="category">App: {a}</Badge>
                   ))}
                 </div>
-                <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 6 }}>
+                <div className="field-help mt-2">
                   Prerequisites aren&rsquo;t installed automatically — add missing ones in the Platform tab before injecting.
                 </div>
               </div>
@@ -359,11 +371,11 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
             {detail.references && detail.references.length > 0 && (
               <div className="modal-section">
                 <h3>References</h3>
-                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                <ul>
                   {detail.references.map((r, i) => (
                     <li key={i}>
                       <a href={r.url} target="_blank" rel="noopener noreferrer">{r.label}</a>
-                      {r.note && <span style={{ color: 'var(--muted)', fontSize: 12 }}> — {r.note}</span>}
+                      {r.note && <span className="hint-text"> — {r.note}</span>}
                     </li>
                   ))}
                 </ul>
@@ -372,14 +384,16 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
             {detail.snippets && detail.snippets.length > 0 && (
               <div className="modal-section">
                 <h3>Applyable snippets</h3>
-                {detail.snippets.map((s, i) => (
-                  <div key={i} style={{ marginBottom: 8 }}>
-                    <div style={{ fontWeight: 500 }}>{s.label}</div>
-                    {s.description && <div style={{ fontSize: 12, color: 'var(--muted)' }}>{s.description}</div>}
-                    {s.yaml && <pre style={{ overflowX: 'auto', fontSize: 12, background: 'var(--surface)', padding: 8, borderRadius: 6 }}><code>{s.yaml}</code></pre>}
-                    {s.path && !s.yaml && <div style={{ fontSize: 12 }}><code>{s.path}</code></div>}
-                  </div>
-                ))}
+                <div className="stack-3">
+                  {detail.snippets.map((s, i) => (
+                    <div key={i}>
+                      <div className="field-label">{s.label}</div>
+                      {s.description && <div className="field-help">{s.description}</div>}
+                      {s.yaml && <pre className="modal-code"><code>{s.yaml}</code></pre>}
+                      {s.path && !s.yaml && <div className="cli-hint"><code>{s.path}</code></div>}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <div className="card-footer">

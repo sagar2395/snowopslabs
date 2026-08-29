@@ -6,6 +6,7 @@ import { useApiQuery } from '../hooks/useApiQuery'
 import { useRunLogs } from '../hooks/useRunLogs'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import { errMessage } from '../lib/errors'
 import type { NotifyFn, RunStatus, RunSummary } from '../types'
 
@@ -87,27 +88,28 @@ export function Runs({ notify }: RunsProps) {
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
         </div>
       )}
 
-      {/* What this view is for. Every lab, platform, scenario and incident action
-          runs through a durable engine that records its steps and output; this is
-          where you watch one live, cancel it, or read back why a past one failed. */}
+      {/* What this view is for. */}
       <div className="banner banner-info" role="note">
-        <strong>Runs</strong> is the execution log for everything the lab does. Each lab, platform,
-        scenario or incident action becomes a recorded run with a step timeline and live output —
-        select one to watch it stream, cancel a run in flight, or open a past run to see exactly
-        where it failed.
+        <Icon name="info" size={16} className="banner-icon" />
+        <span className="banner-body">
+          <strong>Runs</strong> is the execution log for everything the lab does. Each lab, platform,
+          scenario or incident action becomes a recorded run with a step timeline and live output —
+          select one to watch it stream, cancel a run in flight, or open a past run to see exactly where it failed.
+        </span>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) 1fr', gap: 16, alignItems: 'start' }} className="runs-grid">
+      <div className="runs-grid">
         {/* Run list */}
         <div className="card">
           <div className="card-header">
             <span className="card-title">Runs ({runs.length})</span>
             <select
-              className="runtime-select"
+              className="select"
               value={statusFilter}
               aria-label="Filter runs by status"
               onChange={e => setStatusFilter(e.target.value as StatusFilter)}
@@ -118,13 +120,14 @@ export function Runs({ notify }: RunsProps) {
 
           {runs.length === 0 ? (
             <div className="empty-state">
-              No runs recorded yet.
+              <span className="empty-icon"><Icon name="runs" size={24} /></span>
+              <div>No runs recorded yet.</div>
               <div className="empty-hint">
                 Trigger any action — activate a scenario, inject an incident, install a component, or run <code>labctl lab up</code> — and it shows up here with its live log.
               </div>
             </div>
           ) : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: '70vh', overflowY: 'auto' }}>
+            <ul className="run-list">
               {runs.map(r => (
                 <li key={r.id}>
                   <button
@@ -132,18 +135,10 @@ export function Runs({ notify }: RunsProps) {
                     className={`run-row${r.id === selectedId ? ' run-row-active' : ''}`}
                     aria-current={r.id === selectedId}
                     onClick={() => setSelectedId(r.id)}
-                    style={{
-                      display: 'flex', width: '100%', gap: 8, alignItems: 'center', justifyContent: 'space-between',
-                      padding: '10px 12px', border: 'none', borderTop: '1px solid var(--border)',
-                      background: r.id === selectedId ? 'var(--surface-2, rgba(127,127,127,0.08))' : 'transparent',
-                      cursor: 'pointer', textAlign: 'left', color: 'inherit',
-                    }}
                   >
-                    <span style={{ minWidth: 0 }}>
-                      <span style={{ display: 'block', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.kind}{r.target ? ` · ${r.target}` : ''}
-                      </span>
-                      <span style={{ display: 'block', fontSize: 12, color: 'var(--muted)' }}>{relTime(r.startedAt ?? r.queuedAt)}</span>
+                    <span className="run-row-main">
+                      <span className="run-row-title">{r.kind}{r.target ? ` · ${r.target}` : ''}</span>
+                      <span className="run-row-sub">{relTime(r.startedAt ?? r.queuedAt)}</span>
                     </span>
                     <Badge variant={statusVariant(r.status)}>{r.status}</Badge>
                   </button>
@@ -171,7 +166,6 @@ function RunDetailPanel({ runId, summary, notify, onChanged }: {
   const [cancelling, setCancelling] = useState(false)
   const terminal = isTerminal(summary.status)
 
-  // Detail (with steps) refetches while the run is live so the timeline fills in.
   const { data: detail } = useApiQuery(
     ['runs', runId],
     () => api.getRun(runId),
@@ -181,7 +175,6 @@ function RunDetailPanel({ runId, summary, notify, onChanged }: {
 
   const logRef = useRef<HTMLPreElement>(null)
   useEffect(() => {
-    // Auto-scroll to the newest output while the run is live.
     if (logRef.current && !done) logRef.current.scrollTop = logRef.current.scrollHeight
   }, [lines, done])
 
@@ -203,10 +196,8 @@ function RunDetailPanel({ runId, summary, notify, onChanged }: {
   return (
     <div className="card">
       <div className="card-header">
-        <span className="card-title" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {summary.kind}{summary.target ? ` · ${summary.target}` : ''}
-        </span>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span className="card-title truncate">{summary.kind}{summary.target ? ` · ${summary.target}` : ''}</span>
+        <div className="card-tools">
           <Badge variant={statusVariant(summary.status)}>{summary.status}</Badge>
           {!terminal && (
             <button className="btn btn-sm btn-danger" onClick={onCancel} disabled={cancelling}>
@@ -216,7 +207,7 @@ function RunDetailPanel({ runId, summary, notify, onChanged }: {
         </div>
       </div>
 
-      <div style={{ padding: '4px 16px 12px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, fontSize: 13 }}>
+      <div className="meta-grid">
         <Meta label="Run ID" value={summary.id} mono />
         <Meta label="Started" value={relTime(summary.startedAt ?? summary.queuedAt)} />
         <Meta label="Duration" value={durationLabel(summary)} />
@@ -225,15 +216,18 @@ function RunDetailPanel({ runId, summary, notify, onChanged }: {
       </div>
 
       {summary.error && (
-        <div className="banner banner-warn" role="alert" style={{ margin: '0 16px 12px' }}>{summary.error}</div>
+        <div className="banner banner-warn mt-3" role="alert">
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">{summary.error}</span>
+        </div>
       )}
 
       {steps.length > 0 && (
-        <div style={{ padding: '0 16px 12px' }}>
-          <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>Timeline</div>
-          <ol style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="mt-3">
+          <div className="meta-label mt-2">Timeline</div>
+          <ol className="timeline mt-2">
             {steps.map(s => (
-              <li key={s.index} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <li key={s.index} className="timeline-item">
                 <Badge variant={s.status === 'succeeded' ? 'running' : s.status === 'failed' ? 'stopped' : 'pending'}>{s.status}</Badge>
                 <span>{s.name}</span>
               </li>
@@ -242,25 +236,22 @@ function RunDetailPanel({ runId, summary, notify, onChanged }: {
         </div>
       )}
 
-      <div style={{ padding: '0 16px 16px' }}>
-        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6, display: 'flex', justifyContent: 'space-between' }}>
-          <span>Output</span>
-          {!terminal && !done && <span aria-live="polite">streaming…</span>}
+      <div className="mt-3">
+        <div className="row-between mt-2">
+          <span className="meta-label">Output</span>
+          {!terminal && !done && <span className="hint-text" aria-live="polite">streaming…</span>}
         </div>
-        {logError && <div className="banner banner-warn" role="alert" style={{ marginBottom: 8 }}>{logError}</div>}
-        <pre
-          ref={logRef}
-          className="run-log"
-          style={{
-            margin: 0, maxHeight: '48vh', overflow: 'auto', padding: 12,
-            background: 'var(--bg, #0b0b0b)', border: '1px solid var(--border)', borderRadius: 6,
-            fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          }}
-        >
+        {logError && (
+          <div className="banner banner-warn mt-2" role="alert">
+            <Icon name="alert-triangle" size={16} className="banner-icon" />
+            <span className="banner-body">{logError}</span>
+          </div>
+        )}
+        <pre ref={logRef} className="run-output mt-2">
           {lines.length === 0
-            ? <span style={{ color: 'var(--muted)' }}>{terminal ? 'No output was recorded for this run.' : 'Waiting for output…'}</span>
+            ? <span className="run-output-placeholder">{terminal ? 'No output was recorded for this run.' : 'Waiting for output…'}</span>
             : lines.map(l => (
-                <span key={l.seq} style={{ color: l.stream === 'stderr' ? 'var(--danger, #e5534b)' : l.stream === 'system' ? 'var(--muted)' : 'inherit' }}>
+                <span key={l.seq} className={l.stream === 'stderr' ? 'out-stderr' : l.stream === 'system' ? 'out-system' : undefined}>
                   {l.stream === 'stderr' ? '! ' : l.stream === 'system' ? '* ' : ''}{l.text}{'\n'}
                 </span>
               ))}
@@ -272,9 +263,9 @@ function RunDetailPanel({ runId, summary, notify, onChanged }: {
 
 function Meta({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
-    <div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
-      <div style={{ fontFamily: mono ? 'var(--font-mono, monospace)' : undefined, wordBreak: 'break-all' }}>{value}</div>
+    <div className="meta-item">
+      <div className="meta-label">{label}</div>
+      <div className={`meta-value${mono ? ' mono' : ''}`}>{value}</div>
     </div>
   )
 }

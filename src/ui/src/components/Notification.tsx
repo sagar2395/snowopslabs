@@ -1,4 +1,5 @@
-import type { Notification } from '../types'
+import type { Notification, NotifLevel } from '../types'
+import { Icon, type IconName } from './Icon'
 
 interface NotificationListProps {
   items: Notification[]
@@ -8,6 +9,12 @@ interface NotificationListProps {
 /** Cap how many toasts stack up at once — older ones are collapsed into a
  *  "+N earlier" row rather than crowding the screen. */
 const MAX_VISIBLE = 5
+
+const LEVEL_ICON: Record<NotifLevel, IconName> = {
+  info: 'info',
+  success: 'check-circle',
+  error: 'x-circle',
+}
 
 export function NotificationList({ items, onDismiss }: NotificationListProps) {
   if (items.length === 0) return null
@@ -29,8 +36,13 @@ export function NotificationList({ items, onDismiss }: NotificationListProps) {
           role={n.level === 'error' ? 'alert' : 'status'}
         >
           <div className="notif-header">
-            <span className="notif-title">{n.title}</span>
-            <button className="notif-close" aria-label="Dismiss notification" onClick={() => onDismiss(n.id)}>×</button>
+            <span className="notif-title">
+              <Icon name={LEVEL_ICON[n.level]} size={15} />
+              {n.title}
+            </span>
+            <button className="notif-close" aria-label="Dismiss notification" onClick={() => onDismiss(n.id)}>
+              <Icon name="x" size={15} />
+            </button>
           </div>
           {n.detail && <div className="notif-detail">{n.detail}</div>}
         </div>

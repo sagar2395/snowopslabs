@@ -4,6 +4,7 @@ import { useApiQuery } from '../hooks/useApiQuery'
 import type { PlatformProviderEntry, DashboardURL, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import { useJobRunner } from '../hooks/useJobRunner'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
@@ -32,12 +33,16 @@ function sortCategories(cats: string[]) {
 }
 
 export function Platform({ notify, requestConfirm }: PlatformProps) {
-  const { data: providers = null, loading, loadError, refreshing, reload: load } = useApiQuery(qk.platform, api.getPlatform)
+  // Poll while this tab is open (paused when the tab is hidden) so per-component
+  // changes made out of band — a namespace deleted from the CLI, a cluster reset —
+  // are reflected without a manual refresh. `installed` is re-derived from the
+  // live cluster on every request server-side, so a poll always shows the truth.
+  const { data: providers = null, loading, loadError, refreshing, reload: load } =
+    useApiQuery(qk.platform, api.getPlatform, { refetchInterval: 15_000 })
   // Service dashboards (Grafana, Prometheus, Traefik, ArgoCD, …). The server only
   // returns links whose namespace actually exists, so this list is exactly the
-  // reachable set — which is why it lives here next to the components that serve
-  // them, not on the home page where dead links used to appear.
-  const dashQ = useApiQuery(qk.dashboards, () => api.getDashboards().catch(() => [] as DashboardURL[]))
+  // reachable set — which is why it lives here next to the components that serve them.
+  const dashQ = useApiQuery(qk.dashboards, () => api.getDashboards().catch(() => [] as DashboardURL[]), { refetchInterval: 15_000 })
   const dashboards = (dashQ.data ?? []).filter(d => d.available)
   const { busy, run } = useJobRunner(notify)
 
@@ -85,8 +90,11 @@ export function Platform({ notify, requestConfirm }: PlatformProps) {
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>Retry</button>
+          </span>
         </div>
       )}
 
@@ -94,59 +102,60 @@ export function Platform({ notify, requestConfirm }: PlatformProps) {
         <div className="card-header">
           <span className="card-title">Platform Components</span>
           <button className="btn btn-sm" onClick={load} disabled={refreshing}>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+            <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
 
         {categories.length === 0 ? (
           <div className="empty-state">
-            No platform providers discovered.
+            <span className="empty-icon"><Icon name="platform" size={24} /></span>
+            <div>No platform providers discovered.</div>
             <div className="empty-hint">Providers live in <code>platform/&lt;category&gt;/&lt;name&gt;/install.sh</code>.</div>
           </div>
         ) : (
-          categories.map(cat => {
-            const entries = providers![cat] ?? []
-            const installed = entries.find(e => e.installed)
-            return (
-              <div key={cat} className="platform-category">
-                <div className="platform-category-name">{categoryLabel(cat)}</div>
-                {entries.map(entry => {
-                  const key = `${entry.category}/${entry.name}`
-                  // Only warn about swapping when providers are mutually exclusive
-                  // (e.g. ingress, mesh). Complementary providers such as
-                  // secrets/vault + secrets/external-secrets install side by side.
-                  const sibling = entry.exclusive && installed && installed.name !== entry.name ? installed : undefined
-                  return (
-                    <div key={key} className="platform-row">
-                      <div className="platform-name truncate" title={entry.name}>{entry.name}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Badge variant={entry.installed ? 'running' : 'stopped'}>
-                          {entry.installed ? 'Installed' : 'Not Installed'}
-                        </Badge>
-                        {entry.installed ? (
-                          <button
-                            className="btn btn-sm btn-danger"
-                            disabled={busy[key]}
-                            onClick={() => remove(entry)}
-                          >
-                            {busy[key] ? 'Removing…' : 'Remove'}
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-sm btn-primary"
-                            disabled={busy[key]}
-                            onClick={() => install(entry, sibling)}
-                          >
-                            {busy[key] ? 'Installing…' : sibling ? 'Swap to this' : 'Install'}
-                          </button>
-                        )}
+          <div className="card-body">
+            {categories.map(cat => {
+              const entries = providers![cat] ?? []
+              const installed = entries.find(e => e.installed)
+              return (
+                <div key={cat} className="platform-category">
+                  <div className="platform-category-name">{categoryLabel(cat)}</div>
+                  {entries.map(entry => {
+                    const key = `${entry.category}/${entry.name}`
+                    // Only warn about swapping mutually-exclusive providers.
+                    const sibling = entry.exclusive && installed && installed.name !== entry.name ? installed : undefined
+                    return (
+                      <div key={key} className="platform-row">
+                        <div className="platform-name truncate" title={entry.name}>{entry.name}</div>
+                        <div className="row-flex">
+                          <Badge variant={entry.installed ? 'running' : 'stopped'}>
+                            {entry.installed ? 'Installed' : 'Not Installed'}
+                          </Badge>
+                          {entry.installed ? (
+                            <button
+                              className="btn btn-sm btn-danger"
+                              disabled={busy[key]}
+                              onClick={() => remove(entry)}
+                            >
+                              {busy[key] ? 'Removing…' : 'Remove'}
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-sm btn-primary"
+                              disabled={busy[key]}
+                              onClick={() => install(entry, sibling)}
+                            >
+                              {busy[key] ? 'Installing…' : sibling ? 'Swap to this' : 'Install'}
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )
-          })
+                    )
+                  })}
+                </div>
+              )
+            })}
+          </div>
         )}
 
         <div className="card-footer">
@@ -156,7 +165,7 @@ export function Platform({ notify, requestConfirm }: PlatformProps) {
             title="Installs the slim baseline: ingress + metrics + Grafana. Add anything else per-component above."
             onClick={() => run('platform-all', 'Install baseline', () => api.platformUp(), () => load())}
           >
-            {busy['platform-all'] ? 'Working…' : 'Install baseline'}
+            {busy['platform-all'] ? 'Working…' : (<><Icon name="plus" size={15} />Install baseline</>)}
           </button>
           <button
             className="btn btn-danger"
@@ -173,26 +182,25 @@ export function Platform({ notify, requestConfirm }: PlatformProps) {
         </div>
       </div>
 
-      {/* Service dashboards — moved here from the home page so the links sit
-          next to the components that provide them, and only appear when the
-          backing service is actually present. */}
-      <div className="card" style={{ marginTop: 16 }}>
+      {/* Service dashboards — only appear when the backing service is present. */}
+      <div className="card">
         <div className="card-header">
           <span className="card-title">Dashboards &amp; Access</span>
           <button className="btn btn-sm" onClick={() => dashQ.reload()} disabled={dashQ.refreshing}>
-            {dashQ.refreshing ? 'Refreshing…' : 'Refresh'}
+            <Icon name="refresh" size={14} />{dashQ.refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
         {dashboards.length === 0 ? (
           <div className="empty-state">
-            No service dashboards available yet.
+            <span className="empty-icon"><Icon name="external" size={24} /></span>
+            <div>No service dashboards available yet.</div>
             <div className="empty-hint">Install a component above (e.g. Grafana, Traefik, ArgoCD) and its dashboard link appears here.</div>
           </div>
         ) : (
-          <div className="quick-links" style={{ padding: 12 }}>
+          <div className="quick-links">
             {dashboards.map(d => (
               <a key={d.name} className="quick-link" href={d.url} target="_blank" rel="noopener noreferrer">
-                {d.label} ↗
+                {d.label} <Icon name="external" size={14} />
               </a>
             ))}
           </div>

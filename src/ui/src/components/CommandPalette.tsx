@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Icon, type IconName } from './Icon'
 
 export interface Command {
   id: string
   label: string
   hint?: string
+  /** Optional leading icon. */
+  icon?: IconName
   /** Section heading the command groups under in the list. */
   group?: string
   run: () => void
@@ -83,20 +86,23 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
   return (
     <div className="cmdk-overlay" onMouseDown={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="cmdk-panel" role="dialog" aria-modal="true" aria-label="Command palette">
-        <input
-          ref={inputRef}
-          className="cmdk-input"
-          type="text"
-          role="combobox"
-          aria-expanded="true"
-          aria-controls="cmdk-list"
-          aria-autocomplete="list"
-          aria-activedescendant={filtered[active] ? `cmdk-opt-${filtered[active].id}` : undefined}
-          placeholder="Jump to… (↑↓ to move, Enter to go, Esc to close)"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          onKeyDown={onKeyDown}
-        />
+        <div className="cmdk-input-wrap">
+          <Icon name="search" size={16} className="cmdk-search-icon" />
+          <input
+            ref={inputRef}
+            className="cmdk-input"
+            type="text"
+            role="combobox"
+            aria-expanded="true"
+            aria-controls="cmdk-list"
+            aria-autocomplete="list"
+            aria-activedescendant={filtered[active] ? `cmdk-opt-${filtered[active].id}` : undefined}
+            placeholder="Jump to… (↑↓ to move, Enter to go, Esc to close)"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={onKeyDown}
+          />
+        </div>
         <ul className="cmdk-list" id="cmdk-list" role="listbox" aria-label="Commands">
           {filtered.length === 0 ? (
             <li className="cmdk-empty" role="option" aria-disabled="true" aria-selected="false">No matches</li>
@@ -111,6 +117,7 @@ export function CommandPalette({ open, onClose, commands }: CommandPaletteProps)
                 onMouseEnter={() => setActive(i)}
                 onMouseDown={e => { e.preventDefault(); choose(i) }}
               >
+                {c.icon && <Icon name={c.icon} size={16} className="cmdk-opt-icon" />}
                 <span className="cmdk-opt-label">{c.label}</span>
                 {c.hint && <span className="cmdk-opt-hint">{c.hint}</span>}
               </li>

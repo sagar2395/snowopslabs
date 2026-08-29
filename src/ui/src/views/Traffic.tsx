@@ -5,6 +5,7 @@ import { qk } from '../lib/queryClient'
 import { useApiQuery } from '../hooks/useApiQuery'
 import type { NotifyFn } from '../types'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import { useJobRunner } from '../hooks/useJobRunner'
 
 interface TrafficProps {
@@ -26,7 +27,6 @@ export function Traffic({ notify }: TrafficProps) {
   const [duration, setDuration] = useState('')
   const { busy, run } = useJobRunner(notify)
 
-  // Default the selection to the first profile once they load.
   useEffect(() => {
     if (!profile && profiles.length > 0) setProfile(profiles[0])
   }, [profile, profiles])
@@ -54,8 +54,11 @@ export function Traffic({ notify }: TrafficProps) {
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>Retry</button>
+          </span>
         </div>
       )}
 
@@ -64,76 +67,71 @@ export function Traffic({ notify }: TrafficProps) {
           <span className="card-title">Traffic Generator</span>
         </div>
 
-        <p style={{ color: 'var(--muted)', fontSize: 'var(--text-sm)', margin: '0 0 18px', lineHeight: 1.6 }}>
+        <p className="page-intro">
           Drive synthetic load (k6) against the lab apps in-cluster, then watch the impact live in Grafana next
           to the app's own metrics. Starting replaces any active run; stopping removes the generator and its pods.
         </p>
 
         {profiles.length === 0 ? (
           <div className="empty-state">
-            No traffic profiles found.
+            <span className="empty-icon"><Icon name="traffic" size={24} /></span>
+            <div>No traffic profiles found.</div>
             <div className="empty-hint">Profiles live in <code>services/traffic/profiles/*.js</code>.</div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, maxWidth: 520 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>Profile</span>
+          <div className="traffic-form">
+            <label className="field">
+              <span className="field-label">Profile</span>
               <select
-                className="runtime-select"
+                className="select"
                 value={profile}
                 aria-label="Traffic profile"
                 onChange={e => setProfile(e.target.value)}
               >
                 {profiles.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-              {PROFILE_BLURB[profile] && (
-                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--muted)', lineHeight: 1.5 }}>
-                  {PROFILE_BLURB[profile]}
-                </span>
-              )}
+              {PROFILE_BLURB[profile] && <span className="field-help">{PROFILE_BLURB[profile]}</span>}
             </label>
 
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>Requests / second</span>
+            <label className="field">
+              <span className="field-label">Requests / second</span>
               <input
                 type="number"
-                className="search-input"
+                className="input maxw-input"
                 min={1}
                 max={10000}
                 value={rps}
                 aria-label="Requests per second"
                 onChange={e => setRps(Number(e.target.value))}
-                style={{ maxWidth: 160 }}
               />
             </label>
 
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <span style={{ fontSize: 'var(--text-sm)', fontWeight: 600 }}>Duration <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(optional)</span></span>
+            <label className="field">
+              <span className="field-label">Duration <span className="field-optional">(optional)</span></span>
               <input
                 type="text"
-                className="search-input"
+                className="input maxw-input"
                 placeholder="profile default (e.g. 10m, 1h30m)"
                 value={duration}
                 aria-label="Duration"
                 onChange={e => setDuration(e.target.value)}
-                style={{ maxWidth: 260 }}
               />
             </label>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+            <div className="row-flex mt-1">
               <button
                 className="btn btn-primary"
                 disabled={!profile || running}
                 onClick={start}
               >
-                {running ? 'Working…' : 'Start traffic'}
+                {running ? 'Working…' : (<><Icon name="play" size={15} />Start traffic</>)}
               </button>
               <button
                 className="btn btn-danger"
                 disabled={running}
                 onClick={stop}
               >
-                Stop traffic
+                <Icon name="stop" size={15} />Stop traffic
               </button>
             </div>
           </div>

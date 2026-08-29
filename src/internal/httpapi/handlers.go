@@ -88,7 +88,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	metricsActive := false
 	if p, err := s.registry.GetProvider("monitoring/metrics", s.cfg.MetricsProvider); err == nil {
-		metricsActive = k8s.NamespaceExists(ctx, p.Namespace())
+		// Metrics shares the monitoring namespace with grafana/loki/tempo, so
+		// detect it by its own Helm release rather than namespace existence
+		// (which would read active whenever any monitoring component is present).
+		metricsActive = k8s.HelmReleaseExists(ctx, p.Namespace(), p.Name)
 	}
 	loggingActive := false
 	if p, err := s.registry.GetProvider("logging", s.cfg.LoggingProvider); err == nil {
@@ -228,10 +231,20 @@ func (s *Server) handlePlatformStatus(w http.ResponseWriter, r *http.Request) {
 		providers := s.registry.GetProviders(cat)
 		exclusive := s.registry.IsExclusive(cat)
 		for _, p := range providers {
+			// Providers that share a namespace (prometheus, grafana, loki, tempo
+			// all live in the monitoring namespace) can't be told apart by
+			// namespace existence — the first install creates the namespace and
+			// then every one of them reads as installed. Detect those by their own
+			// Helm release instead; everyone else owns its namespace, so namespace
+			// existence remains the (cheaper) signal.
+			installed := k8s.NamespaceExists(ctx, p.Namespace())
+			if p.SharesNamespace() {
+				installed = k8s.HelmReleaseExists(ctx, p.Namespace(), p.Name)
+			}
 			entry := map[string]interface{}{
 				"name":      p.Name,
 				"category":  cat,
-				"installed": k8s.NamespaceExists(ctx, p.Namespace()),
+				"installed": installed,
 				"exclusive": exclusive,
 			}
 			result[cat] = append(result[cat], entry)

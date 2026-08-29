@@ -4,6 +4,7 @@ import { useApiQuery } from '../hooks/useApiQuery'
 import type { AppInfo, NotifyFn } from '../types'
 import { DeployedBadge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import { useJobRunner } from '../hooks/useJobRunner'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
@@ -53,8 +54,11 @@ export function Apps({ notify, requestConfirm }: AppsProps) {
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>Retry</button>
+          </span>
         </div>
       )}
 
@@ -62,72 +66,82 @@ export function Apps({ notify, requestConfirm }: AppsProps) {
         <div className="card-header">
           <span className="card-title">Applications ({apps.length})</span>
           <button className="btn btn-sm" onClick={load} disabled={refreshing}>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+            <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
 
         {apps.length === 0 ? (
           <div className="empty-state">
-            No applications found.
+            <span className="empty-icon"><Icon name="apps" size={24} /></span>
+            <div>No applications found.</div>
             <div className="empty-hint">Apps are discovered from <code>apps/&lt;name&gt;/app.env</code> in the project.</div>
           </div>
         ) : (
-          apps.map(a => (
-            <div key={a.name} className="app-row">
-              <div style={{ flex: 1, minWidth: 120 }}>
-                <div className="app-name truncate" title={a.name}>{a.name}</div>
-                {a.namespace && (
-                  <div style={{ color: 'var(--muted)', fontSize: 12 }}>ns: {a.namespace}</div>
-                )}
-              </div>
+          <div className="card-body">
+            {apps.map(a => (
+              <div key={a.name} className="app-row">
+                <div className="app-name-col">
+                  <div className="app-name truncate" title={a.name}>{a.name}</div>
+                  {a.namespace && <div className="hint-text">ns: {a.namespace}</div>}
+                </div>
 
-              <div className="app-meta">
-                <span>build: {a.buildStrategy || '—'}</span>
-                <span style={{ margin: '0 6px' }}>·</span>
-                <span>deploy: {a.deployStrategy || '—'}</span>
-                {a.replicas && <><span style={{ margin: '0 6px' }}>·</span><span>replicas: {a.replicas}</span></>}
-                {a.ready    && <><span style={{ margin: '0 6px' }}>·</span><span>ready: {a.ready}</span></>}
-              </div>
+                <div className="app-meta">
+                  build: {a.buildStrategy || '—'} · deploy: {a.deployStrategy || '—'}
+                  {a.replicas && ` · replicas: ${a.replicas}`}
+                  {a.ready && ` · ready: ${a.ready}`}
+                </div>
 
-              <DeployedBadge deployed={a.deployed} />
+                <DeployedBadge deployed={a.deployed} />
 
-              <div className="btn-group">
-                <button
-                  className="btn btn-sm"
-                  onClick={() => openLogs(a)}
-                  title={loggingActive ? 'Open logs in Grafana' : 'Requires the logging component (Loki)'}
-                >
-                  Logs
-                </button>
-                <button
-                  className="btn btn-sm"
-                  disabled={busy[a.name]}
-                  onClick={() => run(a.name, `Build ${a.name}`, () => api.buildApp(a.name), () => load())}
-                >
-                  {busy[a.name] ? 'Working…' : 'Build'}
-                </button>
-                <button
-                  className="btn btn-sm btn-primary"
-                  disabled={busy[a.name]}
-                  onClick={() => run(a.name, `Deploy ${a.name}`, () => api.deployApp(a.name), () => load())}
-                >
-                  Deploy
-                </button>
-                <button
-                  className="btn btn-sm btn-danger"
-                  disabled={busy[a.name]}
-                  onClick={() => requestConfirm({
-                    title: `Destroy ${a.name}?`,
-                    message: `This removes the "${a.name}" deployment and its resources from the cluster.`,
-                    confirmLabel: 'Destroy',
-                    onConfirm: () => run(a.name, `Destroy ${a.name}`, () => api.destroyApp(a.name), () => load()),
-                  })}
-                >
-                  Destroy
-                </button>
+                <div className="btn-group">
+                  {a.deployed && a.url && (
+                    <a
+                      className="btn btn-sm"
+                      href={a.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Open ${a.url}`}
+                    >
+                      Open <Icon name="external" size={14} />
+                    </a>
+                  )}
+                  <button
+                    className="btn btn-sm"
+                    onClick={() => openLogs(a)}
+                    title={loggingActive ? 'Open logs in Grafana' : 'Requires the logging component (Loki)'}
+                  >
+                    Logs
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    disabled={busy[a.name]}
+                    onClick={() => run(a.name, `Build ${a.name}`, () => api.buildApp(a.name), () => load())}
+                  >
+                    {busy[a.name] ? 'Working…' : (<><Icon name="hammer" size={14} />Build</>)}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={busy[a.name]}
+                    onClick={() => run(a.name, `Deploy ${a.name}`, () => api.deployApp(a.name), () => load())}
+                  >
+                    Deploy
+                  </button>
+                  <button
+                    className="btn btn-sm btn-danger"
+                    disabled={busy[a.name]}
+                    onClick={() => requestConfirm({
+                      title: `Destroy ${a.name}?`,
+                      message: `This removes the "${a.name}" deployment and its resources from the cluster.`,
+                      confirmLabel: 'Destroy',
+                      onConfirm: () => run(a.name, `Destroy ${a.name}`, () => api.destroyApp(a.name), () => load()),
+                    })}
+                  >
+                    Destroy
+                  </button>
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
     </>

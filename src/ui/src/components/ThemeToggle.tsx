@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { Theme } from '../lib/theme'
 import { useTheme } from '../hooks/useTheme'
+import { Icon, type IconName } from './Icon'
 
-const OPTIONS: { value: Theme; label: string; glyph: string }[] = [
-  { value: 'light',  label: 'Light theme',  glyph: '☀' },
-  { value: 'system', label: 'System theme', glyph: '◐' },
-  { value: 'dark',   label: 'Dark theme',   glyph: '☾' },
+const OPTIONS: { value: Theme; label: string; icon: IconName }[] = [
+  { value: 'light',  label: 'Light theme',  icon: 'sun' },
+  { value: 'system', label: 'System theme', icon: 'monitor' },
+  { value: 'dark',   label: 'Dark theme',   icon: 'moon' },
 ]
 
 /** A compact three-way theme control (light / system / dark). It is a radio
@@ -26,7 +27,7 @@ export function ThemeToggle() {
           className={`theme-opt${theme === o.value ? ' active' : ''}`}
           onClick={() => setTheme(o.value)}
         >
-          <span aria-hidden="true">{o.glyph}</span>
+          <Icon name={o.icon} size={15} />
         </button>
       ))}
     </div>

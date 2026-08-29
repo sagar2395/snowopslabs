@@ -3,6 +3,7 @@ import { qk } from '../lib/queryClient'
 import { useApiQuery } from '../hooks/useApiQuery'
 import type { NotifyFn } from '../types'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 
 interface LeaderboardProps {
   notify: NotifyFn
@@ -35,8 +36,11 @@ export function Leaderboard(_props: LeaderboardProps) {
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>Retry</button>
+          </span>
         </div>
       )}
 
@@ -44,17 +48,18 @@ export function Leaderboard(_props: LeaderboardProps) {
         <div className="card-header">
           <span className="card-title">Leaderboard ({entries.length})</span>
           <button className="btn btn-sm" onClick={load} disabled={refreshing}>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
+            <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
           </button>
         </div>
 
         {entries.length === 0 ? (
           <div className="empty-state">
-            No results yet — run a challenge or incident
+            <span className="empty-icon"><Icon name="leaderboard" size={24} /></span>
+            <div>No results yet — run a challenge or incident.</div>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
-            <table className="modal-table" style={{ width: '100%' }}>
+          <div className="table-scroll">
+            <table className="data-table">
               <thead>
                 <tr>
                   <th>Rank</th>
@@ -70,18 +75,14 @@ export function Leaderboard(_props: LeaderboardProps) {
               <tbody>
                 {entries.map((e, i) => (
                   <tr key={e.user}>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{i + 1}</td>
-                    <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {e.user}
-                    </td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{e.totalScore}</td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{e.challengesCompleted}</td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{e.incidentsResolved}</td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{e.modulesCompleted}</td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{e.hintsUsed}</td>
-                    <td style={{ fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
-                      {formatMttr(e.avgMttrSeconds)}
-                    </td>
+                    <td className="tnum">{i + 1}</td>
+                    <td className="truncate" title={e.user}>{e.user}</td>
+                    <td className="tnum">{e.totalScore}</td>
+                    <td className="tnum">{e.challengesCompleted}</td>
+                    <td className="tnum">{e.incidentsResolved}</td>
+                    <td className="tnum">{e.modulesCompleted}</td>
+                    <td className="tnum">{e.hintsUsed}</td>
+                    <td className="tnum td-nowrap">{formatMttr(e.avgMttrSeconds)}</td>
                   </tr>
                 ))}
               </tbody>

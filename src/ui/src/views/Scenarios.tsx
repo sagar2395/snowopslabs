@@ -5,6 +5,7 @@ import { useApiQuery } from '../hooks/useApiQuery'
 import type { Scenario, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
+import { Icon } from '../components/Icon'
 import { useJobRunner } from '../hooks/useJobRunner'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
@@ -54,10 +55,8 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
     }
   }
 
-  // Activating shows a requirements preview first (W-feedback): what the scenario
-  // will install and what it expects to already be present, so nothing runs as a
-  // surprise. Prerequisites are not auto-installed — the dialog says so and points
-  // to the Platform tab. If the detail fetch fails we fall back to a plain confirm.
+  // Activating shows a requirements preview first: what the scenario will install
+  // and what it expects to already be present. Prerequisites are not auto-installed.
   async function activate(name: string) {
     let s: Scenario | null = null
     try { s = await api.getScenario(name) } catch { /* fall back to a plain confirm */ }
@@ -70,27 +69,25 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
       danger: false,
       confirmLabel: 'Activate',
       message: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="stack-3">
           {comps.length > 0 && (
             <div>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>This will install</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
+              <div className="field-label">This will install</div>
+              <ul>
                 {comps.map(c => (
-                  <li key={c.name}>{c.name} <span style={{ color: 'var(--muted)', fontSize: 12 }}>({c.type}{c.namespace ? ` → ${c.namespace}` : ''})</span></li>
+                  <li key={c.name}>{c.name} <span className="hint-text">({c.type}{c.namespace ? ` → ${c.namespace}` : ''})</span></li>
                 ))}
               </ul>
             </div>
           )}
           {(plat.length > 0 || apps.length > 0) && (
             <div>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Requires (install these first if missing)</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
+              <div className="field-label">Requires (install these first if missing)</div>
+              <ul>
                 {plat.map(p => <li key={`p-${p}`}>Platform: <code>{p}</code></li>)}
                 {apps.map(a => <li key={`a-${a}`}>App: <code>{a}</code></li>)}
               </ul>
-              <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
-                Prerequisites are not installed automatically — add any missing ones in the Platform tab, then activate.
-              </div>
+              <div className="field-help">Prerequisites are not installed automatically — add any missing ones in the Platform tab, then activate.</div>
             </div>
           )}
           {comps.length === 0 && plat.length === 0 && apps.length === 0 && (
@@ -146,72 +143,81 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
     <>
       {loadError && (
         <div className="banner banner-warn" role="alert">
-          Refresh failed ({loadError}) — showing last known data.
-          <button className="btn btn-sm" style={{ marginLeft: 10 }} onClick={load} disabled={refreshing}>Retry</button>
+          <Icon name="alert-triangle" size={16} className="banner-icon" />
+          <span className="banner-body">Refresh failed ({loadError}) — showing last known data.</span>
+          <span className="banner-actions">
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>Retry</button>
+          </span>
         </div>
       )}
 
       <div className="card">
         <div className="card-header">
           <span className="card-title">Scenarios ({visible.length}{q ? ` of ${scenarios.length}` : ''})</span>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="card-tools">
             {scenarios.length > 3 && (
-              <input
-                type="search"
-                className="search-input"
-                placeholder="Filter scenarios…"
-                aria-label="Filter scenarios"
-                value={filter}
-                onChange={e => setFilter(e.target.value)}
-              />
+              <span className="search-field">
+                <Icon name="search" size={15} className="search-icon" />
+                <input
+                  type="search"
+                  className="search-input"
+                  placeholder="Filter scenarios…"
+                  aria-label="Filter scenarios"
+                  value={filter}
+                  onChange={e => setFilter(e.target.value)}
+                />
+              </span>
             )}
             <button className="btn btn-sm" onClick={load} disabled={refreshing}>
-              {refreshing ? 'Refreshing…' : 'Refresh'}
+              <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
           </div>
         </div>
 
         {visible.length === 0 ? (
           <div className="empty-state">
-            {q ? <>No scenarios match “{filter}”.</> : <>No scenarios found.<div className="empty-hint">Scenarios are discovered from <code>scenarios/&lt;name&gt;/scenario.yaml</code>.</div></>}
+            <span className="empty-icon"><Icon name="scenarios" size={24} /></span>
+            {q ? <div>No scenarios match “{filter}”.</div> : <><div>No scenarios found.</div><div className="empty-hint">Scenarios are discovered from <code>scenarios/&lt;name&gt;/scenario.yaml</code>.</div></>}
           </div>
         ) : (
-          visible.map(s => (
-            <div key={s.name} className="scenario-row">
-              <div className="scenario-info">
-                <div className="scenario-name">{s.displayName || s.name}</div>
-                {s.description && (
-                  <div className="scenario-desc">
-                    {s.description.length > 120 ? s.description.slice(0, 120) + '…' : s.description}
+          <div className="card-body">
+            {visible.map(s => (
+              <div key={s.name} className="scenario-row">
+                <div className="scenario-info">
+                  <div className="scenario-name">{s.displayName || s.name}</div>
+                  {s.description && (
+                    <div className="scenario-desc">
+                      {s.description.length > 120 ? s.description.slice(0, 120) + '…' : s.description}
+                    </div>
+                  )}
+                  <div className="scenario-tags">
+                    {s.category && <Badge variant="category">{s.category}</Badge>}
+                    {(s.runtimes || []).map(r => (
+                      <Badge key={r} variant="runtime">{r}</Badge>
+                    ))}
                   </div>
-                )}
-                <div className="scenario-tags">
-                  {s.category && <Badge variant="category">{s.category}</Badge>}
-                  {(s.runtimes || []).map(r => (
-                    <Badge key={r} variant="runtime">{r}</Badge>
-                  ))}
+                </div>
+                <Badge variant={s.active ? 'running' : 'stopped'}>{s.active ? 'Active' : 'Inactive'}</Badge>
+                <div className="scenario-actions">
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={s.active || busy[s.name]}
+                    onClick={() => activate(s.name)}
+                  >
+                    {busy[s.name] ? 'Working…' : (<><Icon name="play" size={14} />Activate</>)}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-danger"
+                    disabled={!s.active || busy[s.name]}
+                    onClick={() => deactivate(s.name)}
+                  >
+                    Deactivate
+                  </button>
+                  <button className="btn btn-sm" onClick={() => openDetail(s.name)}>Details</button>
                 </div>
               </div>
-              <Badge variant={s.active ? 'running' : 'stopped'}>{s.active ? 'Active' : 'Inactive'}</Badge>
-              <div className="scenario-actions">
-                <button
-                  className="btn btn-sm btn-primary"
-                  disabled={s.active || busy[s.name]}
-                  onClick={() => activate(s.name)}
-                >
-                  {busy[s.name] ? 'Working…' : 'Activate'}
-                </button>
-                <button
-                  className="btn btn-sm btn-danger"
-                  disabled={!s.active || busy[s.name]}
-                  onClick={() => deactivate(s.name)}
-                >
-                  Deactivate
-                </button>
-                <button className="btn btn-sm" onClick={() => openDetail(s.name)}>Details</button>
-              </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
       </div>
 
@@ -219,7 +225,7 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
       {detail && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) closeDetail() }}>
           <div className="modal-card" role="dialog" aria-modal="true" aria-label={`${detail.displayName || detail.name} details`}>
-            <button ref={modalCloseRef} className="modal-close" aria-label="Close details" onClick={closeDetail}>×</button>
+            <button ref={modalCloseRef} className="modal-close" aria-label="Close details" onClick={closeDetail}><Icon name="x" size={18} /></button>
 
             {detailLoading ? (
               <div className="loading" role="status">Loading…</div>
@@ -257,33 +263,37 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                 {detail.components && detail.components.length > 0 && (
                   <div className="modal-section">
                     <h3>Components</h3>
-                    <table className="modal-table">
-                      <thead>
-                        <tr><th>Name</th><th>Type</th><th>Namespace</th><th>Details</th></tr>
-                      </thead>
-                      <tbody>
-                        {detail.components.map(c => (
-                          <tr key={c.name}>
-                            <td>{c.name}</td>
-                            <td><Badge variant="category">{c.type}</Badge></td>
-                            <td style={{ color: 'var(--muted)' }}>{c.namespace || 'default'}</td>
-                            <td style={{ color: 'var(--muted)', fontSize: 12 }}>{c.chart || c.path || c.script || ''}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="table-scroll">
+                      <table className="data-table">
+                        <thead>
+                          <tr><th>Name</th><th>Type</th><th>Namespace</th><th>Details</th></tr>
+                        </thead>
+                        <tbody>
+                          {detail.components.map(c => (
+                            <tr key={c.name}>
+                              <td>{c.name}</td>
+                              <td><Badge variant="category">{c.type}</Badge></td>
+                              <td className="td-muted">{c.namespace || 'default'}</td>
+                              <td className="td-muted">{c.chart || c.path || c.script || ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 )}
 
                 {detail.explore?.urls && detail.explore.urls.length > 0 && (
                   <div className="modal-section">
                     <h3>Explore URLs</h3>
-                    {detail.explore.urls.map(u => (
-                      <div key={u.label} style={{ marginBottom: 6 }}>
-                        <a href={u.url} target="_blank" rel="noopener noreferrer">{u.label}</a>
-                        <span style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 8 }}>{u.url}</span>
-                      </div>
-                    ))}
+                    <div className="stack-2">
+                      {detail.explore.urls.map(u => (
+                        <div key={u.label} className="row-flex">
+                          <a href={u.url} target="_blank" rel="noopener noreferrer">{u.label}</a>
+                          <span className="hint-text">{u.url}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
 

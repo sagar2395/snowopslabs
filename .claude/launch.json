@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "snowops-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "src/ui", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}
