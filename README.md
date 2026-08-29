@@ -16,8 +16,9 @@ opinion.
 > [`docs/architecture/ARCHITECTURE.md`](docs/architecture/ARCHITECTURE.md) for
 > how it works.
 >
-> Runs on **macOS (Apple Silicon and Intel) and Linux**. Local clusters
-> (`k3d`/`kind`); a `SnowOps Labs` project.
+> Runs on **macOS (Apple Silicon and Intel), Linux, and Windows via WSL2** —
+> see [Running on WSL](#running-on-wsl). Local clusters (`k3d`/`kind`); a
+> `SnowOps Labs` project.
 
 <p align="center">
   <img src="docs/assets/demo-cli.gif" width="820"
