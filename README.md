@@ -47,52 +47,90 @@ is the signal you would see in production.
 
 ## Prerequisites
 
-- Docker running with **at least 4 CPUs and 8 GB of memory** available to the
-  engine. `make init` runs a 3-node k3d cluster plus the full platform stack
-  (Prometheus, Grafana, Alertmanager, Loki, …); the 2 GB a fresh Docker Desktop
-  or Colima VM ships with is not enough and shows up as API-server "TLS
-  handshake timeout" errors partway through the install.
-  - **Colima:** `colima start --cpu 4 --memory 8`
-  - **Docker Desktop:** Settings → Resources → raise Memory to 8 GB
-- `kubectl`, `helm` 3, and `k3d`
-- Go 1.24+ and Node 22+ to build from source
-- **Windows users:** run everything inside **WSL2** (Ubuntu recommended), not
-  native Windows. See [Running on WSL](#running-on-wsl) below.
+You need two things before anything else: **Docker with enough memory**, and the
+**cluster tools** (`kubectl`, `helm` 3, `k3d`). `labctl` installs the cluster
+tools for you — pin versions live in [`config/versions.env`](config/versions.env)
+— so the only manual step is giving Docker enough resources.
 
-```bash
-make setup-tools              # installs tools for PROFILE (default: k3d)
-make setup-tools PROFILE=kind # headless alternative
-```
+**Docker needs at least 4 CPUs and 8 GB of memory.** `labctl init` runs a 3-node
+k3d cluster plus the full platform stack (Prometheus, Grafana, Alertmanager,
+Loki, …). The 2 GB a fresh Docker VM ships with is not enough; it shows up as
+API-server "TLS handshake timeout" errors partway through the install. Set the
+resources the way your platform expects:
 
-Versions are pinned in [`config/versions.env`](config/versions.env).
+### macOS
+
+- **Docker Desktop:** Settings → Resources → raise Memory to **8 GB** (and CPUs
+  to 4), then Apply & Restart.
+- **Colima** (lightweight CLI alternative): `colima start --cpu 4 --memory 8`
+
+### Linux
+
+- Docker runs natively, so it already uses your machine's CPU and RAM — no VM to
+  resize. Just make sure the host has ≥4 CPUs and ≥8 GB free.
+- Install Docker Engine and add yourself to the `docker` group
+  (`sudo usermod -aG docker $USER`, then log out and back in) so `labctl` can
+  talk to the daemon without `sudo`.
+
+### Windows (WSL2)
+
+- Run **everything inside WSL2** (Ubuntu recommended) — never native Windows
+  PowerShell. Treat the WSL shell as a normal Linux box for every command below.
+- Either enable **Docker Desktop → Settings → Resources → WSL Integration** for
+  your distro, or run a native Docker daemon inside WSL. The same ≥4 CPU / 8 GB
+  applies — set it in `.wslconfig` on the Windows side if you use a native
+  daemon. Full details in [Running on WSL](#running-on-wsl).
+
+> **Building from source?** Contributors additionally need **Go 1.24+** and
+> **Node 22+**. End users following the Quickstart below do **not** — the
+> released `labctl` binary already has the UI embedded.
 
 ## Quickstart
 
-**You always need the repo checked out** — `labctl` runs the scripts under
-`scenarios/ platform/ runtimes/ bootstrap/` and `src/engine/` at runtime, so the
-release archive (which ships only the binary) is not standalone. Clone the repo, then get
-`labctl` on your `PATH` one of two ways. **`make` is optional** — everything below
-runs through `labctl` itself.
+The whole lab is driven by one command: **`labctl`**. Getting started is two
+steps — **(1) get the `labctl` binary** and **(2) check out the repo** — then you
+run the loop. `make` is **optional**; every step below uses `labctl` directly.
+
+> **Why you still need the repo.** `labctl` runs the scripts under
+> `scenarios/ platform/ runtimes/ bootstrap/` and `src/engine/` at runtime, so
+> the release archive (which ships only the binary) is not standalone. You get
+> the binary from a release **and** clone the repo — the binary just saves you
+> from installing Go/Node and building it yourself.
+
+### 1. Install `labctl`
+
+**Recommended: download a release (no Go/Node, no building).** This is the easy
+path for everyone who isn't changing `labctl` itself. Grab the archive for your
+platform from the [Releases page][releases], verify the checksum, and move the
+binary onto your `PATH`.
+
+Pick the block for your platform (the one-liner auto-detects your OS/arch):
+
+**macOS or Linux**
 
 ```bash
-git clone <repo-url> && cd snowopslabs
-cp config/.env.example .env
-```
+# Set the version you want from the Releases page, then run the block as-is.
+VERSION=1.0.0
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')          # darwin | linux
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')  # amd64 | arm64
+BASE="https://github.com/sagar2395/snowopslabs/releases/download/v${VERSION}"
 
-**Option A — download a release (no Go/Node toolchain, no `make`):**
-
-Grab the archive for your platform from the [Releases page][releases], verify it,
-and put `labctl` on your `PATH`:
-
-```bash
-# macOS arm64 shown; pick the archive matching your OS/arch
-tar xzf labctl_*_darwin_arm64.tar.gz
-shasum -a 256 -c checksums.txt        # verify (sha256sum -c on Linux)
-sudo mv labctl /usr/local/bin/        # now `labctl` runs from anywhere
+curl -fsSL "${BASE}/labctl_${VERSION}_${OS}_${ARCH}.tar.gz" -o labctl.tar.gz
+curl -fsSL "${BASE}/checksums.txt" -o checksums.txt
+# verify: sha256sum on Linux, shasum -a 256 on macOS
+(command -v sha256sum >/dev/null && sha256sum -c checksums.txt --ignore-missing) \
+  || shasum -a 256 -c checksums.txt --ignore-missing
+tar xzf labctl.tar.gz labctl
+sudo mv labctl /usr/local/bin/       # now `labctl` runs from anywhere
 labctl --version
 ```
 
-**Option B — build from source** (needs Go 1.24+ and Node 22+):
+**Windows (inside your WSL2 shell)** — there is no separate Windows build; WSL is
+Linux, so run the **macOS or Linux** block above exactly as written from inside
+your distro (it resolves to the `linux` archive automatically).
+
+**Alternative: build from source** (contributors, or anyone who wants the latest
+`main`). Needs **Go 1.24+** and **Node 22+**:
 
 ```bash
 make cli-build          # builds bin/labctl (UI embedded); run it as ./bin/labctl
@@ -101,14 +139,22 @@ make cli-install        # …or install onto PATH: copies to $(go env GOPATH)/bi
 
 > The Go source lives under `src/` (the root `make` targets delegate there), so
 > `make cli-build` leaves the binary at `./bin/labctl`. Use `make cli-install`
-> (ensure `$(go env GOPATH)/bin`
-> is on your `PATH`) or the release `mv` above to get a plain `labctl`. Run
-> `labctl` from inside the repo (it auto-detects the project root), or from
-> anywhere with `--project-dir /path/to/snowopslabs`.
+> (ensure `$(go env GOPATH)/bin` is on your `PATH`) to get a plain `labctl`.
 
-**Then run the loop — no `make` required:**
+### 2. Check out the repo and create your config
 
 ```bash
+git clone https://github.com/sagar2395/snowopslabs.git && cd snowopslabs
+cp config/.env.example .env
+```
+
+Run `labctl` from inside the repo (it auto-detects the project root), or from
+anywhere with `--project-dir /path/to/snowopslabs`.
+
+### 3. Run the loop — no `make` required
+
+```bash
+labctl doctor                         # check your OS has Docker + tools ready (fixes are printed inline)
 labctl setup-tools                    # install kubectl/helm/k3d for your OS (or skip; init does it)
 labctl init                           # setup-tools + create the cluster + install the platform
 labctl hosts add                      # map *.${DOMAIN_SUFFIX:-k3d.local} -> 127.0.0.1 (needs sudo; one-time)
