@@ -63,7 +63,15 @@ var rootCmd = &cobra.Command{
 		slog.Debug("config loaded", "root", cfg.ProjectRoot, "profile", cfg.Profile, "cluster", cfg.ClusterName)
 
 		exec = executor.New(cfg.ProjectRoot)
-		// Propagate resolved config values so all child scripts inherit them.
+		// Propagate every value declared in .env / runtime.env so child scripts
+		// and Make targets see them. config.Load no longer mutates the process
+		// environment, so this explicit hand-off replaces the old os.Setenv side
+		// effect (e.g. METRICS_PROVIDER, REGISTRY_TYPE consumed by make targets).
+		for k, v := range cfg.ScriptEnv {
+			exec.SetEnv(k, v)
+		}
+		// The core cluster knobs are set explicitly too, so they reach scripts
+		// even when a checkout has no .env / runtime.env (defaults still apply).
 		exec.SetEnv("CLUSTER_NAME", cfg.ClusterName)
 		exec.SetEnv("DOMAIN_SUFFIX", cfg.DomainSuffix)
 		exec.SetEnv("HTTP_PORT", cfg.HTTPPort)
