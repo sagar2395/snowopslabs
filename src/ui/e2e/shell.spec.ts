@@ -11,8 +11,9 @@ test('mounts and renders the app shell', async ({ page }) => {
   await page.goto('/')
   await expect(page.locator('body')).not.toBeEmpty()
   // The nav is the shell's load-bearing element: if it renders, view selection
-  // and the auth gate both resolved.
-  await expect(page.getByRole('tab', { name: /dashboard/i })).toBeVisible()
+  // and the auth gate both resolved. The W6 rebuild moved the strip of tabs to
+  // a sidebar of NavLinks, so the Dashboard section is now a link.
+  await expect(page.getByRole('link', { name: /dashboard/i })).toBeVisible()
 })
 
 test('renders without a reachable backend instead of blanking', async ({ page }) => {
