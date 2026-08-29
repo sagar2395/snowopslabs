@@ -44,20 +44,28 @@ before implementation. This keeps architectural direction coherent.
 
 ## Development setup
 
+Unlike end users (who download a released `labctl` binary — see the
+[README Quickstart](README.md#quickstart)), contributors **build `labctl` from
+source** so they can test their changes. You need **Go 1.24+** and **Node 22+**.
+The steps are identical on macOS, Linux, and Windows/WSL2 — on Windows run them
+inside your WSL2 distro, never native PowerShell.
+
 ```bash
-# Build the CLI, UI embedded (no committed binary). The Go module lives under
-# src/; the root make targets delegate there and the binary lands at bin/labctl.
+# 1. Build the CLI, UI embedded (no committed binary). The Go module lives under
+#    src/; the root make targets delegate there and the binary lands at bin/labctl.
 make cli-build
 
-# Run the gates. All four test layers are mandatory — see docs/TESTING.md.
+# 2. Run the gates. All four test layers are mandatory — see docs/TESTING.md.
 make test          # Go unit + shell (bats), race detector, coverage gate
 make test-ui       # vitest component tests
 make test-e2e      # playwright journeys
 make lint          # gofmt, golangci-lint, gosec, govulncheck, shellcheck,
                    # shfmt, the portability gate, and TypeScript strict
 
-# Bring up a local cluster + the platform to test changes end to end
-bin/labctl lab up && make platform-up
+# 3. Bring up a local cluster + platform to test changes end to end. Use the CLI
+#    you just built — it drives the same loop end users run:
+bin/labctl init                    # setup-tools + create cluster + install platform
+bin/labctl scenario up observability-sre
 ```
 
 New to the repo? Work through

@@ -4,10 +4,32 @@
 
 ## Installation
 
+**Recommended — download a release** (no Go/Node, no building). Pick the archive
+for your OS/arch from the [Releases page](https://github.com/sagar2395/snowopslabs/releases),
+verify the checksum, and move `labctl` onto your `PATH`. On **macOS**, **Linux**,
+and **Windows (inside WSL2)** use the same commands:
+
 ```bash
-make cli-build        # builds bin/labctl
+VERSION=1.0.0                                          # from the Releases page
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')            # darwin | linux
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+BASE="https://github.com/sagar2395/snowopslabs/releases/download/v${VERSION}"
+
+curl -fsSL "${BASE}/labctl_${VERSION}_${OS}_${ARCH}.tar.gz" | tar xz labctl
+sudo mv labctl /usr/local/bin/
+labctl --version
+```
+
+**Build from source** (contributors, or the latest `main`) — needs Go 1.24+ and
+Node 22+:
+
+```bash
+make cli-build        # builds bin/labctl (UI embedded)
 make cli-install      # builds + copies to PATH
 ```
+
+See the [Quickstart](../README.md#quickstart) for the full per-OS walkthrough
+(including checksum verification).
 
 ## Global Flags
 

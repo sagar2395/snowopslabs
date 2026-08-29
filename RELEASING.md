@@ -33,6 +33,32 @@ While pre-1.0, minor versions may include breaking changes, each called out in
 the release notes. The public SDK (`pkg/`) stability policy applies from the
 first 1.0 release.
 
+## TL;DR — cut and publish a release
+
+Pushing a signed `vX.Y.Z` tag is all it takes: the
+[`Release` workflow](.github/workflows/release.yaml) runs goreleaser, builds the
+four platform archives + `checksums.txt`, and opens a **draft** GitHub Release.
+You review the draft and click **Publish** — then users can download `labctl`
+directly instead of building from source.
+
+```bash
+# 1. (optional but recommended) dry-run the artifacts locally — publishes nothing
+cd src && goreleaser release --snapshot --clean --skip=publish && ls dist/ && cd ..
+
+# 2. tag the release (signed) and push it — this triggers the Release workflow
+git tag -s v1.0.0 -m "v1.0.0"
+git push origin v1.0.0
+
+# 3. review the draft Release on GitHub, then Publish it (via the web UI or gh):
+gh release view v1.0.0 --web        # inspect notes/artifacts/checksums
+gh release edit v1.0.0 --draft=false  # publish once it looks right
+```
+
+After publishing, the archives appear on the
+[Releases page](https://github.com/sagar2395/snowopslabs/releases) and the
+download commands in the [README Quickstart](README.md#quickstart) work as-is.
+The step-by-step version follows.
+
 ## Release steps (maintainer)
 
 1. Ensure `main` is green (the full CI suite, including the `release-config` job
