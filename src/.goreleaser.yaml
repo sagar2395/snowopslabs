@@ -15,6 +15,7 @@ before:
   hooks:
     - make ui-build
     - bash -c 'mkdir -p internal/webui/dist && cp -R ui/dist/. internal/webui/dist/'
+    - bash -c 'cp ../README.md ../LICENSE ../NOTICE .'
 
 builds:
   - id: labctl
@@ -39,16 +40,12 @@ archives:
     formats:
       - tar.gz
     name_template: "labctl_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    # goreleaser runs from src/ (this module holds go.mod); the README and legal
-    # files live at the repo root one level up. strip_parent flattens them into
-    # the archive root so the artifact layout is unchanged.
+    # Staged into src/ by the `before` hook above (goreleaser v2 can't glob a
+    # `..` path). Referenced by plain name so they land at the archive root.
     files:
-      - src: ../README.md
-        strip_parent: true
-      - src: ../LICENSE
-        strip_parent: true
-      - src: ../NOTICE
-        strip_parent: true
+      - README.md
+      - LICENSE
+      - NOTICE
 
 checksum:
   name_template: "checksums.txt"

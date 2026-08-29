@@ -1,0 +1,6 @@
+# Root docs/legal files copied in by the goreleaser `before` hook so they can be
+# bundled into release archives (goreleaser v2 can't glob a `..` parent path).
+# The originals live at the repo root; these are transient build-time copies.
+/README.md
+/LICENSE
+/NOTICE
