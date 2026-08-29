@@ -19,6 +19,11 @@ opinion.
 > Runs on **macOS (Apple Silicon and Intel) and Linux**. Local clusters
 > (`k3d`/`kind`); a `SnowOps Labs` project.
 
+<p align="center">
+  <img src="docs/assets/demo-cli.gif" width="820"
+       alt="labctl walking the scenario catalog, listing the built-in incident library, and validating every declarative file — real command output.">
+</p>
+
 ## The four loops
 
 | Loop | What you do | Command |
@@ -44,6 +49,35 @@ is the signal you would see in production.
 | **Challenges** | Timed, graded runs with hidden hints |
 | **Apps** | `go-api` (HTTP + metrics + tracing), `echo-server` (HTTP + Redis) |
 | **CLI + UI** | `labctl` — one binary with the web dashboard embedded |
+
+## See it in action
+
+Every asset below is real `labctl` output and the actual embedded UI — no mockups.
+
+**Inspect a scenario before you run it.** `labctl scenario info` shows exactly
+what a scenario installs — its stages, objectives, the machine-checked
+verifications that grade you, and copy-paste explore hints:
+
+<p align="center">
+  <img src="docs/assets/demo-scenario-info.gif" width="860"
+       alt="labctl scenario info observability-sre — prerequisites, staged installs, objectives, checks, and explore commands.">
+</p>
+
+**Drive it from a browser.** `labctl ui` serves an embedded web dashboard at
+`http://localhost:3939` — no extra install — and it follows your system
+light/dark theme:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)"  srcset="docs/assets/ui-scenarios.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/assets/ui-scenarios-light.png">
+  <img alt="SnowOps Labs web dashboard — the scenario catalog, with category tags and one-click activation." src="docs/assets/ui-scenarios.png">
+</picture>
+
+More of the dashboard — click any thumbnail for full size:
+
+| Fault library | Platform components | Operate hub |
+|---|---|---|
+| [<img src="docs/assets/ui-incidents.png" alt="Incident library — reversible faults with severity and verified badges">](docs/assets/ui-incidents.png) | [<img src="docs/assets/ui-platform.png" alt="Platform components grouped by category, each installable with one click">](docs/assets/ui-platform.png) | [<img src="docs/assets/ui-dashboard.png" alt="Dashboard — cluster status, platform components, and app controls (shown before labctl init, so the cluster reads Disconnected)">](docs/assets/ui-dashboard.png) |
 
 ## Prerequisites
 
