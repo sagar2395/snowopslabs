@@ -33,7 +33,6 @@ github.com/sagar2395/snowopslabs/internal/services    55.9   W3  moved onto the 
 github.com/sagar2395/snowopslabs/internal/platform    76.5   W3  moved onto the run engine
 github.com/sagar2395/snowopslabs/internal/lab         76.3   W3  moved onto the run engine
 github.com/sagar2395/snowopslabs/internal/learn       76.7   W7  reworked with the assessment UI
-github.com/sagar2395/snowopslabs/internal/config      71.1   W1  layered config resolution reworked alongside the store
 
 # Trimmed in W0 (OCI resolver removed); the remaining gap is copyTree's I/O
 # error branches, covered when the content-path loader lands.
