@@ -14,6 +14,7 @@ they are meaningful without a running cluster.
 | `ui-incidents.png` | Incident library | `gen/capture-ui.mjs` |
 | `ui-platform.png` | Platform components | `gen/capture-ui.mjs` |
 | `ui-dashboard.png` | Operate hub (shown pre-`init`, so the cluster reads *Disconnected*) | `gen/capture-ui.mjs` |
+| `brand/` | Logo, icon mark, favicon, social preview — see [`brand/README.md`](brand/README.md) | `gen/brand.mjs` |
 
 ## Regenerating
 

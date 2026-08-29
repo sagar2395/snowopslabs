@@ -214,7 +214,7 @@ code, pre, .mono { font-family: var(--font-mono); }
   width: 32px;
   height: 32px;
   border-radius: var(--radius-md);
-  color: var(--on-accent);
+  color: #f8fafc;                       /* white crystal on the accent tile */
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   box-shadow: var(--shadow-sm);
   flex-shrink: 0;
