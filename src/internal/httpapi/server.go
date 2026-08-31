@@ -5,12 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,6 +45,12 @@ type Server struct {
 	router    *mux.Router
 	upgrader  websocket.Upgrader
 	uiFS      fs.FS
+	// uiDir, when set (via WithUIDir / LABCTL_UI_DIR), serves the UI live from
+	// this directory on disk instead of the embedded bundle — so UI edits show
+	// after `npm run build` with no Go rebuild. uiSource records the resolved
+	// choice (source + bundle hash) for the startup banner.
+	uiDir    string
+	uiSource string
 
 	// runStore is the durable run store the run console reads (W3/W6). It is the
 	// same database labctl writes through the run engine, so the UI shows runs
@@ -76,6 +86,14 @@ func WithMetrics(app *metrics.App) ServerOption {
 // best-effort when no store is provided.
 func WithRunStore(st *store.Store) ServerOption {
 	return func(s *Server) { s.runStore = st }
+}
+
+// WithUIDir serves the UI live from a directory on disk (via http.Dir) instead
+// of the embedded bundle. Used by `labctl ui` when LABCTL_UI_DIR / --ui-dir is
+// set, so a developer sees UI changes after `npm run build` without rebuilding
+// the binary. An empty dir leaves the embedded bundle in effect.
+func WithUIDir(dir string) ServerOption {
+	return func(s *Server) { s.uiDir = dir }
 }
 
 // NewServer creates a new API server. The embeddedUI parameter should be the
@@ -211,17 +229,63 @@ func (s *Server) setupRoutes() {
 		s.router.Handle("/metrics", s.metrics.Handler())
 	}
 
-	// Serve UI — use embedded FS if available, fall back to filesystem for dev.
-	var uiFS http.FileSystem
+	s.router.PathPrefix("/").Handler(spaHandler(s.resolveUIFS()))
+}
+
+// resolveUIFS decides where the UI is served from and records a startup banner
+// (UIInfo) naming the source and the built bundle, so a stale server process is
+// obvious rather than silently serving old code. Order: an explicit on-disk
+// uiDir (dev live-reload), then the embedded bundle, then a dev-checkout dist on
+// disk (src/ui/dist — the Vite output — or a legacy ui/dist).
+func (s *Server) resolveUIFS() http.FileSystem {
+	if s.uiDir != "" {
+		s.uiSource = fmt.Sprintf("UI from disk (live): %s [%s]", s.uiDir, uiBundleName(http.Dir(s.uiDir)))
+		return http.Dir(s.uiDir)
+	}
 	if s.uiFS != nil {
 		if _, err := fs.Stat(s.uiFS, "index.html"); err == nil {
-			uiFS = http.FS(s.uiFS)
+			fsys := http.FS(s.uiFS)
+			s.uiSource = fmt.Sprintf("embedded UI [%s] — rebuild with `make cli-build` to update", uiBundleName(fsys))
+			return fsys
 		}
 	}
-	if uiFS == nil {
-		uiFS = http.Dir(s.cfg.ProjectRoot + "/ui/dist")
+	// Dev checkout with no embedded bundle: serve the Vite output from disk.
+	for _, p := range []string{
+		filepath.Join(s.cfg.ProjectRoot, "src", "ui", "dist"),
+		filepath.Join(s.cfg.ProjectRoot, "ui", "dist"),
+	} {
+		if _, err := os.Stat(filepath.Join(p, "index.html")); err == nil {
+			s.uiSource = fmt.Sprintf("UI from disk: %s [%s]", p, uiBundleName(http.Dir(p)))
+			return http.Dir(p)
+		}
 	}
-	s.router.PathPrefix("/").Handler(spaHandler(uiFS))
+	fallback := filepath.Join(s.cfg.ProjectRoot, "src", "ui", "dist")
+	s.uiSource = "UI not found (no embedded bundle and no built dist) — run `make ui`"
+	return http.Dir(fallback)
+}
+
+// UIInfo returns a one-line description of the resolved UI source and its built
+// bundle hash, for `labctl ui` to print on startup.
+func (s *Server) UIInfo() string { return s.uiSource }
+
+var uiBundleRe = regexp.MustCompile(`assets/index-[A-Za-z0-9_-]+\.(?:js|css)`)
+
+// uiBundleName reads index.html and returns the hashed entry-bundle filename,
+// which changes on every UI build — the fingerprint that tells two builds apart.
+func uiBundleName(fsys http.FileSystem) string {
+	f, err := fsys.Open("index.html")
+	if err != nil {
+		return "no index.html"
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, 1<<16))
+	if err != nil {
+		return "unreadable"
+	}
+	if m := uiBundleRe.FindString(string(b)); m != "" {
+		return strings.TrimPrefix(m, "assets/")
+	}
+	return "unknown bundle"
 }
 
 // spaHandler serves static UI assets, falling back to index.html for any path
@@ -285,12 +349,14 @@ func (s *Server) registerAPI(api *mux.Router, version string) {
 	api.HandleFunc("/status", s.handleStatus).Methods("GET", "OPTIONS")
 	api.HandleFunc("/jobs", s.handleJobs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/apps", s.handleListApps).Methods("GET", "OPTIONS")
+	api.HandleFunc("/apps/{name}/detail", s.handleAppDetail).Methods("GET", "OPTIONS")
 	api.HandleFunc("/apps/{name}/build", s.handleAppBuild).Methods("POST", "OPTIONS")
 	api.HandleFunc("/apps/{name}/deploy", s.handleAppDeploy).Methods("POST", "OPTIONS")
 	api.HandleFunc("/apps/{name}/destroy", s.handleAppDestroy).Methods("POST", "OPTIONS")
 	api.HandleFunc("/platform", s.handlePlatformStatus).Methods("GET", "OPTIONS")
 	api.HandleFunc("/platform/up", s.handlePlatformUp).Methods("POST", "OPTIONS")
 	api.HandleFunc("/platform/down", s.handlePlatformDown).Methods("POST", "OPTIONS")
+	api.HandleFunc("/platform/component/{category}/{name}", s.handlePlatformComponentDetail).Methods("GET", "OPTIONS")
 	api.HandleFunc("/platform/component/{category}/{name}/up", s.handleComponentUp).Methods("POST", "OPTIONS")
 	api.HandleFunc("/platform/component/{category}/{name}/down", s.handleComponentDown).Methods("POST", "OPTIONS")
 	api.HandleFunc("/dashboards", s.handleDashboardURLs).Methods("GET", "OPTIONS")

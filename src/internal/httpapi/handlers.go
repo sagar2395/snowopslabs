@@ -15,6 +15,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/sagar2395/snowopslabs/internal/appdetail"
 	"github.com/sagar2395/snowopslabs/internal/config"
 	"github.com/sagar2395/snowopslabs/internal/k8s"
 	"github.com/sagar2395/snowopslabs/internal/scenario"
@@ -198,6 +199,35 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+// handleAppDetail returns the "how it's built and deployed" view for one app:
+// overview, stack, and the actual Dockerfile + Helm chart with their repo paths.
+func (s *Server) handleAppDetail(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+	if !isValidName(name) {
+		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid app name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+		return
+	}
+	apps, _ := config.ListApps(s.cfg.ProjectRoot)
+	found := false
+	for _, a := range apps {
+		if a == name {
+			found = true
+			break
+		}
+	}
+	if !found {
+		respondError(w, r, http.StatusNotFound, "not_found", fmt.Sprintf("app %q not found", name))
+		return
+	}
+
+	build, deploy, namespace, valuesFile := "", "", "", ""
+	if appCfg, _ := config.LoadAppConfig(s.cfg.ProjectRoot, name); appCfg != nil {
+		build, deploy, namespace, valuesFile = appCfg.BuildStrategy, appCfg.DeployStrategy, appCfg.Namespace, appCfg.HelmValues
+	}
+	detail := appdetail.Build(s.cfg.ProjectRoot, name, build, deploy, namespace, valuesFile)
+	respondJSON(w, http.StatusOK, detail)
 }
 
 func (s *Server) handleAppDeploy(w http.ResponseWriter, r *http.Request) {
