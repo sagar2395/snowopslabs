@@ -3,9 +3,11 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -57,6 +59,9 @@ type AppStatusResp struct {
 	// app's ingress to be enabled and the host resolvable (a /etc/hosts entry
 	// for k3d/kind), which the UI notes.
 	URL string `json:"url,omitempty"`
+	// HPA carries live autoscaler state when an HPA (KEDA-managed included)
+	// targets the app; nil otherwise, so the UI shows the plain replica count.
+	HPA *k8s.HPAStatus `json:"hpa,omitempty"`
 }
 
 // appURL builds the conventional ingress URL for a deployed app, or "" when the
@@ -138,6 +143,13 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				appResp.Replicas = status.Replicas
 				appResp.Ready = status.Ready
 			}
+			// Surface live autoscaler state so the UI can show why the app scaled,
+			// without a terminal. Only worth querying once it's deployed.
+			if appResp.Deployed {
+				if hpa, err := k8s.GetHPAStatus(ctx, ns, appName); err == nil && hpa.Present {
+					appResp.HPA = hpa
+				}
+			}
 			appResp.URL = appURL(appName, s.cfg.DomainSuffix, appResp.Deployed)
 		}
 		resp.Apps = append(resp.Apps, appResp)
@@ -172,6 +184,13 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 				appResp.Deployed = status.Deployed
 				appResp.Replicas = status.Replicas
 				appResp.Ready = status.Ready
+			}
+			// Surface live autoscaler state so the UI can answer "why did it
+			// scale" without a terminal. Only worth querying once the app is up.
+			if appResp.Deployed {
+				if hpa, err := k8s.GetHPAStatus(ctx, ns, appName); err == nil && hpa.Present {
+					appResp.HPA = hpa
+				}
 			}
 			appResp.URL = appURL(appName, s.cfg.DomainSuffix, appResp.Deployed)
 		}
@@ -382,6 +401,96 @@ func (s *Server) handleComponentDown(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
 
+// ScenarioRef is a compact scenario pointer for the "used in" list.
+type ScenarioRef struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+}
+
+// PlatformComponentDetail is the per-tool details payload: what it is, how it's
+// installed, and which scenarios depend on it.
+type PlatformComponentDetail struct {
+	Category        string        `json:"category"`
+	Name            string        `json:"name"`
+	Namespace       string        `json:"namespace"`
+	Installed       bool          `json:"installed"`
+	Description     string        `json:"description"`
+	Provides        []string      `json:"provides"`
+	Ports           []string      `json:"ports"`
+	Dependencies    []string      `json:"dependencies"`
+	Resources       []string      `json:"resources"`
+	Chart           string        `json:"chart"`
+	InstallCommands []string      `json:"installCommands"`
+	UsedInScenarios []ScenarioRef `json:"usedInScenarios"`
+}
+
+// nonNilStrings returns s, or an empty (non-nil) slice when s is nil, so it
+// marshals to a JSON [] instead of null — the UI indexes .length on these.
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
+}
+
+func (s *Server) handlePlatformComponentDetail(w http.ResponseWriter, r *http.Request) {
+	category := mux.Vars(r)["category"]
+	name := mux.Vars(r)["name"]
+	if !isValidName(category) || !isValidName(name) {
+		respondError(w, r, http.StatusBadRequest, "invalid_input", "invalid category or component name: must match ^[a-zA-Z0-9_-]{1,64}$")
+		return
+	}
+	category = s.resolveCategory(category)
+	p, err := s.registry.GetProvider(category, name)
+	if err != nil {
+		respondError(w, r, http.StatusNotFound, "not_found", err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	installed := k8s.NamespaceExists(ctx, p.Namespace())
+	if p.SharesNamespace() {
+		installed = k8s.HelmReleaseExists(ctx, p.Namespace(), p.Name)
+	}
+
+	meta := p.Meta()
+	// Guarantee non-nil slices: a Go nil slice marshals to JSON null, and the UI
+	// reads e.g. detail.provides.length — a null there crashes the details view.
+	detail := PlatformComponentDetail{
+		Category:        category,
+		Name:            name,
+		Namespace:       p.Namespace(),
+		Installed:       installed,
+		Description:     meta.Description,
+		Provides:        nonNilStrings(meta.Provides),
+		Ports:           nonNilStrings(meta.Ports),
+		Dependencies:    nonNilStrings(meta.Dependencies),
+		Resources:       nonNilStrings(meta.Resources),
+		Chart:           meta.Chart,
+		InstallCommands: nonNilStrings(p.InstallCommands()),
+		UsedInScenarios: s.scenariosUsingComponent(category, name),
+	}
+	respondJSON(w, http.StatusOK, detail)
+}
+
+// scenariosUsingComponent returns the scenarios whose platform prerequisites
+// reference this component, matching by full "category/name" key, bare category,
+// or bare name — the three forms scenarios use to name a prerequisite.
+func (s *Server) scenariosUsingComponent(category, name string) []ScenarioRef {
+	full := category + "/" + name
+	out := []ScenarioRef{}
+	for _, sc := range s.scenes.List() {
+		for _, prereq := range sc.Prerequisites.Platform {
+			if prereq == full || prereq == category || prereq == name {
+				out = append(out, ScenarioRef{Name: sc.Name, DisplayName: sc.DisplayName})
+				break
+			}
+		}
+	}
+	return out
+}
+
 func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {
 	respondCatalog(w, r, s.scenes.Status())
 }
@@ -398,18 +507,43 @@ func (s *Server) handleScenarioInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve template variables in explore URLs and commands
-	for i := range sc.Explore.URLs {
-		sc.Explore.URLs[i].URL = s.scenes.ResolveTemplate(sc.Explore.URLs[i].URL)
+	// Resolve template vars for display, using the scenario's parameter defaults
+	// so {{.Param}} shows a real value. Work on a copy with fresh slices — sc is
+	// the cached scenario and must not be mutated.
+	defaults := s.scenes.ParamDefaults(sc)
+	resolve := func(in string) string { return s.scenes.ResolveTemplateWithParams(in, defaults) }
+	resp := *sc
+
+	urls := make([]scenario.ExploreURL, len(sc.Explore.URLs))
+	for i, u := range sc.Explore.URLs {
+		u.URL = resolve(u.URL)
+		urls[i] = u
 	}
-	for i := range sc.Explore.Commands {
-		sc.Explore.Commands[i].Command = s.scenes.ResolveTemplate(sc.Explore.Commands[i].Command)
+	cmds := make([]scenario.ExploreCommand, len(sc.Explore.Commands))
+	for i, c := range sc.Explore.Commands {
+		c.Command = resolve(c.Command)
+		cmds[i] = c
 	}
-	for i := range sc.Explore.Tips {
-		sc.Explore.Tips[i] = s.scenes.ResolveTemplate(sc.Explore.Tips[i])
+	tips := make([]string, len(sc.Explore.Tips))
+	for i, t := range sc.Explore.Tips {
+		tips[i] = resolve(t)
+	}
+	resp.Explore = scenario.Explore{URLs: urls, Commands: cmds, Tips: tips}
+
+	// Inline each snippet's content (from its file or inline YAML) so the UI can
+	// show the actual manifest a learner would apply.
+	if len(sc.Snippets) > 0 {
+		snips := make([]scenario.Snippet, len(sc.Snippets))
+		for i, sn := range sc.Snippets {
+			if content, err := s.scenes.SnippetContent(sc, sn); err == nil {
+				sn.YAML = content
+			}
+			snips[i] = sn
+		}
+		resp.Snippets = snips
 	}
 
-	respondJSON(w, http.StatusOK, sc)
+	respondJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleScenarioUp(w http.ResponseWriter, r *http.Request) {
@@ -418,10 +552,23 @@ func (s *Server) handleScenarioUp(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid scenario name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
 		return
 	}
+	// Optional scenario parameter overrides: {"params": {"threshold": "15", ...}}.
+	// An empty or absent body means "use the defaults" — same as before.
+	var body struct {
+		Params map[string]string `json:"params"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&body) // tolerate an empty body
+	}
+
 	jobID := s.exec.NextActionID()
 	label := fmt.Sprintf("Activate scenario: %s", name)
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
+		// Stage overrides for this activation only (serialised per engine, like
+		// the existing SetOutput usage).
+		s.scenes.SetActivationParams(body.Params)
+		defer s.scenes.SetActivationParams(nil)
 		s.exec.BroadcastEnd(jobID, label, s.scenes.Up(name, s.exec, false))
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
@@ -592,7 +739,7 @@ func (s *Server) handleDashboardURLs(w http.ResponseWriter, r *http.Request) {
 	if k8s.ServiceExists(ctx, monitoringNS, "loki-gateway") {
 		dashboards = append(dashboards, DashboardURL{
 			Name: "loki", Label: "Logs (Loki)",
-			URL:       fmt.Sprintf("http://grafana.%s/explore?orgId=1&left=%%7B%%22datasource%%22:%%22Loki%%22%%7D", domain),
+			URL:       grafanaExploreURL(domain, "loki", "loki", ""),
 			Available: true, Category: "monitoring",
 		})
 	}
@@ -600,12 +747,46 @@ func (s *Server) handleDashboardURLs(w http.ResponseWriter, r *http.Request) {
 	if k8s.ServiceExists(ctx, monitoringNS, "tempo") {
 		dashboards = append(dashboards, DashboardURL{
 			Name: "tempo", Label: "Traces (Tempo)",
-			URL:       fmt.Sprintf("http://grafana.%s/explore?orgId=1&left=%%7B%%22datasource%%22:%%22Tempo%%22%%7D", domain),
+			URL:       grafanaExploreURL(domain, "tempo", "tempo", ""),
 			Available: true, Category: "monitoring",
 		})
 	}
 
 	respondJSON(w, http.StatusOK, dashboards)
+}
+
+// grafanaExploreURL builds a Grafana Explore deep link for a datasource. Grafana
+// 11+ replaced the old ?left=<json> parameter with ?panes=<json> keyed by a pane
+// id, and resolves the datasource by UID (not name) — so a name-based link opens
+// an empty Explore. The datasources are provisioned with stable UIDs
+// (loki/tempo/prometheus), which these links reference. expr may be empty to open
+// Explore with the datasource selected and no pre-filled query.
+func grafanaExploreURL(domain, dsType, dsUID, expr string) string {
+	type dsRef struct {
+		Type string `json:"type"`
+		UID  string `json:"uid"`
+	}
+	type query struct {
+		RefID      string `json:"refId"`
+		Datasource dsRef  `json:"datasource"`
+		Expr       string `json:"expr,omitempty"`
+	}
+	type pane struct {
+		Datasource string            `json:"datasource"`
+		Queries    []query           `json:"queries"`
+		Range      map[string]string `json:"range"`
+	}
+	panes := map[string]pane{
+		"exp": {
+			Datasource: dsUID,
+			Queries:    []query{{RefID: "A", Datasource: dsRef{Type: dsType, UID: dsUID}, Expr: expr}},
+			// 6h (vs Grafana's 1h default) so the lab's quiet apps, which log
+			// mostly at startup, still show something when logs are first opened.
+			Range: map[string]string{"from": "now-6h", "to": "now"},
+		},
+	}
+	b, _ := json.Marshal(panes)
+	return fmt.Sprintf("http://grafana.%s/explore?orgId=1&schemaVersion=1&panes=%s", domain, url.QueryEscape(string(b)))
 }
 
 // WebSocket keepalive tuning. Pings keep idle connections alive through

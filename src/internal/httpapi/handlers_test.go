@@ -41,6 +41,31 @@ func TestIsValidName(t *testing.T) {
 	}
 }
 
+// TestPlatformComponentDetail_EmptyMarshalsAsArrays guards the platform details
+// view: the UI reads .provides.length etc., so a nil slice serialized as JSON
+// null would crash it. The handler routes empty lists through nonNilStrings (and
+// seeds usedInScenarios non-nil), so the payload must carry [] everywhere.
+func TestPlatformComponentDetail_EmptyMarshalsAsArrays(t *testing.T) {
+	detail := PlatformComponentDetail{
+		Provides:        nonNilStrings(nil),
+		Ports:           nonNilStrings(nil),
+		Dependencies:    nonNilStrings(nil),
+		Resources:       nonNilStrings(nil),
+		InstallCommands: nonNilStrings(nil),
+		UsedInScenarios: []ScenarioRef{},
+	}
+	b, err := json.Marshal(detail)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	body := string(b)
+	for _, field := range []string{"provides", "ports", "dependencies", "resources", "installCommands", "usedInScenarios"} {
+		if strings.Contains(body, `"`+field+`":null`) {
+			t.Errorf("%q marshaled as null; want []: %s", field, body)
+		}
+	}
+}
+
 // setVars injects gorilla/mux path variables into a request for handler testing.
 func setVars(r *http.Request, vars map[string]string) *http.Request {
 	return mux.SetURLVars(r, vars)

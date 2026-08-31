@@ -1,7 +1,8 @@
+import { useState } from 'react'
 import { api } from '../api/client'
 import { qk } from '../lib/queryClient'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { PlatformProviderEntry, DashboardURL, NotifyFn } from '../types'
+import type { PlatformProviderEntry, PlatformComponentDetail, DashboardURL, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
@@ -45,6 +46,30 @@ export function Platform({ notify, requestConfirm }: PlatformProps) {
   const dashQ = useApiQuery(qk.dashboards, () => api.getDashboards().catch(() => [] as DashboardURL[]), { refetchInterval: 15_000 })
   const dashboards = (dashQ.data ?? []).filter(d => d.available)
   const { busy, run } = useJobRunner(notify)
+  const [detail, setDetail] = useState<PlatformComponentDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
+  async function openDetail(entry: PlatformProviderEntry) {
+    setDetailLoading(true)
+    setDetail({ category: entry.category, name: entry.name, namespace: '', installed: entry.installed, description: '', provides: [], ports: [], dependencies: [], resources: [], chart: '', installCommands: [], usedInScenarios: [] })
+    try {
+      setDetail(await api.getComponent(entry.category, entry.name))
+    } catch (e) {
+      notify('error', 'Failed to load component details', e instanceof Error ? e.message : String(e))
+      setDetail(null)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  async function copyCmd(cmd: string) {
+    try {
+      await navigator.clipboard.writeText(cmd)
+      notify('success', 'Copied to clipboard', '')
+    } catch {
+      notify('error', 'Copy failed', 'Clipboard access denied — copy the command manually.')
+    }
+  }
 
   function install(entry: PlatformProviderEntry, installedSibling?: PlatformProviderEntry) {
     const key = `${entry.category}/${entry.name}`
@@ -131,6 +156,7 @@ export function Platform({ notify, requestConfirm }: PlatformProps) {
                           <Badge variant={entry.installed ? 'running' : 'stopped'}>
                             {entry.installed ? 'Installed' : 'Not Installed'}
                           </Badge>
+                          <button className="btn btn-sm" onClick={() => openDetail(entry)}>Details</button>
                           {entry.installed ? (
                             <button
                               className="btn btn-sm btn-danger"
@@ -197,15 +223,123 @@ export function Platform({ notify, requestConfirm }: PlatformProps) {
             <div className="empty-hint">Install a component above (e.g. Grafana, Traefik, ArgoCD) and its dashboard link appears here.</div>
           </div>
         ) : (
-          <div className="quick-links">
-            {dashboards.map(d => (
-              <a key={d.name} className="quick-link" href={d.url} target="_blank" rel="noopener noreferrer">
-                {d.label} <Icon name="external" size={14} />
-              </a>
-            ))}
-          </div>
+          <>
+            <div className="quick-links">
+              {dashboards.map(d => (
+                <a key={d.name} className="quick-link" href={d.url} target="_blank" rel="noopener noreferrer">
+                  {d.label} <Icon name="external" size={14} />
+                </a>
+              ))}
+            </div>
+            {dashboards.some(d => d.name === 'grafana') && (
+              <div className="field-help cred-hint">
+                Grafana login: <code>admin</code> / <code>admin</code> (default — override with the <code>GRAFANA_ADMIN_PASSWORD</code> env var before installing).
+              </div>
+            )}
+          </>
         )}
       </div>
+
+      {detail && (
+        <ComponentDetailModal
+          detail={detail}
+          loading={detailLoading}
+          onClose={() => setDetail(null)}
+          onCopy={copyCmd}
+        />
+      )}
     </>
+  )
+}
+
+/** Per-tool details: what it is, what it provides/needs, the exact helm/kubectl
+ *  commands install.sh runs, and which scenarios depend on it. */
+function ComponentDetailModal({ detail, loading, onClose, onCopy }: {
+  detail: PlatformComponentDetail
+  loading: boolean
+  onClose: () => void
+  onCopy: (cmd: string) => void
+}) {
+  // The API can send JSON null for empty lists (Go nil slices); coerce to arrays
+  // so the `.length` reads below never crash the view.
+  const provides = detail.provides ?? []
+  const ports = detail.ports ?? []
+  const dependencies = detail.dependencies ?? []
+  const resources = detail.resources ?? []
+  const installCommands = detail.installCommands ?? []
+  const usedInScenarios = detail.usedInScenarios ?? []
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal-card" role="dialog" aria-modal="true" aria-label={`${detail.name} details`}>
+        <button className="modal-close" aria-label="Close details" onClick={onClose}><Icon name="x" size={18} /></button>
+
+        <div className="modal-header">
+          <h2>{detail.name}</h2>
+          <div className="modal-meta">
+            <Badge variant="category">{detail.category}</Badge>
+            <Badge variant={detail.installed ? 'running' : 'stopped'}>{detail.installed ? 'Installed' : 'Not Installed'}</Badge>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="loading" role="status">Loading…</div>
+        ) : (
+          <>
+            {detail.description && (
+              <div className="modal-section">
+                <h3>What it is</h3>
+                <p>{detail.description}</p>
+                {detail.chart && <div className="hint-text">Helm chart: <code>{detail.chart}</code> · Namespace: <code>{detail.namespace}</code></div>}
+              </div>
+            )}
+
+            {provides.length > 0 && (
+              <div className="modal-section">
+                <h3>What you can do with it</h3>
+                <ul>{provides.map((p, i) => <li key={i}>{p}</li>)}</ul>
+              </div>
+            )}
+
+            {(dependencies.length > 0 || ports.length > 0 || resources.length > 0) && (
+              <div className="modal-section">
+                <h3>Requires</h3>
+                {dependencies.length > 0 && <div className="field-help">Depends on: {dependencies.join(', ')}</div>}
+                {ports.length > 0 && <div className="field-help">Ports: {ports.join(', ')}</div>}
+                {resources.length > 0 && <div className="field-help">Cluster resources: {resources.join(', ')}</div>}
+              </div>
+            )}
+
+            {installCommands.length > 0 && (
+              <div className="modal-section">
+                <h3>How it's installed <span className="hint-text">(what the Install button runs)</span></h3>
+                {installCommands.map((cmd, i) => (
+                  <div key={i} className="cmd-block">
+                    <code>{cmd}</code>
+                    <button className="cmd-copy" onClick={() => onCopy(cmd)}>Copy</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="modal-section">
+              <h3>Used in scenarios</h3>
+              {usedInScenarios.length > 0 ? (
+                <div className="prereq-chips">
+                  {usedInScenarios.map(s => (
+                    <Badge key={s.name} variant="category">{s.displayName || s.name}</Badge>
+                  ))}
+                </div>
+              ) : (
+                <div className="field-help">No scenario lists this as a prerequisite — it's available for ad-hoc use.</div>
+              )}
+            </div>
+          </>
+        )}
+
+        <div className="card-footer">
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
   )
 }

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { api } from '../api/client'
 import { qk } from '../lib/queryClient'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { Scenario, NotifyFn } from '../types'
+import type { Scenario, ScenarioParameter, ScenarioCheck, ScenarioVerifyResult, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
@@ -14,14 +14,27 @@ interface ScenariosProps {
   requestConfirm: (req: ConfirmRequest) => void
 }
 
+/** A snippet/component path is stored relative to the scenario's own directory
+ *  (e.g. "manifests/scaledobject.yaml"). Show it from the repo root instead —
+ *  "scenarios/<name>/manifests/scaledobject.yaml" — so a learner can find the
+ *  file directly. Paths already rooted at "scenarios/" are left untouched. */
+function repoPath(scenarioName: string, path: string): string {
+  return path.startsWith('scenarios/') ? path : `scenarios/${scenarioName}/${path}`
+}
+
 export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
   const { data: scenarios = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.scenarios, api.listScenarios)
   const [filter, setFilter] = useState('')
   const [detail, setDetail] = useState<Scenario | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const { busy, run } = useJobRunner(notify)
+  const [verifying, setVerifying] = useState<Record<string, boolean>>({})
+  const [verifyResults, setVerifyResults] = useState<Record<string, ScenarioVerifyResult>>({})
   const modalCloseRef = useRef<HTMLButtonElement>(null)
   const detailOpener = useRef<Element | null>(null)
+  // Parameter values for the activation being confirmed, so onConfirm reads the
+  // latest edits from the dialog.
+  const activateParamsRef = useRef<Record<string, string>>({})
 
   // Modal: Esc to close, focus management
   useEffect(() => {
@@ -63,13 +76,23 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
     const plat = s?.prerequisites?.platform ?? []
     const apps = s?.prerequisites?.apps ?? []
     const comps = s?.components ?? []
-    const doRun = () => run(name, `Activate ${name}`, () => api.scenarioUp(name), () => load())
+    const paramDefs = s?.parameters ?? []
+    // Seed the shared ref with each parameter's default; the form mutates it in
+    // place, and doRun submits whatever it holds at confirm time.
+    activateParamsRef.current = Object.fromEntries(paramDefs.map(p => [p.name, p.default]))
+    const doRun = () => run(name, `Activate ${name}`, () => api.scenarioUp(name, activateParamsRef.current), () => load())
     requestConfirm({
       title: `Activate ${s?.displayName || name}?`,
       danger: false,
       confirmLabel: 'Activate',
       message: (
         <div className="stack-3">
+          {paramDefs.length > 0 && (
+            <div>
+              <div className="field-label">Parameters <span className="hint-text">(tune these to experiment — defaults reproduce the standard scenario)</span></div>
+              <ParamForm parameters={paramDefs} valuesRef={activateParamsRef} />
+            </div>
+          )}
           {comps.length > 0 && (
             <div>
               <div className="field-label">This will install</div>
@@ -106,6 +129,27 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
       confirmLabel: 'Deactivate',
       onConfirm: () => run(name, `Deactivate ${name}`, () => api.scenarioDown(name), () => load()),
     })
+  }
+
+  // Verify runs the scenario's checks and shows the per-check PASS/FAIL table
+  // (the CLI's `scenario verify` signal). Checks can fail while pods start, so a
+  // failure is surfaced as info, not an error.
+  async function verify(name: string) {
+    setVerifying(v => ({ ...v, [name]: true }))
+    try {
+      const res = await api.scenarioVerify(name)
+      setVerifyResults(r => ({ ...r, [name]: res }))
+      if (res.passed) {
+        notify('success', 'All checks passed', `${name} is in its expected state.`)
+      } else {
+        const failed = res.results.filter(c => !c.pass).length
+        notify('info', `${failed} of ${res.results.length} checks failing`, 'Checks can fail while pods are still starting — re-run in a moment to let them settle.')
+      }
+    } catch (e) {
+      notify('error', 'Verify failed', e instanceof Error ? e.message : String(e))
+    } finally {
+      setVerifying(v => ({ ...v, [name]: false }))
+    }
   }
 
   async function copyCmd(cmd: string) {
@@ -182,39 +226,50 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
         ) : (
           <div className="card-body">
             {visible.map(s => (
-              <div key={s.name} className="scenario-row">
-                <div className="scenario-info">
-                  <div className="scenario-name">{s.displayName || s.name}</div>
-                  {s.description && (
-                    <div className="scenario-desc">
-                      {s.description.length > 120 ? s.description.slice(0, 120) + '…' : s.description}
+              <div key={s.name} className="scenario-item">
+                <div className="scenario-row">
+                  <div className="scenario-info">
+                    <div className="scenario-name">{s.displayName || s.name}</div>
+                    {s.description && (
+                      <div className="scenario-desc">
+                        {s.description.length > 120 ? s.description.slice(0, 120) + '…' : s.description}
+                      </div>
+                    )}
+                    <div className="scenario-tags">
+                      {s.category && <Badge variant="category">{s.category}</Badge>}
+                      {(s.runtimes || []).map(r => (
+                        <Badge key={r} variant="runtime">{r}</Badge>
+                      ))}
                     </div>
-                  )}
-                  <div className="scenario-tags">
-                    {s.category && <Badge variant="category">{s.category}</Badge>}
-                    {(s.runtimes || []).map(r => (
-                      <Badge key={r} variant="runtime">{r}</Badge>
-                    ))}
+                  </div>
+                  <Badge variant={s.active ? 'running' : 'stopped'}>{s.active ? 'Active' : 'Inactive'}</Badge>
+                  <div className="scenario-actions">
+                    <button
+                      className="btn btn-sm btn-primary"
+                      disabled={s.active || busy[s.name]}
+                      onClick={() => activate(s.name)}
+                    >
+                      {busy[s.name] ? 'Working…' : (<><Icon name="play" size={14} />Activate</>)}
+                    </button>
+                    <button
+                      className="btn btn-sm btn-danger"
+                      disabled={!s.active || busy[s.name]}
+                      onClick={() => deactivate(s.name)}
+                    >
+                      Deactivate
+                    </button>
+                    <button
+                      className="btn btn-sm"
+                      title={s.active ? 'Run the scenario’s checks and show the pass/fail breakdown' : 'Activate the scenario before verifying'}
+                      disabled={!s.active || verifying[s.name]}
+                      onClick={() => verify(s.name)}
+                    >
+                      {verifying[s.name] ? 'Verifying…' : (<><Icon name="check-circle" size={14} />Verify</>)}
+                    </button>
+                    <button className="btn btn-sm" onClick={() => openDetail(s.name)}>Details</button>
                   </div>
                 </div>
-                <Badge variant={s.active ? 'running' : 'stopped'}>{s.active ? 'Active' : 'Inactive'}</Badge>
-                <div className="scenario-actions">
-                  <button
-                    className="btn btn-sm btn-primary"
-                    disabled={s.active || busy[s.name]}
-                    onClick={() => activate(s.name)}
-                  >
-                    {busy[s.name] ? 'Working…' : (<><Icon name="play" size={14} />Activate</>)}
-                  </button>
-                  <button
-                    className="btn btn-sm btn-danger"
-                    disabled={!s.active || busy[s.name]}
-                    onClick={() => deactivate(s.name)}
-                  >
-                    Deactivate
-                  </button>
-                  <button className="btn btn-sm" onClick={() => openDetail(s.name)}>Details</button>
-                </div>
+                {verifyResults[s.name] && <CheckResults result={verifyResults[s.name]} />}
               </div>
             ))}
           </div>
@@ -246,6 +301,13 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                   </div>
                 )}
 
+                {detail.objectives && detail.objectives.length > 0 && (
+                  <div className="modal-section">
+                    <h3>What you'll learn</h3>
+                    <ul>{detail.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>
+                  </div>
+                )}
+
                 {detail.prerequisites && (
                   <div className="modal-section">
                     <h3>Prerequisites</h3>
@@ -274,11 +336,30 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                               <td>{c.name}</td>
                               <td><Badge variant="category">{c.type}</Badge></td>
                               <td className="td-muted">{c.namespace || 'default'}</td>
-                              <td className="td-muted">{c.chart || c.path || c.script || ''}</td>
+                              <td className="td-muted">{c.chart || (c.path ? repoPath(detail.name, c.path) : c.script) || ''}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                  </div>
+                )}
+
+                {detail.snippets && detail.snippets.length > 0 && (
+                  <div className="modal-section">
+                    <h3>How it's implemented</h3>
+                    <div className="stack-3">
+                      {detail.snippets.map(sn => (
+                        <div key={sn.label} className="snippet">
+                          <div className="snippet-head">
+                            <span className="snippet-label">{sn.label}</span>
+                            {sn.yaml && <button className="cmd-copy" onClick={() => copyCmd(sn.yaml!)}>Copy</button>}
+                          </div>
+                          {sn.description && <div className="snippet-desc">{sn.description}</div>}
+                          {sn.path && <div className="hint-text snippet-source">source: <code>{repoPath(detail.name, sn.path)}</code></div>}
+                          {sn.yaml && <pre className="snippet-code">{sn.yaml}</pre>}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -317,6 +398,35 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                   </div>
                 )}
 
+                {detail.checks && detail.checks.length > 0 && (
+                  <div className="modal-section">
+                    <h3>What "success" checks <span className="hint-text">(run these with Verify)</span></h3>
+                    <div className="table-scroll">
+                      <table className="data-table">
+                        <thead>
+                          <tr><th>Check</th><th>Type</th><th>Asserts</th></tr>
+                        </thead>
+                        <tbody>
+                          {detail.checks.map(c => (
+                            <tr key={c.name}>
+                              <td>{c.name}</td>
+                              <td><Badge variant="category">{c.type || 'check'}</Badge></td>
+                              <td className="td-muted"><code>{checkAssertion(c)}</code></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {verifyResults[detail.name] && (
+                  <div className="modal-section">
+                    <h3>Verification</h3>
+                    <CheckResults result={verifyResults[detail.name]} />
+                  </div>
+                )}
+
                 <div className="card-footer">
                   <button
                     className="btn btn-primary"
@@ -332,6 +442,14 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                   >
                     Deactivate
                   </button>
+                  <button
+                    className="btn"
+                    disabled={!detail.active || verifying[detail.name]}
+                    title={detail.active ? 'Run the scenario’s checks' : 'Activate the scenario before verifying'}
+                    onClick={() => verify(detail.name)}
+                  >
+                    {verifying[detail.name] ? 'Verifying…' : 'Verify'}
+                  </button>
                   <button className="btn" onClick={closeDetail}>Close</button>
                 </div>
               </>
@@ -340,5 +458,90 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
         </div>
       )}
     </>
+  )
+}
+
+/** Renders a check's assertion as a compact expression, e.g.
+ *  "deployment/keda-operator {.status.readyReplicas} >= 1". */
+function checkAssertion(c: ScenarioCheck): string {
+  const subject = c.type === 'promql' ? c.query : [c.resource, c.jsonpath].filter(Boolean).join(' ')
+  return [subject, c.operator, c.value].filter(Boolean).join(' ')
+}
+
+/** Renders an editable field per scenario parameter inside the Activate dialog.
+ *  Values are mirrored into valuesRef.current so the dialog's confirm closure
+ *  submits the latest edits. Integer params render as bounded number inputs. */
+function ParamForm({ parameters, valuesRef }: { parameters: ScenarioParameter[]; valuesRef: React.MutableRefObject<Record<string, string>> }) {
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(parameters.map(p => [p.name, p.default])),
+  )
+  function update(name: string, v: string) {
+    valuesRef.current = { ...valuesRef.current, [name]: v }
+    setValues(prev => ({ ...prev, [name]: v }))
+  }
+  return (
+    <div className="param-form">
+      {parameters.map(p => {
+        const id = `param-${p.name}`
+        const isInt = p.type === 'int'
+        return (
+          <div key={p.name} className="param-field">
+            <label htmlFor={id}>
+              {p.displayName || p.name}
+              {isInt && (p.min !== undefined || p.max !== undefined) && (
+                <span className="hint-text"> ({p.min ?? '−∞'}–{p.max ?? '∞'})</span>
+              )}
+            </label>
+            <input
+              id={id}
+              type={isInt ? 'number' : 'text'}
+              className="param-input"
+              value={values[p.name] ?? ''}
+              min={isInt ? p.min : undefined}
+              max={isInt ? p.max : undefined}
+              onChange={e => update(p.name, e.target.value)}
+            />
+            {p.description && <div className="field-help">{p.description}</div>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/** Renders the per-check PASS/FAIL breakdown from a scenario verify run, plus a
+ *  summary banner. Mirrors the CLI's `scenario verify` table so a browser-only
+ *  user gets the same signal: which checks hold, and why a failing one failed. */
+function CheckResults({ result }: { result: ScenarioVerifyResult }) {
+  const passed = result.results.filter(c => c.pass).length
+  const total = result.results.length
+  return (
+    <div className="verify-results" role="status" aria-live="polite">
+      <div className={`banner ${result.passed ? 'banner-success' : 'banner-warn'}`}>
+        <Icon name={result.passed ? 'check-circle' : 'alert-triangle'} size={16} className="banner-icon" />
+        <span className="banner-body">
+          {result.passed
+            ? <>All {total} checks passed — the scenario is in its expected state.</>
+            : <>{passed} of {total} checks passing. Checks can fail while pods are still starting — re-run in a moment.</>}
+        </span>
+      </div>
+      <div className="table-scroll">
+        <table className="data-table">
+          <thead>
+            <tr><th>Check</th><th>Result</th><th>Got</th><th>Want</th></tr>
+          </thead>
+          <tbody>
+            {result.results.map(c => (
+              <tr key={c.name}>
+                <td>{c.name}{c.type ? <span className="hint-text"> ({c.type})</span> : null}</td>
+                <td><Badge variant={c.pass ? 'running' : 'stopped'}>{c.pass ? 'PASS' : 'FAIL'}</Badge></td>
+                <td className="td-muted">{c.error ? <span className="verify-error">{c.error}</span> : (c.got || '—')}</td>
+                <td className="td-muted">{c.want || '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
