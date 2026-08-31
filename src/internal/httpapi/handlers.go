@@ -424,6 +424,30 @@ type PlatformComponentDetail struct {
 	UsedInScenarios []ScenarioRef `json:"usedInScenarios"`
 }
 
+// resolveInstallVars substitutes the shell variables an install.sh uses into
+// the commands shown on the details page, so a learner sees the real values
+// (namespace, ingress host) instead of raw $NAMESPACE / ${DOMAIN_SUFFIX}. Only
+// the variables the server can resolve are replaced; secrets and script-local
+// temp paths (e.g. $GRAFANA_ADMIN_PASSWORD, $VALUES_FILE) are left as-is —
+// they are meant to be supplied at install time, not shown.
+func resolveInstallVars(cmds []string, namespace, domain string) []string {
+	repl := []struct{ from, to string }{}
+	if namespace != "" {
+		repl = append(repl, struct{ from, to string }{"${NAMESPACE}", namespace}, struct{ from, to string }{"$NAMESPACE", namespace})
+	}
+	if domain != "" {
+		repl = append(repl, struct{ from, to string }{"${DOMAIN_SUFFIX}", domain}, struct{ from, to string }{"$DOMAIN_SUFFIX", domain})
+	}
+	out := make([]string, len(cmds))
+	for i, c := range cmds {
+		for _, r := range repl {
+			c = strings.ReplaceAll(c, r.from, r.to)
+		}
+		out[i] = c
+	}
+	return out
+}
+
 // nonNilStrings returns s, or an empty (non-nil) slice when s is nil, so it
 // marshals to a JSON [] instead of null — the UI indexes .length on these.
 func nonNilStrings(s []string) []string {
@@ -468,7 +492,7 @@ func (s *Server) handlePlatformComponentDetail(w http.ResponseWriter, r *http.Re
 		Dependencies:    nonNilStrings(meta.Dependencies),
 		Resources:       nonNilStrings(meta.Resources),
 		Chart:           meta.Chart,
-		InstallCommands: nonNilStrings(p.InstallCommands()),
+		InstallCommands: nonNilStrings(resolveInstallVars(p.InstallCommands(), p.Namespace(), s.cfg.DomainSuffix)),
 		UsedInScenarios: s.scenariosUsingComponent(category, name),
 	}
 	respondJSON(w, http.StatusOK, detail)

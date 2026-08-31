@@ -232,9 +232,20 @@ export function Platform({ notify, requestConfirm }: PlatformProps) {
               ))}
             </div>
             {dashboards.some(d => d.name === 'grafana') && (
-              <div className="field-help cred-hint">
-                Grafana login: <code>admin</code> / <code>admin</code> (default — override with the <code>GRAFANA_ADMIN_PASSWORD</code> env var before installing).
-              </div>
+              <details className="grafana-guide">
+                <summary>Configuring Grafana</summary>
+                <div className="field-help">
+                  <p><strong>Log in:</strong> <code>admin</code> / <code>admin</code> (override with the <code>GRAFANA_ADMIN_PASSWORD</code> env var before installing).</p>
+                  <p><strong>Data sources</strong> are auto-provisioned — you don't create them by hand. Three come pre-wired, each with a fixed UID you'll see referenced in panels:</p>
+                  <ul>
+                    <li><code>Prometheus</code> (uid <code>prometheus</code>) — metrics, the default source</li>
+                    <li><code>Loki</code> (uid <code>loki</code>) — logs</li>
+                    <li><code>Tempo</code> (uid <code>tempo</code>) — traces</li>
+                  </ul>
+                  <p><strong>Dashboards</strong> are auto-provisioned too: the baseline set ships with Grafana, and each scenario adds its own when you activate it. Find them under <em>Dashboards</em> in Grafana — no import needed.</p>
+                  <p><strong>Reading a panel:</strong> if a query shows a <code>$</code> variable (e.g. <code>$__rate_interval</code>), that's Grafana's own interval macro and resolves automatically. The install commands on each component's <em>Details</em> page already have their <code>$NAMESPACE</code> / <code>{'${DOMAIN_SUFFIX}'}</code> filled in with this lab's values.</p>
+                </div>
+              </details>
             )}
           </>
         )}

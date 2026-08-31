@@ -20,7 +20,10 @@
   "links": [],
   "panels": [
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -97,7 +100,10 @@
       "type": "timeseries"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -163,14 +169,14 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) by (job)",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))",
           "format": "time_series",
           "hide": false,
           "legendFormat": "p95 - {{ job }}",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) by (job)",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))",
           "format": "time_series",
           "hide": false,
           "legendFormat": "p99 - {{ job }}",
@@ -181,7 +187,10 @@
       "type": "timeseries"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -247,10 +256,10 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{job=\"go-api\"}[5m])) by (status)",
+          "expr": "sum(rate(http_requests_total{job=\"go-api\"}[5m])) by (code)",
           "format": "time_series",
           "hide": false,
-          "legendFormat": "Status {{ status }}",
+          "legendFormat": "Status {{ code }}",
           "refId": "A"
         }
       ],
@@ -258,7 +267,10 @@
       "type": "timeseries"
     },
     {
-      "datasource": "Prometheus",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -328,7 +340,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) by (job)",
+          "expr": "sum(rate(http_requests_total{code=~\"5..\"}[5m])) by (job)",
           "format": "time_series",
           "hide": false,
           "legendFormat": "5xx Errors - {{ job }}",
