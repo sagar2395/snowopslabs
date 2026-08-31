@@ -280,6 +280,19 @@ func (e *Engine) clearActive() {
 	_ = os.Remove(e.activeFile())
 }
 
+// ClearActiveState removes the active-incident marker without running fault
+// restoration. Lab reset uses it so a torn-down incident (whose target app or
+// component no longer exists) does not linger as active. Returns the fault name
+// that was cleared, or "" if none was active.
+func (e *Engine) ClearActiveState() string {
+	a, _ := e.Active()
+	e.clearActive()
+	if a == nil {
+		return ""
+	}
+	return a.Fault
+}
+
 // --- operations ----------------------------------------------------------------
 
 // Preflight checks a fault's prerequisites before injection. Exported so the

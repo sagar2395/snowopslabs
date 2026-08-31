@@ -127,6 +127,18 @@ func (s *Server) handleLearnStart(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, learnProgressPayload(p, prog))
 }
 
+// handleLearnReset discards a path's progress so the learner starts over. It is
+// intentionally distinct from lab reset — progress is not cluster state.
+func (s *Server) handleLearnReset(w http.ResponseWriter, r *http.Request) {
+	name := mux.Vars(r)["name"]
+	eng := learnEngine(s)
+	if err := eng.ResetProgress(name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{"path": name, "started": false})
+}
+
 func (s *Server) handleLearnProgress(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 	eng := learnEngine(s)

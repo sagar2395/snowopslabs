@@ -205,6 +205,19 @@ export function Platform({ notify, requestConfirm }: PlatformProps) {
           >
             Remove baseline
           </button>
+          <button
+            className="btn btn-danger platform-reset"
+            disabled={busy['lab-reset']}
+            title="Tear the lab back to its initial state: deactivate all scenarios and incidents, destroy deployed apps, and uninstall non-baseline platform components. The cluster itself stays up."
+            onClick={() => requestConfirm({
+              title: 'Reset the whole lab?',
+              message: 'This deactivates every scenario and incident, destroys all deployed apps, and uninstalls every platform component except the ingress baseline. The cluster stays up, and your learning progress is kept. Scenarios and incidents can be re-activated afterwards. This cannot be undone — consider taking a snapshot first.',
+              confirmLabel: 'Reset lab',
+              onConfirm: () => run('lab-reset', 'Reset lab', () => api.resetLab(), () => { load(); dashQ.reload() }),
+            })}
+          >
+            {busy['lab-reset'] ? 'Resetting…' : (<><Icon name="refresh" size={15} />Reset lab</>)}
+          </button>
         </div>
       </div>
 

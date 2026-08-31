@@ -3,20 +3,23 @@ import { api } from '../api/client'
 import { qk } from '../lib/queryClient'
 import { useApiQuery } from '../hooks/useApiQuery'
 import type { LearnPathSummary, LearnPath, LearnProgress, NotifyFn } from '../types'
+import type { ConfirmRequest } from '../components/ConfirmDialog'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 
 interface LearnProps {
   notify: NotifyFn
+  requestConfirm: (req: ConfirmRequest) => void
 }
 
-export function Learn({ notify }: LearnProps) {
+export function Learn({ notify, requestConfirm }: LearnProps) {
   const { data: paths = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.learnPaths, api.listLearnPaths)
   const [selected, setSelected] = useState<{ path: LearnPath; progress: LearnProgress } | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [openingPath, setOpeningPath] = useState<string | null>(null)
   const [starting, setStarting] = useState<string | null>(null)
+  const [resetting, setResetting] = useState<string | null>(null)
   const [completingIdx, setCompletingIdx] = useState<number | null>(null)
 
   async function openPath(name: string) {
@@ -51,6 +54,31 @@ export function Learn({ notify }: LearnProps) {
     } finally {
       setStarting(null)
     }
+  }
+
+  // Reset a path's progress back to the beginning. Deliberately separate from a
+  // lab reset — the cluster and your progress are independent.
+  function resetPath(name: string) {
+    requestConfirm({
+      title: `Reset progress for "${name}"?`,
+      message: 'This clears your completed modules for this path so you start from the beginning. It does not touch the cluster. This cannot be undone.',
+      confirmLabel: 'Reset progress',
+      onConfirm: async () => {
+        setResetting(name)
+        try {
+          const progress = await api.resetLearnPath(name)
+          notify('success', `Reset "${name}"`, 'Progress cleared — start again from the first module.')
+          if (selected?.path.name === name) {
+            setSelected(prev => prev ? { ...prev, progress } : null)
+          }
+          load()
+        } catch (e) {
+          notify('error', 'Failed to reset progress', e instanceof Error ? e.message : String(e))
+        } finally {
+          setResetting(null)
+        }
+      },
+    })
   }
 
   // Completing a module is the core of the in-UI progression: the learner works
@@ -170,6 +198,16 @@ export function Learn({ notify }: LearnProps) {
                     <button className="btn btn-sm" onClick={() => openPath(p.name)} disabled={openingPath === p.name}>
                       {openingPath === p.name ? 'Loading…' : 'Details'}
                     </button>
+                    {p.completedCount > 0 && (
+                      <button
+                        className="btn btn-sm btn-danger"
+                        disabled={resetting === p.name}
+                        title="Clear your progress for this path and start from the beginning (does not affect the cluster)"
+                        onClick={() => resetPath(p.name)}
+                      >
+                        {resetting === p.name ? 'Resetting…' : 'Reset progress'}
+                      </button>
+                    )}
                   </div>
                 </div>
               )

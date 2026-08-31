@@ -476,8 +476,8 @@ function RunsRoute() {
   return <Runs notify={notify} />
 }
 function LearnRoute() {
-  const { notify } = useApp()
-  return <Learn notify={notify} />
+  const { notify, requestConfirm } = useApp()
+  return <Learn notify={notify} requestConfirm={requestConfirm} />
 }
 function ChallengesRoute() {
   const { notify, requestConfirm } = useApp()

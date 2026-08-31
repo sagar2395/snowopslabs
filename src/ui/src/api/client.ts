@@ -102,6 +102,9 @@ export const api = {
   getPlatform:   ()                          => req<PlatformProvidersMap>('/platform'),
   platformUp:    ()                          => post('/platform/up'),
   platformDown:  ()                          => post('/platform/down'),
+  // Tears the lab back to post-init (deactivates scenarios/incidents, destroys
+  // apps, uninstalls non-baseline platform). Destructive → confirm=true required.
+  resetLab:      ()                          => post('/lab/reset?confirm=true'),
   componentUp:   (cat: string, name: string) => post(`/platform/component/${enc(catSegment(cat))}/${enc(name)}/up`),
   componentDown: (cat: string, name: string) => post(`/platform/component/${enc(catSegment(cat))}/${enc(name)}/down`),
   getComponent:  (cat: string, name: string) => req<PlatformComponentDetail>(`/platform/component/${enc(catSegment(cat))}/${enc(name)}`),
@@ -126,6 +129,7 @@ export const api = {
   getLearnPath:    (name: string) => req<LearnPath>(`/learn/paths/${enc(name)}`),
   getLearnProgress:(name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/progress`),
   startLearnPath:  (name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/start`, { method: 'POST' }, POST_TIMEOUT_MS),
+  resetLearnPath:  (name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/reset`, { method: 'POST' }, POST_TIMEOUT_MS),
   completeLearnModule: (name: string, moduleIdx: number) =>
     req<LearnProgress>(`/learn/paths/${enc(name)}/complete`, {
       method: 'POST',

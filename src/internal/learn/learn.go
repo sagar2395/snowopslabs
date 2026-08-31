@@ -222,6 +222,21 @@ func (e *Engine) StartPath(name string) (*Progress, error) {
 	return prog, e.saveProgress(prog)
 }
 
+// ResetProgress discards a path's progress record so it reads as not-started
+// and the learner can begin again from the first module. This is deliberately
+// separate from lab reset: tearing down the cluster must not wipe what someone
+// has learned, and clearing progress must not touch the cluster. A path that was
+// never started is a no-op (no error).
+func (e *Engine) ResetProgress(name string) error {
+	if _, err := e.LoadPath(name); err != nil {
+		return err
+	}
+	if err := os.Remove(e.progressFile(name)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // MarkComplete records module at idx as complete.
 func (e *Engine) MarkComplete(prog *Progress, idx int) error {
 	return e.markComplete(prog, idx, "", "")

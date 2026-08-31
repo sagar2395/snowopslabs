@@ -393,6 +393,7 @@ func (s *Server) registerAPI(api *mux.Router, version string) {
 	api.HandleFunc("/learn/paths", s.handleLearnPaths).Methods("GET", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}", s.handleLearnPath).Methods("GET", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}/start", s.handleLearnStart).Methods("POST", "OPTIONS")
+	api.HandleFunc("/learn/paths/{name}/reset", s.handleLearnReset).Methods("POST", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}/progress", s.handleLearnProgress).Methods("GET", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}/complete", s.handleLearnMarkComplete).Methods("POST", "OPTIONS")
 	api.HandleFunc("/services", s.handleListServices).Methods("GET", "OPTIONS")
