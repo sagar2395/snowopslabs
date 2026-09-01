@@ -314,22 +314,36 @@ consumer running.
 **What it deploys:**
 - A `restore-marker` ConfigMap in the go-api namespace whose presence and value
   prove the backup/restore round-trip
+- A `data-writer` Deployment mounting a PVC (`restore-data`) that persists a
+  random `boot-id` on its PersistentVolume — so PV-data loss is **observable**,
+  not just described
 
 **Prerequisites:**
 - Apps: go-api
 - `jq` installed (used to scrub server-managed fields from the manifest archive)
 
-**Checks (5):** namespace exists, go-api running, restore marker present, marker
-value intact, **backup archive exists** (script).
+**Checks (7):** namespace exists, go-api running, data-writer running, restore
+PVC present, restore marker present, marker value intact, **backup archive
+exists** (script). The last four are marked `pending` — they render as PENDING
+(not FAIL) until you complete the matching drill step.
 
-**Run the drill:**
+**Run the drill (real `kubectl` — the commands you'd use on a live cluster):**
+- Note the PV data: `bash scenarios/backup-restore-drill/scripts/observe-pv-data.sh go-api`
 - Back up: `bash scenarios/backup-restore-drill/scripts/backup.sh go-api`
+  (read the script — it is `kubectl get … -o json | jq <scrub>`)
 - Simulate loss: `kubectl -n go-api delete configmap restore-marker`
-- Restore: `bash scenarios/backup-restore-drill/scripts/restore.sh go-api`
+- Restore: `kubectl apply --server-side --force-conflicts -f .labctl/backups/go-api-latest.json`
+  (`restore.sh` wraps this and also recreates the namespace if it was deleted)
 - Grade it: `labctl scenario verify backup-restore-drill`
+- **Harder:** `kubectl delete namespace go-api`, then
+  `bash scenarios/backup-restore-drill/scripts/restore.sh go-api`, then re-run
+  `observe-pv-data.sh` — the `boot-id` changed.
 
 > **Manifest-level backup:** archives round-trip Kubernetes objects, not
-> PersistentVolume data. For stateful data use a volume snapshot or Velero.
+> PersistentVolume data. Delete just the ConfigMap and the `boot-id` survives a
+> restore; delete the whole namespace and the PVC object comes back bound to a
+> brand-new empty volume — the object round-trips, the data does not. For
+> stateful data use a volume snapshot or Velero with restic.
 
 ---
 
@@ -338,12 +352,19 @@ value intact, **backup archive exists** (script).
 **Category:** cost
 
 **What it deploys:**
-- go-api re-deployed with 10× over-provisioned CPU (4000m) and 32× memory (1Gi)
-  via a Helm values override — the deliberate "before" state you observe in OpenCost
+- go-api's requests over-provisioned in place to 40× CPU (2000m) and 32× memory
+  (1Gi) via `kubectl set resources` — the deliberate "before" state you observe in
+  OpenCost. (The inflate mutates the running Deployment directly rather than via a
+  Helm upgrade, so it works no matter how go-api was deployed.)
 
 **Prerequisites:**
 - Platform: cost/opencost, monitoring/metrics, ingress
 - Apps: go-api
+
+> `cost/opencost` needs `monitoring/metrics` (Prometheus + kube-state-metrics) to
+> compute allocation — without it the OpenCost API returns no cost data. `scenario
+> up` warns if a platform prerequisite is missing and prints the `labctl platform
+> up <component>` command to install it.
 
 **Checks (5):** go-api running, **CPU request ≤ 100m** (script), **memory request
 ≤ 256Mi** (script), /health endpoint returns 200, OpenCost running.
@@ -351,10 +372,16 @@ value intact, **backup archive exists** (script).
 **The exercise:**
 
 1. `labctl scenario up cost-right-sizing` — inflates requests; checks **fail**
-2. `kubectl -n opencost port-forward svc/opencost 9090 &` — open the UI
-3. Observe inflated cost in OpenCost (go-api namespace)
-4. Right-size: `kubectl -n go-api set resources deployment go-api --requests=cpu=50m,memory=32Mi`
-5. `labctl scenario verify cost-right-sizing` — all checks **pass**
+2. `labctl traffic start --profile steady` — drive load (or the UI **Traffic** tab)
+   so "healthy under steady traffic" is exercised and usage shows up in OpenCost
+3. Open the OpenCost UI at **http://opencost.k3d.local** (OpenCost is exposed via
+   ingress). Run `sudo labctl hosts add` once to add `opencost.k3d.local` to
+   `/etc/hosts`. No ingress DNS entry? Fall back to
+   `kubectl -n opencost port-forward svc/opencost 9090 &` and open
+   `http://localhost:9090`.
+4. Observe inflated cost in OpenCost (go-api namespace)
+5. Right-size: `kubectl -n go-api set resources deployment go-api --requests=cpu=50m,memory=32Mi`
+6. `labctl scenario verify cost-right-sizing` — all checks **pass**
 
 > **k3d note:** no real billing API — OpenCost uses on-prem pricing defaults
 > (~$0.048/CPU-hr). Cost numbers are relative; the before/after contrast is real.
@@ -456,6 +483,9 @@ snippets:                              # applyable manifest fragments
       metadata:
         name: demo
         namespace: "{{.MonitoringNamespace}}"
+  - label: "Helm values (not a kubectl manifest)"
+    path: values/overprovisioned.yaml
+    apply: "helm upgrade -f -  (or translate to 'kubectl set resources')"
 ```
 
 - A `reference` needs a `label` and an `http(s)` `url`; `note` is optional.
@@ -466,6 +496,10 @@ snippets:                              # applyable manifest fragments
 - Snippet bodies are template-resolved, so a `path` snippet can reuse the same
   manifest the engine applies, and an inline `yaml` snippet can reference
   `{{.MonitoringNamespace}}` etc. — it prints ready to `kubectl apply -f -`.
+- `apply` (optional) overrides the per-snippet "apply with" hint. It defaults to
+  `kubectl apply -f -`; set it when the snippet is **not** a kubectl manifest
+  (e.g. a Helm values file) so the learner isn't told to `kubectl apply` something
+  that isn't appliable.
 
 ### Template Variables
 
@@ -533,7 +567,17 @@ checks:                              # machine-verifiable assertions
     type: script                     # exit 0 = pass; runs with DOMAIN_SUFFIX,
     script: checks/custom.sh         # MONITORING_NAMESPACE, PROJECT_ROOT set
     timeoutSeconds: 60               # any check may override the 30s default
+    remediation: "run the fix: …"    # optional: shown under a failing check
+    pending: true                    # optional: render PENDING (not FAIL) until
+                                     # the user performs the matching drill step
 ```
+
+**`remediation` / `pending`** make `verify` teach instead of alarm. A failing
+check with a `remediation` prints that fix under a **Next step(s)** heading; the
+generic "a pod may still be starting / --watch" hint is shown only for a genuine
+failure that has no remediation. A failing `pending` check renders **PENDING**
+and is reported as an incomplete drill step, so "you haven't run the backup yet"
+never reads as "the scenario is broken".
 
 Rules (enforced at load time — an invalid scenario refuses to load and CI
 fails on it):

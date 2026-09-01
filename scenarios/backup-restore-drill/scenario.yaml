@@ -2,7 +2,7 @@ apiVersion: scenario.snowops.net/v2
 name: backup-restore-drill
 verified: true
 displayName: "Day-2 Drill: Namespace Backup & Restore"
-description: "Back up a namespace's resources to a manifest archive, simulate accidental data loss (delete a resource — or the whole namespace), then restore from the backup and verify the round-trip with checks. A dependency-light alternative to Velero that teaches the backup/restore loop every operator must rehearse before they need it."
+description: "Back up a namespace's resources to a manifest archive, simulate accidental data loss (delete a resource — or the whole namespace), then restore from the backup and verify the round-trip with checks. A stateful data-writer on a PersistentVolume makes the crucial lesson concrete: the manifest backup round-trips Kubernetes OBJECTS, not the DATA on a volume. A dependency-light alternative to Velero that teaches the backup/restore loop every operator must rehearse before they need it."
 category: operations
 prerequisites:
   apps:
@@ -13,9 +13,9 @@ runtimes:
 
 objectives:
   - "Capture a namespace's resources into a restorable manifest archive"
-  - "Simulate accidental loss by deleting a resource (or the namespace)"
+  - "Simulate accidental loss by deleting a resource (or the whole namespace)"
   - "Restore from the backup and verify the namespace round-trips intact"
-  - "Understand what a manifest-export backup covers and what it does not (PV data)"
+  - "See first-hand what a manifest-export backup covers (objects) and what it does NOT (PV data): delete the namespace, restore, and watch the data-writer's boot-id change"
 
 stages:
   - name: baseline
@@ -24,6 +24,12 @@ stages:
       - name: restore-marker
         type: manifest
         path: manifests/baseline.yaml
+  - name: stateful
+    description: Deploy a data-writer that persists a boot-id on a PersistentVolume, so PV-data loss is observable
+    components:
+      - name: data-writer
+        type: manifest
+        path: manifests/stateful.yaml
 
 checks:
   - name: go-api-namespace-exists
@@ -38,10 +44,27 @@ checks:
     operator: ">="
     value: "1"
 
+  - name: data-writer-running
+    type: kubectl
+    resource: deployment/data-writer
+    namespace: go-api
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+
+  - name: restore-data-pvc-present
+    type: kubectl
+    resource: persistentvolumeclaim/restore-data
+    namespace: go-api
+    pending: true
+    remediation: "Restore from the backup: kubectl apply --server-side --force-conflicts -f .labctl/backups/go-api-latest.json (or bash scenarios/backup-restore-drill/scripts/restore.sh go-api)"
+
   - name: restore-marker-present
     type: kubectl
     resource: configmap/restore-marker
     namespace: go-api
+    pending: true
+    remediation: "Restore from the backup: kubectl apply --server-side --force-conflicts -f .labctl/backups/go-api-latest.json (or bash scenarios/backup-restore-drill/scripts/restore.sh go-api)"
 
   - name: restore-marker-value-intact
     type: kubectl
@@ -50,34 +73,56 @@ checks:
     jsonpath: "{.data.canary}"
     operator: "=="
     value: "do-not-delete"
+    pending: true
+    remediation: "Restore from the backup: kubectl apply --server-side --force-conflicts -f .labctl/backups/go-api-latest.json (or bash scenarios/backup-restore-drill/scripts/restore.sh go-api)"
 
   - name: backup-archive-exists
     type: script
     script: scripts/check-backup-exists.sh
+    pending: true
+    remediation: "Take a backup first: bash scenarios/backup-restore-drill/scripts/backup.sh go-api"
 
 snippets:
   - label: "The restore canary this drill backs up"
     description: "A ConfigMap in the go-api namespace acting as the canary: the drill backs it up, deletes it, then restores it. If its value survives the round-trip, the restore worked."
     path: manifests/baseline.yaml
+  - label: "backup.sh — read what a manifest backup actually is"
+    description: "The backup is a real 'kubectl get … -o json | jq <scrub> > archive' pipeline. Read it: this is the command you'd run (or adapt) on any cluster — no labctl magic. It scrubs server-managed fields and a PVC's volume binding so the manifests re-apply cleanly."
+    path: scripts/backup.sh
+  - label: "restore.sh — restore is just kubectl apply"
+    description: "Restore is 'kubectl apply --server-side --force-conflicts -f archive', plus a namespace-recreate if the whole namespace was deleted. Read it so you know exactly what a restore does to the cluster."
+    path: scripts/restore.sh
 
 explore:
   commands:
-    - label: "1. Back up the go-api namespace to a manifest archive"
+    # These are the REAL commands an operator runs on a live cluster — the drill
+    # teaches kubectl, not labctl. labctl's only role is verify (grading) and
+    # activate/teardown (the simulator's own orchestration).
+    - label: "1. Note the PV data before you start (remember this boot-id)"
+      command: "bash {{.ProjectRoot}}/scenarios/backup-restore-drill/scripts/observe-pv-data.sh go-api"
+    - label: "2. Back up the namespace — run the tool, then read it: it's 'kubectl get -o json | jq'"
       command: "bash {{.ProjectRoot}}/scenarios/backup-restore-drill/scripts/backup.sh go-api"
-    - label: "2. Simulate accidental loss (delete the restore marker)"
+    - label: "3. Simulate accidental loss (delete the restore marker with kubectl)"
       command: "kubectl -n go-api delete configmap restore-marker"
-    - label: "3. Confirm the loss — this check now fails"
+    - label: "4. Confirm the loss — the marker checks now show as PENDING"
       command: "labctl scenario verify backup-restore-drill"
-    - label: "4. Restore from the backup archive"
+    - label: "5. Restore with kubectl — server-side apply the backup archive"
+      command: "kubectl apply --server-side --force-conflicts -f .labctl/backups/go-api-latest.json"
+    - label: "6. Verify the round-trip — checks pass again"
+      command: "labctl scenario verify backup-restore-drill"
+    - label: "7. HARDER: delete the whole namespace with kubectl"
+      command: "kubectl delete namespace go-api"
+    - label: "8. Restore it — restore.sh recreates the namespace first, then applies the archive"
       command: "bash {{.ProjectRoot}}/scenarios/backup-restore-drill/scripts/restore.sh go-api"
-    - label: "5. Verify the round-trip — checks pass again"
-      command: "labctl scenario verify backup-restore-drill"
+    - label: "9. Re-check the PV data — the boot-id CHANGED: the object came back, the data did not"
+      command: "bash {{.ProjectRoot}}/scenarios/backup-restore-drill/scripts/observe-pv-data.sh go-api"
     - label: "Inspect the backup archive"
       command: "ls -la .labctl/backups/ && cat .labctl/backups/go-api-latest.json"
   tips:
-    - "Run backup.sh BEFORE the destructive step — you cannot restore what you never captured."
-    - "This is a manifest-level backup: it round-trips Kubernetes objects (Deployments, Services, ConfigMaps, Secrets), NOT PersistentVolume data. For stateful data use a volume snapshot or Velero with restic."
-    - "The backup strips server-managed fields (resourceVersion, uid, status) so the manifests re-apply cleanly into the same or a fresh namespace."
-    - "Try the harder variant: 'kubectl delete namespace go-api' then restore — the archive recreates the namespace and all its objects."
+    - "The commands here are real kubectl/jq — the ones you'd use on any cluster. Read backup.sh and restore.sh (in Snippets): the backup is 'kubectl get -o json | jq <scrub>', the restore is 'kubectl apply --server-side -f archive'. labctl only grades (verify) and stands the lab up/down."
+    - "Run the backup BEFORE the destructive step — you cannot restore what you never captured."
+    - "This is a manifest-level backup: it round-trips Kubernetes objects (Deployments, Services, ConfigMaps, Secrets, the PVC object), NOT the DATA on a PersistentVolume. The data-writer's boot-id proves it: it survives a ConfigMap delete, but a namespace delete gives you a brand-new empty volume. For stateful data use a volume snapshot or Velero with restic."
+    - "The backup strips server-managed fields (resourceVersion, uid, status) and a PVC's volume binding (spec.volumeName) so the manifests re-apply cleanly into the same or a fresh namespace."
+    - "Restore uses server-side apply (kubectl apply --server-side), so it is quiet — no 'last-applied-configuration' warnings — and idempotent: re-running over a healthy namespace is a no-op."
     - "Archives are written to .labctl/backups/ (gitignored runtime state). go-api-latest.json always points at the most recent backup."
-    - "Tear down with 'labctl scenario down backup-restore-drill' — removes the restore marker; go-api stays running."
+    - "Tear down with 'labctl scenario down backup-restore-drill' — removes the restore marker and data-writer; go-api stays running."

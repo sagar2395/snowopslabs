@@ -28,8 +28,15 @@ opencost:
         cpu: 100m
         memory: 64Mi
 
-  # Ingress is intentionally off by default. Enable with:
-  #   COST_PROVIDER=opencost labctl platform up cost
-  # and access via port-forward, or set ingress.enabled=true with your domain.
-  ingress:
-    enabled: false
+    # Expose the OpenCost UI through the cluster ingress so it is reachable at
+    # http://opencost.<domain> without a port-forward. NOTE: the ingress config
+    # lives under opencost.ui.ingress (not opencost.ingress) — that is where the
+    # chart reads it; a top-level opencost.ingress block is silently ignored.
+    # install.sh overrides the host with the real DOMAIN_SUFFIX at install time.
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - host: opencost.k3d.local
+          paths:
+            - /

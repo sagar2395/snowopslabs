@@ -19,4 +19,24 @@ if [ ! -f "$LATEST" ]; then
   exit 1
 fi
 
-echo "OK: backup archive present (${LATEST})."
+# Surface the backup's state — how many objects it holds and how old it is — so
+# a passing check tells the operator *what* they would restore, not just that a
+# file exists. Age uses `date -r <file>` (unlike `stat`, its flags agree
+# between BSD and GNU) and is best-effort.
+COUNT="?"
+if command -v jq >/dev/null 2>&1; then
+  COUNT=$(jq '.items | length' "$LATEST" 2>/dev/null || echo "?")
+fi
+MTIME=$(date -r "$LATEST" +%s 2>/dev/null || echo "")
+AGE=""
+if [ -n "$MTIME" ]; then
+  NOW=$(date -u +%s)
+  SECS=$((NOW - MTIME))
+  if [ "$SECS" -lt 90 ]; then
+    AGE=", taken ${SECS}s ago"
+  else
+    AGE=", taken $((SECS / 60))m ago"
+  fi
+fi
+
+echo "OK: backup archive present — ${COUNT} object(s)${AGE} (${LATEST})."

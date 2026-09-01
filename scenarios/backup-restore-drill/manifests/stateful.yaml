@@ -1,0 +1,76 @@
+# Stateful component for the backup/restore drill. This is what turns the drill's
+# headline lesson — "a manifest backup round-trips Kubernetes OBJECTS, not
+# PersistentVolume DATA" — from a tip into something you can watch happen.
+#
+# The data-writer Deployment mounts a PVC and, on first boot, writes a random
+# boot-id into the volume at /data/boot-id. Read it with observe-pv-data.sh.
+#
+#   - Delete just the restore-marker ConfigMap and restore → boot-id is UNCHANGED
+#     (the volume was never touched; full recovery).
+#   - Delete the whole namespace and restore → the PVC OBJECT comes back from the
+#     backup, but bound to a brand-new empty volume, so the writer generates a
+#     DIFFERENT boot-id. The object round-tripped; the data did not. That is the
+#     exact failure mode this drill exists to rehearse.
+#
+# The image is the go-api image already imported into the cluster (alpine-based,
+# so it has a shell); imagePullPolicy: Never keeps activation offline and fast.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: restore-data
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: backup-restore-drill
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: data-writer
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: backup-restore-drill
+    app: data-writer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: data-writer
+  template:
+    metadata:
+      labels:
+        app: data-writer
+        app.kubernetes.io/part-of: backup-restore-drill
+    spec:
+      containers:
+        - name: writer
+          image: go-api:latest
+          imagePullPolicy: Never
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              if [ ! -f /data/boot-id ]; then
+                head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n' > /data/boot-id
+              fi
+              echo "data-writer up — boot-id=$(cat /data/boot-id) (persisted on the PV at /data)"
+              exec tail -f /dev/null
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: restore-data

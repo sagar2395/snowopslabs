@@ -9,14 +9,31 @@ set -euo pipefail
 
 NAMESPACE="${NAMESPACE:-go-api}"
 APP="${APP:-go-api}"
+CONTAINER="${CONTAINER:-$APP}" # container to inspect (defaults to the app name)
 MAX_MEMORY_MIB=256 # threshold in MiB
 
+# Distinguish "deployment not found" from "request not set" so the message
+# points at the real cause instead of always blaming a missing deployment.
+if ! kubectl get deployment "$APP" -n "$NAMESPACE" >/dev/null 2>&1; then
+  echo "FAIL: deployment ${NAMESPACE}/${APP} not found — deploy it first (labctl app deploy ${APP})." >&2
+  exit 1
+fi
+
+# Read the named container's memory request (works for multi-container pods),
+# falling back to the first container if no container matches CONTAINER.
 raw=$(kubectl get deployment "$APP" -n "$NAMESPACE" \
-  -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}' \
+  -o jsonpath="{.spec.template.spec.containers[?(@.name==\"$CONTAINER\")].resources.requests.memory}" \
   2>/dev/null || true)
+if [ -z "$raw" ]; then
+  raw=$(kubectl get deployment "$APP" -n "$NAMESPACE" \
+    -o jsonpath='{.spec.template.spec.containers[0].resources.requests.memory}' \
+    2>/dev/null || true)
+fi
 
 if [ -z "$raw" ]; then
-  echo "FAIL: could not read memory request from ${NAMESPACE}/${APP}. Is the deployment running?" >&2
+  echo "FAIL: no memory request set on ${NAMESPACE}/${APP} (container '${CONTAINER}')." >&2
+  echo "A missing request means the pod is scheduled with no memory reservation — set one to right-size:" >&2
+  echo "  kubectl -n ${NAMESPACE} set resources deployment ${APP} --requests=cpu=50m,memory=32Mi" >&2
   exit 1
 fi
 

@@ -15,7 +15,7 @@ set -euo pipefail
 
 NS="${1:?Usage: backup.sh <namespace>}"
 BACKUP_DIR="${BACKUP_DIR:-.labctl/backups}"
-RESOURCES="${RESOURCES:-deployment,service,configmap,secret,serviceaccount,ingress,pdb,horizontalpodautoscaler}"
+RESOURCES="${RESOURCES:-deployment,service,configmap,secret,serviceaccount,ingress,pdb,horizontalpodautoscaler,persistentvolumeclaim}"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "ERROR: 'jq' is required to scrub manifests but was not found." >&2
@@ -62,6 +62,19 @@ kubectl get "$RESOURCES" -n "$NS" -o json 2>/dev/null |
             .status
           )
           | if .kind == "Service" then del(.spec.clusterIP, .spec.clusterIPs) else . end
+          # A PVC backup captures the CLAIM, not the volume it was bound to. Drop
+          # the binding (spec.volumeName + the binder annotations) so a restore
+          # provisions a fresh, EMPTY volume instead of dangling on a PV that no
+          # longer exists. This is the crux of the drill: the object round-trips,
+          # the data does not.
+          | if .kind == "PersistentVolumeClaim" then
+              del(.spec.volumeName,
+                  .metadata.annotations."pv.kubernetes.io/bind-completed",
+                  .metadata.annotations."pv.kubernetes.io/bound-by-controller",
+                  .metadata.annotations."volume.kubernetes.io/selected-node",
+                  .metadata.annotations."volume.beta.kubernetes.io/storage-provisioner",
+                  .metadata.annotations."volume.kubernetes.io/storage-provisioner")
+            else . end
         )
       | {apiVersion: "v1", kind: "List", items: .}
     ' >"$ARCHIVE"

@@ -26,6 +26,7 @@ var knownSubdomains = []string{
 	"echo-server",
 	"grafana",
 	"prometheus",
+	"opencost", // cost-right-sizing: OpenCost UI ingress
 	"argocd",
 	"traefik",
 	"kubernetes-dashboard",

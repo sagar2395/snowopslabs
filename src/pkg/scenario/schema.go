@@ -152,15 +152,20 @@ type Reference struct {
 	Note  string `yaml:"note,omitempty" json:"note,omitempty"`
 }
 
-// Snippet is an applyable manifest fragment presented to the learner. Exactly
-// one of YAML (inline manifest text) or Path (a manifest file relative to the
-// item's directory) is set; both are template-resolved before display so a
-// snippet is applyable as-is. Reused by scenarios and incidents (M2).
+// Snippet is a reference fragment presented to the learner. Exactly one of YAML
+// (inline text) or Path (a file relative to the item's directory) is set; both
+// are template-resolved before display. Most snippets are kubectl manifests, but
+// some are other formats (e.g. Helm values) — set Apply to override the default
+// "kubectl apply -f -" hint with how this particular snippet is actually used.
+// Reused by scenarios and incidents (M2).
 type Snippet struct {
 	Label       string `yaml:"label" json:"label"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	YAML        string `yaml:"yaml,omitempty" json:"yaml,omitempty"`
 	Path        string `yaml:"path,omitempty" json:"path,omitempty"`
+	// Apply describes how to use the snippet. Empty means it is a kubectl
+	// manifest applied with "kubectl apply -f -" (the default hint).
+	Apply string `yaml:"apply,omitempty" json:"apply,omitempty"`
 }
 
 // Parameter is a user-tunable knob exposed at activation time. Its value is

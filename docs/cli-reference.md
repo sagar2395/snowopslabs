@@ -273,6 +273,15 @@ default; override with the `PROMETHEUS_URL` environment variable.
 The REST equivalent is `POST /api/scenarios/{name}/verify` (synchronous,
 bounded to ~12s — use the CLI's `--watch` for long convergence).
 
+A check may declare a `remediation` hint and/or `pending: true` (see
+`docs/scenarios.md`). When a check fails, `verify` prints its remediation
+under a **Next step(s)** heading instead of the generic "a pod may still be
+starting" hint — which now appears only for a genuine failure that has no
+remediation of its own. A failing check marked `pending` renders as **PENDING**
+rather than **FAIL**: it means "you haven't done this drill step yet", so
+`verify` reports the scenario as incomplete (still non-zero exit) without the
+alarming "checks failed" wording.
+
 ---
 
 ### Content
