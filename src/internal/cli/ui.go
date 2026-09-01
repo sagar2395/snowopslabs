@@ -56,9 +56,6 @@ var uiCmd = &cobra.Command{
 		// Try to open browser
 		go openBrowser(url)
 
-		// Refuse to start on a port another process already holds — otherwise the
-		// old server keeps serving its (now stale) bundle and a "restart" looks
-		// like it worked while showing old code.
 		if ln, err := net.Listen("tcp", addr); err != nil {
 			return fmt.Errorf("cannot bind %s: %w\nAnother `labctl ui` may already be running — stop it first (e.g. pkill -f 'labctl ui'), or choose another --port", addr, err)
 		} else {

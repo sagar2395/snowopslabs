@@ -18,10 +18,7 @@ type Check struct {
 	Name string `yaml:"name"`
 	Type string `yaml:"type"` // http | kubectl | promql | script
 	URL  string `yaml:"url,omitempty"`
-	// ExpectStatus is the canonical expected HTTP status. ExpectedStatus is a
-	// deprecated alias kept so external learning-path content authored against
-	// the old field keeps loading; new content should use expectStatus (see
-	// sdk/schemas/check.schema.json). Prefer Status() over reading either field.
+	// ExpectStatus is the canonical expected HTTP status.
 	ExpectStatus   int    `yaml:"expectStatus,omitempty"`
 	ExpectedStatus int    `yaml:"expectedStatus,omitempty"`
 	Command        string `yaml:"command,omitempty"`
@@ -223,10 +220,7 @@ func (e *Engine) StartPath(name string) (*Progress, error) {
 }
 
 // ResetProgress discards a path's progress record so it reads as not-started
-// and the learner can begin again from the first module. This is deliberately
-// separate from lab reset: tearing down the cluster must not wipe what someone
-// has learned, and clearing progress must not touch the cluster. A path that was
-// never started is a no-op (no error).
+// and the learner can begin again from the first module.
 func (e *Engine) ResetProgress(name string) error {
 	if _, err := e.LoadPath(name); err != nil {
 		return err

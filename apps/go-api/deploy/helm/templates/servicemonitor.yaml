@@ -3,9 +3,6 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "go-api.fullname" . }}
-  # Live in the app's own namespace so the endpoint selector matches its Service.
-  # The kube-prometheus-stack watches ServiceMonitors in all namespaces
-  # (serviceMonitorNamespaceSelector: {}), so it is still discovered here.
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "go-api.labels" . | nindent 4 }}

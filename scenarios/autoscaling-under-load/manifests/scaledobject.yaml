@@ -2,11 +2,6 @@
 # The Prometheus server address reads the monitoring namespace from the engine
 # template ({{.MonitoringNamespace}}) — no hardcoded namespace (rule 3/4).
 #
-# min/maxReplicaCount and the RPS threshold are scenario PARAMETERS: they default
-# to 1 / 6 / 25 but can be overridden at activation to experiment with how the
-# autoscaler behaves — `labctl scenario up autoscaling-under-load --set Threshold=15`
-# or the Activate dialog in the UI. See scenario.yaml's `parameters:` block.
-#
 # Threshold is RPS-per-replica: desiredReplicas = ceil(totalRPS / threshold),
 # clamped to [minReplicaCount, maxReplicaCount]. With the spike profile holding
 # ~100 RPS and threshold 25, go-api scales to ~4 replicas; at the 10 RPS

@@ -166,10 +166,7 @@ stays up. Tip: take a snapshot first — labctl lab snapshot before-reset.`,
 		// Continue on error: tear down as much as possible, report what stuck.
 		execErr := lab.Execute(plan, labDeps(true))
 
-		// Force-clear scenario and incident activation state regardless of how
-		// teardown went — after a reset their prerequisites are gone, so they must
-		// read as inactive (and be re-activatable) even if a component teardown
-		// failed part-way.
+		// Force-clear scenario and incident activation state
 		if cleared := scenes.DeactivateAll(); len(cleared) > 0 {
 			fmt.Printf("Deactivated scenarios: %s\n", strings.Join(cleared, ", "))
 		}

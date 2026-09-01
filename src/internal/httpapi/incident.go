@@ -43,9 +43,7 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 	if faults == nil {
 		faults = []*incident.Fault{}
 	}
-	// The incident list is a composite (catalog + live active state), not a plain
-	// collection, so it keeps its shape on both versions; it still gains an ETag
-	// for conditional revalidation.
+
 	writeJSONCached(w, r, http.StatusOK, map[string]interface{}{
 		"faults": faults,
 		"active": active,

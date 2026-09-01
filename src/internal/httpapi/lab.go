@@ -116,11 +116,7 @@ func (s *Server) handleLabReset(w http.ResponseWriter, r *http.Request) {
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
 		err := lab.Execute(plan, s.labDeps(true))
-		// Force-clear scenario and incident activation state regardless of how
-		// teardown went: after a reset their prerequisites are gone, so they must
-		// read as inactive (and be re-activatable) even if a component teardown
-		// failed part-way. The cluster resources are handled by the plan above;
-		// this only reconciles the on-disk activation markers.
+		// Force-clear scenario and incident activation state.
 		s.scenes.DeactivateAll()
 		if s.incidents != nil {
 			s.incidents.ClearActiveState()

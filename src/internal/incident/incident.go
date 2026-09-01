@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Package incident implements the fault library engine (tasks 045/046):
+// Package incident implements the fault library engine:
 // discovery and validation of incidents/<name>/ fault definitions, injection
 // and resolution through their scripts, and resolution detection via the
-// shared checks primitive. Faults are declarative content — this package
-// never encodes fault logic in Go (golden rules 2 and 9).
+// shared checks primitive.
 package incident
 
 import (
@@ -43,12 +42,12 @@ type Fault struct {
 	Target        Target        `yaml:"target" json:"target"`
 	Prerequisites Prerequisites `yaml:"prerequisites" json:"prerequisites"`
 	Detection     checks.Check  `yaml:"detection" json:"detection"` // passes ⇔ the fault is RESOLVED
-	// ExpectAlert names the Alertmanager alert this fault should fire (task
-	// 049). inject.sh arms the matching PrometheusRule from alerts/rule.yaml;
+	// ExpectAlert names the Alertmanager alert this fault should fire
+	// inject.sh arms the matching PrometheusRule from alerts/rule.yaml;
 	// `incident status` reports whether the page went out.
 	ExpectAlert string `yaml:"expectAlert,omitempty" json:"expectAlert,omitempty"`
 
-	// References and Snippets (M2) present upstream docs and applyable manifest
+	// References and Snippets present upstream docs and applyable manifest
 	// fragments to whoever is working the incident. They reuse the shared SDK
 	// types so scenarios and incidents display them identically.
 	References []scenario.Reference `yaml:"references,omitempty" json:"references,omitempty"`
@@ -280,10 +279,6 @@ func (e *Engine) clearActive() {
 	_ = os.Remove(e.activeFile())
 }
 
-// ClearActiveState removes the active-incident marker without running fault
-// restoration. Lab reset uses it so a torn-down incident (whose target app or
-// component no longer exists) does not linger as active. Returns the fault name
-// that was cleared, or "" if none was active.
 func (e *Engine) ClearActiveState() string {
 	a, _ := e.Active()
 	e.clearActive()
@@ -295,9 +290,7 @@ func (e *Engine) ClearActiveState() string {
 
 // --- operations ----------------------------------------------------------------
 
-// Preflight checks a fault's prerequisites before injection. Exported so the
-// durable inject path (which submits inject.sh through the run engine) can gate
-// itself with exactly the checks Inject applies.
+// Preflight checks a fault's prerequisites before injection.
 func (e *Engine) Preflight(f *Fault) error { return e.preflight(f) }
 
 // MarkInjected records a fault as the active incident. The durable inject path

@@ -36,9 +36,6 @@ var initCmd = &cobra.Command{
 	},
 }
 
-// printPostInitHints tells the user the two things that trip people up right
-// after init: ingress hostnames need an /etc/hosts entry to resolve, and apps
-// must be deployed before scenarios/challenges can use them.
 func printPostInitHints() {
 	suffix := cfg.DomainSuffix
 	if suffix == "" {
@@ -60,10 +57,7 @@ var teardownCmd = &cobra.Command{
 	Use:   "teardown",
 	Short: "Tear down the lab (deactivate scenarios/incidents + destroy apps + platform + cluster)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Deactivate scenarios and incidents FIRST — before their platform/app
-		// prerequisites are destroyed. Their state markers live on disk and would
-		// otherwise survive the teardown, leaving scenarios/incidents reading as
-		// "active" against a cluster where nothing they rely on exists.
+		// Deactivate scenarios and incidents FIRST — before their platform/app prerequisites are destroyed.
 		fmt.Println("=== Deactivating scenarios and incidents ===")
 		if cleared := scenes.DeactivateAll(); len(cleared) > 0 {
 			fmt.Printf("Deactivated scenarios: %s\n", strings.Join(cleared, ", "))

@@ -23,8 +23,6 @@ objectives:
 
 # Tunable knobs for experimentation — override at activation with
 # `labctl scenario up autoscaling-under-load --set Threshold=15 --set MaxReplicas=4`
-# or via the Activate dialog in the UI. Each is substituted into
-# manifests/scaledobject.yaml as a {{.Name}} template variable.
 parameters:
   - name: MinReplicas
     displayName: "Minimum replicas"
@@ -63,9 +61,6 @@ stages:
         path: dashboards/
         namespace: "{{.MonitoringNamespace}}"
 
-# These checks assert the POST-SPIKE state (run the spike profile first — see the
-# explore commands). At baseline go-api sits at 1 replica; under the spike KEDA
-# scales it up, and `scenario verify` confirms it.
 checks:
   - name: keda-operator-ready
     type: kubectl

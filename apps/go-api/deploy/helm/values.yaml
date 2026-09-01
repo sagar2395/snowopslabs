@@ -1,12 +1,7 @@
 # Default values for go-api Helm chart
 
-# Override the name of the chart
 nameOverride: ""
-
-# Override the full name of the release
 fullnameOverride: ""
-
-# Global settings
 global:
   environment: k3d
 
