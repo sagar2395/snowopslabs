@@ -73,6 +73,14 @@ checks:
     operator: ">="
     value: "1"
 
+snippets:
+  - label: "The 'orders' Kafka topic (3 partitions)"
+    description: "A Strimzi KafkaTopic. Three partitions let the consumer group scale to three parallel consumers."
+    path: manifests/topic.yaml
+  - label: "Producer + consumer group on the orders topic"
+    description: "A continuous producer (one order every ~0.5s) and a consumer in the 'order-processors' group, built from Kafka's console tools — no custom app needed."
+    path: manifests/producer-consumer.yaml
+
 explore:
   urls:
     - label: "Grafana (Strimzi / Kafka dashboards if imported)"

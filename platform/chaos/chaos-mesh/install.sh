@@ -4,11 +4,6 @@ set -euo pipefail
 NAMESPACE="chaos-mesh"
 SCRIPT_DIR="$(dirname "$0")"
 
-# Select the containerd socket path based on the active runtime profile.
-# Each container runtime / cloud provider places the socket at a different path:
-#   k3d  → /run/k3s/containerd/containerd.sock  (k3s embeds its own containerd)
-#   aks  → /run/containerd/containerd.sock       (standard containerd on Azure nodes)
-#   eks  → /run/containerd/containerd.sock       (standard containerd on Bottlerocket/AL2 nodes)
 case "${PROFILE:-k3d}" in
   k3d) CONTAINERD_SOCKET="/run/k3s/containerd/containerd.sock" ;;
   aks | eks) CONTAINERD_SOCKET="/run/containerd/containerd.sock" ;;
@@ -26,8 +21,6 @@ helm repo add chaos-mesh https://charts.chaos-mesh.org >/dev/null 2>&1 || true
 helm repo update
 
 # Install or upgrade Chaos Mesh with the runtime-appropriate socket path.
-# The socketPath is NOT in values.yaml (which would be k3d-only) — it is passed
-# here via --set so cloud runtimes work without any values.yaml changes.
 echo "Installing Chaos Mesh chart..."
 helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh \
   --namespace $NAMESPACE \
@@ -44,12 +37,36 @@ kubectl rollout status deployment/chaos-controller-manager -n $NAMESPACE --timeo
 echo "Waiting for Chaos Mesh dashboard to be ready..."
 kubectl rollout status deployment/chaos-dashboard -n $NAMESPACE --timeout=120s || true
 
+# Expose the dashboard through Traefik at a stable URL.
+DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-k3d.local}"
+echo "Exposing Chaos Mesh dashboard at http://chaos.${DOMAIN_SUFFIX} ..."
+kubectl apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chaos-dashboard
+  namespace: $NAMESPACE
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: chaos.${DOMAIN_SUFFIX}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: chaos-dashboard
+                port:
+                  number: 2333
+EOF
+
 echo ""
 echo "Chaos Mesh installed successfully"
 echo "Namespace: $NAMESPACE"
 echo "Status: kubectl get pods -n $NAMESPACE"
 echo ""
-echo "Dashboard: kubectl port-forward -n $NAMESPACE svc/chaos-dashboard 2333:2333"
-echo "  Then open http://localhost:2333"
+echo "Dashboard: http://chaos.${DOMAIN_SUFFIX}  (run 'labctl hosts sync' once if the host doesn't resolve)"
+echo "  Or port-forward: kubectl port-forward -n $NAMESPACE svc/chaos-dashboard 2333:2333  → http://localhost:2333"
 echo ""
 echo "Create experiments via CRDs or the Chaos Dashboard UI."

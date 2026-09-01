@@ -10,6 +10,8 @@ package scenario
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/sagar2395/snowopslabs/pkg/checks"
@@ -81,6 +83,12 @@ type Scenario struct {
 	// `kubectl apply -f -` while working the exercise.
 	References []Reference `yaml:"references,omitempty" json:"references,omitempty"`
 	Snippets   []Snippet   `yaml:"snippets,omitempty" json:"snippets,omitempty"`
+
+	// Parameters are tunable knobs exposed at activation time (e.g. an
+	// autoscaler's min/max replicas and threshold), substituted into the
+	// scenario's manifests as {{.Name}} template vars. No parameters, or no
+	// overrides, means unchanged behaviour.
+	Parameters []Parameter `yaml:"parameters,omitempty" json:"parameters,omitempty"`
 
 	// Runtime fields (not from YAML)
 	Dir    string `yaml:"-" json:"-"`
@@ -154,6 +162,96 @@ type Snippet struct {
 	YAML        string `yaml:"yaml,omitempty" json:"yaml,omitempty"`
 	Path        string `yaml:"path,omitempty" json:"path,omitempty"`
 }
+
+// Parameter is a user-tunable knob exposed at activation time. Its value is
+// substituted into the scenario's manifests as a {{.Name}} template variable.
+// Name must be a Go-template-safe identifier (letters/digits/underscore) so it
+// matches the engine's {{.Name}} placeholder.
+type Parameter struct {
+	Name        string `yaml:"name" json:"name"`
+	DisplayName string `yaml:"displayName,omitempty" json:"displayName,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	// Default is used when the user overrides nothing. Required.
+	Default string `yaml:"default" json:"default"`
+	// Type is "int" or "string" (default "string"). An int parameter is bounds-
+	// checked against Min/Max and parsed before substitution.
+	Type string `yaml:"type,omitempty" json:"type,omitempty"`
+	// Min/Max are inclusive bounds for an int parameter (ignored for strings).
+	Min *int `yaml:"min,omitempty" json:"min,omitempty"`
+	Max *int `yaml:"max,omitempty" json:"max,omitempty"`
+	// NotGreaterThan names another int parameter this one must not exceed
+	// (e.g. minReplicas ≤ maxReplicas), enforced against the effective values.
+	NotGreaterThan string `yaml:"notGreaterThan,omitempty" json:"notGreaterThan,omitempty"`
+}
+
+// IsInt reports whether the parameter is an integer parameter.
+func (p Parameter) IsInt() bool { return p.Type == "int" }
+
+// ValidateValue checks a value against the parameter's type and (for ints) its
+// Min/Max bounds. label names the value's origin in messages ("default" or
+// "override").
+func (p Parameter) ValidateValue(raw, label string) error {
+	if !p.IsInt() {
+		return nil // string parameters accept any value
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return fmt.Errorf("parameter %q %s %q is not an integer", p.Name, label, raw)
+	}
+	if p.Min != nil && n < *p.Min {
+		return fmt.Errorf("parameter %q %s %d is below the minimum %d", p.Name, label, n, *p.Min)
+	}
+	if p.Max != nil && n > *p.Max {
+		return fmt.Errorf("parameter %q %s %d is above the maximum %d", p.Name, label, n, *p.Max)
+	}
+	return nil
+}
+
+var validParamTypes = map[string]bool{"": true, "string": true, "int": true}
+
+// ValidateParameters reports every structural problem in a parameter list: each
+// needs a template-safe name, unique across the list; a type from the allowed
+// set; a Default that satisfies its own type/bounds; and any NotGreaterThan must
+// reference another declared int parameter.
+func ValidateParameters(params []Parameter) []string {
+	var errs []string
+	names := map[string]bool{}
+	for i, p := range params {
+		where := fmt.Sprintf("parameter %d", i+1)
+		if p.Name != "" {
+			where = fmt.Sprintf("parameter %q", p.Name)
+		}
+		if strings.TrimSpace(p.Name) == "" {
+			errs = append(errs, fmt.Sprintf("%s: name is required", where))
+		} else if !templateIdent.MatchString(p.Name) {
+			errs = append(errs, fmt.Sprintf("%s: name must be letters, digits or underscore (used as a {{.Name}} template var)", where))
+		} else if names[p.Name] {
+			errs = append(errs, fmt.Sprintf("%s: duplicate parameter name", where))
+		}
+		names[p.Name] = true
+		if !validParamTypes[p.Type] {
+			errs = append(errs, fmt.Sprintf("%s: unknown type %q (expected int or string)", where, p.Type))
+		}
+		if strings.TrimSpace(p.Default) == "" {
+			errs = append(errs, fmt.Sprintf("%s: default is required", where))
+		} else if err := p.ValidateValue(p.Default, "default"); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	// NotGreaterThan references are checked after all names are known.
+	for _, p := range params {
+		if p.NotGreaterThan == "" {
+			continue
+		}
+		if !names[p.NotGreaterThan] {
+			errs = append(errs, fmt.Sprintf("parameter %q: notGreaterThan references unknown parameter %q", p.Name, p.NotGreaterThan))
+		}
+	}
+	return errs
+}
+
+// templateIdent matches a parameter name usable as a {{.Name}} template var.
+var templateIdent = regexp.MustCompile(`^\w+$`)
 
 // ValidateReferences reports every structural problem in a reference list. The
 // where prefix (e.g. "reference") names the field in messages so both scenarios
@@ -324,6 +422,7 @@ func (s *Scenario) Validate() error {
 
 	errs = append(errs, ValidateReferences(s.References)...)
 	errs = append(errs, ValidateSnippets(s.Snippets)...)
+	errs = append(errs, ValidateParameters(s.Parameters)...)
 
 	if len(errs) > 0 {
 		name := s.Name

@@ -8,6 +8,7 @@ prerequisites:
     - ingress
     - monitoring/metrics
     - monitoring/grafana
+    - chaos/chaos-mesh
   apps:
     - go-api
 runtimes:
@@ -56,14 +57,22 @@ checks:
     url: "http://go-api.{{.DomainSuffix}}/health"
     expectStatus: 200
 
+snippets:
+  - label: "Chaos Mesh experiments (pod-kill, pod-failure, network partition, CPU stress)"
+    description: "Four failure injections targeting go-api by label. Apply one at a time with a label selector (e.g. -l experiment=pod-kill) and watch how the platform reacts."
+    path: manifests/chaos-experiments.yaml
+  - label: "PodDisruptionBudget protecting go-api during chaos"
+    description: "Caps how many go-api pods can be down at once, so voluntary disruptions can't take the service fully offline."
+    path: manifests/pod-disruption-budgets.yaml
+
 explore:
   urls:
-    - label: "Grafana Chaos Dashboard"
-      url: "http://grafana.{{.DomainSuffix}}"
+    - label: "Grafana — go-api requests (watch RPS/errors during chaos)"
+      url: "http://grafana.{{.DomainSuffix}}/d/app-requests"
     - label: "Chaos Mesh Dashboard"
-      url: "http://localhost:2333 (run port-forward first)"
+      url: "http://chaos.{{.DomainSuffix}}"
   commands:
-    - label: "Port-forward Chaos Mesh dashboard"
+    - label: "Port-forward Chaos Mesh dashboard (fallback if the URL doesn't resolve)"
       command: "kubectl port-forward -n chaos-mesh svc/chaos-dashboard 2333:2333 &"
     - label: "List all active experiments"
       command: "kubectl get podchaos,networkchaos,stresschaos --all-namespaces"
@@ -79,6 +88,7 @@ explore:
       command: "kubectl get pdb -n go-api"
   tips:
     - "Start by generating background traffic, then activate experiments to see their impact in Grafana"
+    - "Grafana → the linked go-api requests dashboard: during an experiment watch RPS dip and 5xx errors rise, then recover as pods self-heal. A healthy platform returns to baseline within seconds."
     - "Pod kill experiments test self-healing — Kubernetes will restart terminated pods automatically"
     - "Network delay experiments simulate degraded connectivity — watch latency spike in Grafana"
     - "CPU stress triggers HPA scale-up if autoscaling is enabled — watch replica count increase"

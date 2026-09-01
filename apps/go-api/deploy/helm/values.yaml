@@ -1,12 +1,7 @@
 # Default values for go-api Helm chart
 
-# Override the name of the chart
 nameOverride: ""
-
-# Override the full name of the release
 fullnameOverride: ""
-
-# Global settings
 global:
   environment: k3d
 
@@ -131,10 +126,17 @@ prometheus:
   port: 8080
   path: /metrics
 
-# ServiceMonitor for Prometheus Operator
+# ServiceMonitor for the Prometheus Operator.
+# Off by default: this app is already scraped through the platform's annotation
+# based "kubernetes-pods" job (it carries prometheus.io/scrape: "true"), so
+# enabling this too would double-scrape /metrics and double every rate. Turn it
+# on only if you also remove the pod's prometheus.io/scrape annotation and want
+# the explicit ServiceMonitor path instead.
+# releaseLabel must match the stack's serviceMonitorSelector (it selects
+# ServiceMonitors labelled release=<its release name>, default "prometheus").
 serviceMonitor:
   enabled: false
-  namespace: monitoring
+  releaseLabel: prometheus
   interval: 30s
   scrapeTimeout: 10s
 

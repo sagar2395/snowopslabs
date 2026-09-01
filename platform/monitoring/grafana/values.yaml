@@ -26,11 +26,6 @@ persistence:
     - ReadWriteOnce
   size: 5Gi
 
-# The default init-chown-data container runs `chown` over the whole data volume
-# on every (re)start. On k3d's local-path (hostPath-backed) PVC that chown hits
-# "Permission denied" and crash-loops, blocking Grafana from ever starting on an
-# upgrade/reinstall. local-path already mounts the volume with correct
-# ownership, so this init step is unnecessary here — disable it.
 initChownData:
   enabled: false
 
@@ -40,15 +35,18 @@ datasources:
     apiVersion: 1
     datasources:
       - name: Prometheus
+        uid: prometheus
         type: prometheus
         url: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
         isDefault: true
         editable: true
       - name: Loki
+        uid: loki
         type: loki
         url: http://loki-gateway.monitoring.svc.cluster.local
         editable: true
       - name: Tempo
+        uid: tempo
         type: tempo
         url: http://tempo.monitoring.svc.cluster.local:3100
         editable: true
@@ -65,23 +63,12 @@ dashboardProviders:
         disableDeletion: false
         editable: true
         options:
-          # The grafana chart mounts each entry of dashboardsConfigMaps at
-          # /var/lib/grafana/dashboards/<provider>, so the provider path must
-          # point at that subfolder (not the parent) for the JSON to load.
           path: /var/lib/grafana/dashboards/default
 
-# Mount our curated dashboard JSON (packaged as the grafana-dashboards ConfigMap
-# by install.sh) under the 'default' provider path above. Without this the
-# provider directory is empty and Grafana shows no dashboards / "no data".
 dashboardsConfigMaps:
   default: grafana-dashboards
 
-# The dashboard sidecar watches for ConfigMaps labelled grafana_dashboard="1"
-# and loads them live — this is how scenarios (e.g. observability-sre's SLO
-# dashboards) ship dashboards into a running Grafana without a chart upgrade.
-# Without it those scenario ConfigMaps are created but never rendered, so the
-# panels silently never appear. searchNamespace: ALL so dashboards created in
-# any namespace (not just monitoring) are picked up.
+# The dashboard sidecar watches for ConfigMaps labelled grafana_dashboard="1" and loads them live.
 sidecar:
   dashboards:
     enabled: true
@@ -94,14 +81,6 @@ sidecar:
 
 # Dashboard downloads disabled - dashboards ship as local JSON via the ConfigMap.
 dashboards: {}
-# dashboards:
-#   default:
-#     cluster-metrics:
-#       url: https://raw.githubusercontent.com/prometheus-community/grafana-dashboards/main/kubernetes-cluster/dashboard.json
-#       token: ''
-#     pod-resources:
-#       url: https://raw.githubusercontent.com/prometheus-community/grafana-dashboards/main/kubernetes-cluster-monitoring/pods.json
-#       token: ''
 
 # Grafana plugins
 plugins: []

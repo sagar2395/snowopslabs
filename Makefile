@@ -1,10 +1,5 @@
 ifneq (,$(wildcard .env))
 	include .env
-	# .env values keep any whitespace between the value and an inline
-	# "# comment": Make strips the comment text but not the spaces before it, so
-	# `PROFILE=k3d   # ...` becomes "k3d   ". Left as-is, that whitespace flows
-	# into recipes (bash runtimes/k3d   /up.sh) and into the exported environment
-	# the Go tools read, breaking cluster names, ports and profile lookups.
 	# Normalise every variable the file defines with $(strip). This keeps any
 	# existing .env working, including ones copied from an older, inline-commented
 	# .env.example.
@@ -23,10 +18,6 @@ COVERAGE_MIN ?= 80
 # Defaults are read from .env if present; any command may override them by
 # passing VAR=val on the make command line.
 
-# Orchestration and repo-wide gates run from the content root. The Go/UI build
-# and test targets live in the self-contained module under src/ (src/Makefile)
-# and are delegated in below, so `make cli-build`, `make test`, etc. still work
-# from here.
 include make/vars.mk
 include make/bootstrap.mk
 include make/runtime.mk
@@ -36,11 +27,6 @@ include make/check.mk
 include make/services.mk
 include make/shell.mk
 
-# Targets implemented by the src/ module. Running any of them here delegates to
-# `make -C src <target>` so the build executes where go.mod lives. BIN_DIR is
-# passed as an absolute path to the repo-root bin/ so the host binary lands at
-# ./bin/labctl (gitignored) rather than src/bin/labctl — the module still
-# defaults to src/bin when built standalone. Only the cli-* targets read it.
 SRC_TARGETS := cli-build cli-build-all cli-install cli-clean ui-build ui-deps \
                test-go test-api test-coverage coverage-check fuzz \
                lint-go lint-ui sec vuln golden-update validate-content \
@@ -79,6 +65,14 @@ reset: teardown init
 run:
 	@$(MAKE) local-run APP_NAME=$(APP_NAME)
 
+## ui: rebuild the UI + binary (fresh embed) and launch the web UI
+ui: cli-build
+	@./bin/labctl ui
+
+.PHONY: ui ui-dev
+ui-dev:
+	@LABCTL_UI_DIR=$(CURDIR)/src/ui/dist ./bin/labctl ui
+
 # ── Help ─────────────────────────────────────────────────────────────────────
 
 help:
@@ -86,6 +80,8 @@ help:
 	@echo ""
 	@echo "  Quick start:"
 	@echo "    make cli-build           Build bin/labctl (UI embedded)"
+	@echo "    make ui                  Rebuild UI + binary and launch the web UI"
+	@echo "    make ui-dev              Launch the web UI serving src/ui/dist live (no Go rebuild)"
 	@echo "    make init                setup-tools + runtime-up + platform-up"
 	@echo "    make teardown            Remove apps, platform and cluster"
 	@echo "    make reset               teardown then init"

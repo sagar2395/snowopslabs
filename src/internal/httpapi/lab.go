@@ -115,7 +115,13 @@ func (s *Server) handleLabReset(w http.ResponseWriter, r *http.Request) {
 	label := "Reset lab"
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
-		s.exec.BroadcastEnd(jobID, label, lab.Execute(plan, s.labDeps(true)))
+		err := lab.Execute(plan, s.labDeps(true))
+		// Force-clear scenario and incident activation state.
+		s.scenes.DeactivateAll()
+		if s.incidents != nil {
+			s.incidents.ClearActiveState()
+		}
+		s.exec.BroadcastEnd(jobID, label, err)
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]interface{}{
 		"jobId": jobID, "status": "accepted", "steps": len(plan),

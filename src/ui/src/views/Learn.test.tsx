@@ -49,7 +49,7 @@ function renderLearn() {
   const notify = vi.fn()
   render(
     <QueryClientProvider client={client}>
-      <Learn notify={notify} />
+      <Learn notify={notify} requestConfirm={vi.fn()} />
     </QueryClientProvider>,
   )
   return { notify }
@@ -90,7 +90,7 @@ describe('Learn view', () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     const { container } = render(
       <QueryClientProvider client={client}>
-        <Learn notify={vi.fn()} />
+        <Learn notify={vi.fn()} requestConfirm={vi.fn()} />
       </QueryClientProvider>,
     )
     await user.click(await screen.findByRole('button', { name: /details/i }))

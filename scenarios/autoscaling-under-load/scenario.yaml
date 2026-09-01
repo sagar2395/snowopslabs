@@ -21,6 +21,32 @@ objectives:
   - "Drive a traffic spike and watch replicas scale up on Prometheus RPS"
   - "Confirm latency stays within SLO while scaled, then scales back on cooldown"
 
+# Tunable knobs for experimentation — override at activation with
+# `labctl scenario up autoscaling-under-load --set Threshold=15 --set MaxReplicas=4`
+parameters:
+  - name: MinReplicas
+    displayName: "Minimum replicas"
+    description: "Floor the autoscaler never scales below (idle baseline). The scenario story starts at 1."
+    default: "1"
+    type: int
+    min: 1
+    max: 10
+    notGreaterThan: MaxReplicas
+  - name: MaxReplicas
+    displayName: "Maximum replicas"
+    description: "Ceiling the autoscaler will not exceed no matter how high the load — try lowering it to watch the workload saturate at the cap."
+    default: "6"
+    type: int
+    min: 1
+    max: 10
+  - name: Threshold
+    displayName: "RPS per replica (scale threshold)"
+    description: "Target request rate per replica. Lower = scales more aggressively (more replicas for the same load); higher = more conservative."
+    default: "25"
+    type: int
+    min: 1
+    max: 500
+
 stages:
   - name: autoscaler
     description: Declare the ScaledObject and the replicas-vs-RPS dashboard
@@ -35,9 +61,6 @@ stages:
         path: dashboards/
         namespace: "{{.MonitoringNamespace}}"
 
-# These checks assert the POST-SPIKE state (run the spike profile first — see the
-# explore commands). At baseline go-api sits at 1 replica; under the spike KEDA
-# scales it up, and `scenario verify` confirms it.
 checks:
   - name: keda-operator-ready
     type: kubectl
@@ -83,7 +106,7 @@ references:
 
 snippets:
   - label: "KEDA ScaledObject for go-api (the autoscaler this scenario installs)"
-    description: "Scales go-api 1→6 on Prometheus RPS. Edit the threshold and re-apply to change how aggressively it scales."
+    description: "The autoscaler this scenario installs. It scales go-api on its Prometheus request rate: desiredReplicas = ceil(total RPS ÷ threshold), clamped between minReplicaCount and maxReplicaCount. The defaults scale 1→6 at 25 RPS per replica — override the parameters at activation to change how aggressively it reacts."
     path: manifests/scaledobject.yaml
   - label: "Inspect the HPA KEDA created"
     description: "Not a manifest to apply — a quick way to watch the desired/current replica maths live."
@@ -94,7 +117,7 @@ snippets:
 explore:
   urls:
     - label: "Grafana — Autoscaling dashboard (replicas vs RPS)"
-      url: "http://grafana.{{.DomainSuffix}}"
+      url: "http://grafana.{{.DomainSuffix}}/d/autoscaling-under-load"
     - label: "Prometheus"
       url: "http://prometheus.{{.DomainSuffix}}"
   commands:

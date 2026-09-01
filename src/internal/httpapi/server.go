@@ -5,12 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,14 +45,13 @@ type Server struct {
 	router    *mux.Router
 	upgrader  websocket.Upgrader
 	uiFS      fs.FS
+	uiDir     string
+	uiSource  string
 
-	// runStore is the durable run store the run console reads (W3/W6). It is the
-	// same database labctl writes through the run engine, so the UI shows runs
-	// regardless of which process created them. Opened best-effort; nil disables
-	// the /runs endpoints (they answer 503) rather than refusing to boot.
+	// runStore is the durable run store the run console reads.
 	runStore *store.Store
 
-	// Auth (task 062). authEnabled mirrors LABCTL_AUTH at construction time;
+	// authEnabled mirrors LABCTL_AUTH at construction time;
 	// when false, the middleware is a pass-through and behaviour is unchanged.
 	authEnabled bool
 	users       *auth.Store
@@ -76,6 +79,11 @@ func WithMetrics(app *metrics.App) ServerOption {
 // best-effort when no store is provided.
 func WithRunStore(st *store.Store) ServerOption {
 	return func(s *Server) { s.runStore = st }
+}
+
+// WithUIDir serves the UI live from a directory on disk (via http.Dir) instead of the embedded bundle.
+func WithUIDir(dir string) ServerOption {
+	return func(s *Server) { s.uiDir = dir }
 }
 
 // NewServer creates a new API server. The embeddedUI parameter should be the
@@ -160,10 +168,7 @@ func (s *Server) httpServer(addr string) *http.Server {
 	}
 }
 
-// CheckBind refuses a network-exposed bind when authentication is off. Binding
-// anything other than loopback (including the empty host, which means all
-// interfaces) exposes cluster-control endpoints; without auth that is a footgun,
-// so the server declines to start and explains how to proceed.
+// CheckBind refuses a network-exposed bind when authentication is off.
 func CheckBind(host string, authEnabled bool) error {
 	if authEnabled || IsLoopbackHost(host) {
 		return nil
@@ -194,42 +199,72 @@ func IsLoopbackHost(host string) bool {
 func (s *Server) setupRoutes() {
 	s.router = mux.NewRouter()
 
-	// The same handler set is mounted under two prefixes: /api/v2 (the versioned
-	// surface third parties and the UI should target) and /api (the unversioned
-	// alias the current UI still uses). gorilla/mux matches in registration
-	// order, so /api/v2 — the more specific prefix — MUST be registered first;
-	// otherwise the /api subrouter would swallow /api/v2/* requests.
 	s.registerAPI(s.router.PathPrefix("/api/v2").Subrouter(), apiV2)
 	s.registerAPI(s.router.PathPrefix("/api").Subrouter(), apiV1)
 
-	// Prometheus scrape endpoint — top-level (no /api auth or JSON middleware),
-	// registered before the UI catch-all. Only present when metrics are enabled.
-	// No .Methods() restriction: the handler itself enforces GET/HEAD and
-	// answers 405 otherwise, so a POST reaches it instead of falling through to
-	// the SPA catch-all.
 	if s.metrics != nil {
 		s.router.Handle("/metrics", s.metrics.Handler())
 	}
 
-	// Serve UI — use embedded FS if available, fall back to filesystem for dev.
-	var uiFS http.FileSystem
+	s.router.PathPrefix("/").Handler(spaHandler(s.resolveUIFS()))
+}
+
+// resolveUIFS decides where the UI is served from and records a startup banner
+// (UIInfo) naming the source and the built bundle, so a stale server process is
+// obvious rather than silently serving old code.
+func (s *Server) resolveUIFS() http.FileSystem {
+	if s.uiDir != "" {
+		s.uiSource = fmt.Sprintf("UI from disk (live): %s [%s]", s.uiDir, uiBundleName(http.Dir(s.uiDir)))
+		return http.Dir(s.uiDir)
+	}
 	if s.uiFS != nil {
 		if _, err := fs.Stat(s.uiFS, "index.html"); err == nil {
-			uiFS = http.FS(s.uiFS)
+			fsys := http.FS(s.uiFS)
+			s.uiSource = fmt.Sprintf("embedded UI [%s] — rebuild with `make cli-build` to update", uiBundleName(fsys))
+			return fsys
 		}
 	}
-	if uiFS == nil {
-		uiFS = http.Dir(s.cfg.ProjectRoot + "/ui/dist")
+	// Dev checkout with no embedded bundle: serve the Vite output from disk.
+	for _, p := range []string{
+		filepath.Join(s.cfg.ProjectRoot, "src", "ui", "dist"),
+		filepath.Join(s.cfg.ProjectRoot, "ui", "dist"),
+	} {
+		if _, err := os.Stat(filepath.Join(p, "index.html")); err == nil {
+			s.uiSource = fmt.Sprintf("UI from disk: %s [%s]", p, uiBundleName(http.Dir(p)))
+			return http.Dir(p)
+		}
 	}
-	s.router.PathPrefix("/").Handler(spaHandler(uiFS))
+	fallback := filepath.Join(s.cfg.ProjectRoot, "src", "ui", "dist")
+	s.uiSource = "UI not found (no embedded bundle and no built dist) — run `make ui`"
+	return http.Dir(fallback)
+}
+
+// UIInfo returns a one-line description of the resolved UI source and its built
+// bundle hash, for `labctl ui` to print on startup.
+func (s *Server) UIInfo() string { return s.uiSource }
+
+var uiBundleRe = regexp.MustCompile(`assets/index-[A-Za-z0-9_-]+\.(?:js|css)`)
+
+// uiBundleName reads index.html and returns the hashed entry-bundle filename,
+// which changes on every UI build — the fingerprint that tells two builds apart.
+func uiBundleName(fsys http.FileSystem) string {
+	f, err := fsys.Open("index.html")
+	if err != nil {
+		return "no index.html"
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, 1<<16))
+	if err != nil {
+		return "unreadable"
+	}
+	if m := uiBundleRe.FindString(string(b)); m != "" {
+		return strings.TrimPrefix(m, "assets/")
+	}
+	return "unknown bundle"
 }
 
 // spaHandler serves static UI assets, falling back to index.html for any path
-// that is not an existing file. The web UI is a single-page app with real
-// client-side routes (e.g. /scenarios); a deep link or a refresh must return
-// the app shell so the router can render the right view, rather than a 404 from
-// the file server. API and /metrics routes are registered before this catch-all,
-// so they are never shadowed by the fallback.
+// that is not an existing file.
 func spaHandler(fsys http.FileSystem) http.Handler {
 	fileServer := http.FileServer(fsys)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -285,12 +320,14 @@ func (s *Server) registerAPI(api *mux.Router, version string) {
 	api.HandleFunc("/status", s.handleStatus).Methods("GET", "OPTIONS")
 	api.HandleFunc("/jobs", s.handleJobs).Methods("GET", "OPTIONS")
 	api.HandleFunc("/apps", s.handleListApps).Methods("GET", "OPTIONS")
+	api.HandleFunc("/apps/{name}/detail", s.handleAppDetail).Methods("GET", "OPTIONS")
 	api.HandleFunc("/apps/{name}/build", s.handleAppBuild).Methods("POST", "OPTIONS")
 	api.HandleFunc("/apps/{name}/deploy", s.handleAppDeploy).Methods("POST", "OPTIONS")
 	api.HandleFunc("/apps/{name}/destroy", s.handleAppDestroy).Methods("POST", "OPTIONS")
 	api.HandleFunc("/platform", s.handlePlatformStatus).Methods("GET", "OPTIONS")
 	api.HandleFunc("/platform/up", s.handlePlatformUp).Methods("POST", "OPTIONS")
 	api.HandleFunc("/platform/down", s.handlePlatformDown).Methods("POST", "OPTIONS")
+	api.HandleFunc("/platform/component/{category}/{name}", s.handlePlatformComponentDetail).Methods("GET", "OPTIONS")
 	api.HandleFunc("/platform/component/{category}/{name}/up", s.handleComponentUp).Methods("POST", "OPTIONS")
 	api.HandleFunc("/platform/component/{category}/{name}/down", s.handleComponentDown).Methods("POST", "OPTIONS")
 	api.HandleFunc("/dashboards", s.handleDashboardURLs).Methods("GET", "OPTIONS")
@@ -316,10 +353,6 @@ func (s *Server) registerAPI(api *mux.Router, version string) {
 	api.HandleFunc("/results/{kind}", s.handleResultsByKind).Methods("GET", "OPTIONS")
 	api.HandleFunc("/progress", s.handleProgress).Methods("GET", "OPTIONS")
 	api.HandleFunc("/challenges", s.handleListChallenges).Methods("GET", "OPTIONS")
-	// Literal paths MUST be registered before the "/{name}" wildcard: gorilla/mux
-	// matches in registration order, so "/challenges/status" and
-	// "/challenges/history" would otherwise be swallowed by "/{name}" (name=
-	// "status"/"history") and 404 when the lookup fails.
 	api.HandleFunc("/challenges/status", s.handleChallengeStatus).Methods("GET", "OPTIONS")
 	api.HandleFunc("/challenges/history", s.handleChallengeHistory).Methods("GET", "OPTIONS")
 	api.HandleFunc("/challenges/complete", s.handleChallengeMarkComplete).Methods("POST", "OPTIONS")
@@ -327,6 +360,7 @@ func (s *Server) registerAPI(api *mux.Router, version string) {
 	api.HandleFunc("/learn/paths", s.handleLearnPaths).Methods("GET", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}", s.handleLearnPath).Methods("GET", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}/start", s.handleLearnStart).Methods("POST", "OPTIONS")
+	api.HandleFunc("/learn/paths/{name}/reset", s.handleLearnReset).Methods("POST", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}/progress", s.handleLearnProgress).Methods("GET", "OPTIONS")
 	api.HandleFunc("/learn/paths/{name}/complete", s.handleLearnMarkComplete).Methods("POST", "OPTIONS")
 	api.HandleFunc("/services", s.handleListServices).Methods("GET", "OPTIONS")
@@ -335,9 +369,6 @@ func (s *Server) registerAPI(api *mux.Router, version string) {
 	api.HandleFunc("/traffic", s.handleTrafficInfo).Methods("GET", "OPTIONS")
 	api.HandleFunc("/traffic/start", s.handleTrafficStart).Methods("POST", "OPTIONS")
 	api.HandleFunc("/traffic/stop", s.handleTrafficStop).Methods("POST", "OPTIONS")
-	// Durable run history + live transcript — what the run console renders. The
-	// literal-then-wildcard ordering rule applies, but /runs/{id} and its
-	// subpaths don't collide with a literal here.
 	api.HandleFunc("/runs", s.handleRunsList).Methods("GET", "OPTIONS")
 	api.HandleFunc("/runs/{id}", s.handleRunGet).Methods("GET", "OPTIONS")
 	api.HandleFunc("/runs/{id}/logs", s.handleRunLogs).Methods("GET", "OPTIONS")
@@ -347,14 +378,9 @@ func (s *Server) registerAPI(api *mux.Router, version string) {
 	api.HandleFunc("/runtimes/{name}/deactivate", s.handleRuntimeDeactivate).Methods("POST", "OPTIONS")
 
 	api.HandleFunc("/ws", s.handleWebSocket)
-	// Server-Sent Events fallback for the same event stream, with the same
-	// ?after=<seq> cursor semantics (WebSockets are blocked by some proxies).
 	api.HandleFunc("/stream", s.handleStreamSSE).Methods("GET", "OPTIONS")
 }
 
-// originAllowed reports whether a browser-supplied Origin header is trusted:
-// no Origin (curl, CLI clients), localhost origins (Vite dev server), or an
-// origin whose host matches the request host (the embedded UI itself).
 func originAllowed(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -388,10 +414,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		// Reject cross-site state-changing requests. Browsers always attach
-		// an Origin header to cross-origin POSTs, so a malicious website
-		// can't trigger cluster actions on localhost; CLI clients send no
-		// Origin and are unaffected.
+
 		if (r.Method == "POST" || r.Method == "DELETE") && origin != "" && !originAllowed(r) {
 			respondError(w, r, http.StatusForbidden, "forbidden_origin", "cross-origin requests are not allowed")
 			return
@@ -407,9 +430,6 @@ func jsonMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// ErrorResponse is the legacy (v1) JSON error envelope, kept for the /api alias
-// so existing clients are unaffected. /api/v2 emits RFC 7807 problem+json
-// instead (see respondProblem).
 type ErrorResponse struct {
 	Error string `json:"error"`
 	Code  string `json:"code,omitempty"`
@@ -420,11 +440,6 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
-// respondError writes an error in the envelope appropriate to the request's API
-// version: RFC 7807 problem+json under /api/v2, the legacy {error,code} shape
-// under /api. code is a stable machine slug (see knownProblemSlugs); msg is the
-// human-readable detail. The version is read from the request context, so unit
-// tests that call a handler directly (no version tag) get the v1 shape.
 func respondError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
 	if apiVersionFrom(r.Context()) == apiV2 {
 		respondProblem(w, r, status, code, msg)

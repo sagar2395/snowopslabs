@@ -1,9 +1,12 @@
 import type {
   StatusResponse,
   AppInfo,
+  AppDetail,
   PlatformProvidersMap,
+  PlatformComponentDetail,
   DashboardURL,
   Scenario,
+  ScenarioVerifyResult,
   Runtime,
   ActionAccepted,
   JobInfo,
@@ -68,8 +71,13 @@ async function req<T>(path: string, opts?: RequestInit, timeoutMs = GET_TIMEOUT_
   }
 }
 
-function post(path: string) {
-  return req<ActionAccepted>(path, { method: 'POST' }, POST_TIMEOUT_MS)
+function post(path: string, body?: unknown) {
+  const opts: RequestInit = { method: 'POST' }
+  if (body !== undefined) {
+    opts.body = JSON.stringify(body)
+    opts.headers = { 'Content-Type': 'application/json' }
+  }
+  return req<ActionAccepted>(path, opts, POST_TIMEOUT_MS)
 }
 
 export const api = {
@@ -85,6 +93,7 @@ export const api = {
 
   // ── Apps ────────────────────────────────────────────────────────────────
   listApps:   ()             => req<AppInfo[]>('/apps'),
+  getAppDetail: (name: string) => req<AppDetail>(`/apps/${enc(name)}/detail`),
   buildApp:   (name: string) => post(`/apps/${enc(name)}/build`),
   deployApp:  (name: string) => post(`/apps/${enc(name)}/deploy`),
   destroyApp: (name: string) => post(`/apps/${enc(name)}/destroy`),
@@ -93,14 +102,22 @@ export const api = {
   getPlatform:   ()                          => req<PlatformProvidersMap>('/platform'),
   platformUp:    ()                          => post('/platform/up'),
   platformDown:  ()                          => post('/platform/down'),
+  // Tears the lab back to post-init (deactivates scenarios/incidents, destroys
+  // apps, uninstalls non-baseline platform). Destructive → confirm=true required.
+  resetLab:      ()                          => post('/lab/reset?confirm=true'),
   componentUp:   (cat: string, name: string) => post(`/platform/component/${enc(catSegment(cat))}/${enc(name)}/up`),
   componentDown: (cat: string, name: string) => post(`/platform/component/${enc(catSegment(cat))}/${enc(name)}/down`),
+  getComponent:  (cat: string, name: string) => req<PlatformComponentDetail>(`/platform/component/${enc(catSegment(cat))}/${enc(name)}`),
 
   // ── Scenarios ─────────────────────────────────────────────────────────────
   listScenarios: ()             => req<Scenario[]>('/scenarios'),
   getScenario:   (name: string) => req<Scenario>(`/scenarios/${enc(name)}`),
-  scenarioUp:    (name: string) => post(`/scenarios/${enc(name)}/up`),
+  scenarioUp:    (name: string, params?: Record<string, string>) =>
+    post(`/scenarios/${enc(name)}/up`, params && Object.keys(params).length ? { params } : undefined),
   scenarioDown:  (name: string) => post(`/scenarios/${enc(name)}/down`),
+  // Verify is synchronous: it returns the per-check results directly (not a job),
+  // so it parses the ScenarioVerifyResult body rather than an ActionAccepted.
+  scenarioVerify: (name: string) => req<ScenarioVerifyResult>(`/scenarios/${enc(name)}/verify`, { method: 'POST' }, POST_TIMEOUT_MS),
 
   // ── Runtimes ──────────────────────────────────────────────────────────────
   listRuntimes:     ()             => req<Runtime[]>('/runtimes'),
@@ -112,6 +129,7 @@ export const api = {
   getLearnPath:    (name: string) => req<LearnPath>(`/learn/paths/${enc(name)}`),
   getLearnProgress:(name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/progress`),
   startLearnPath:  (name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/start`, { method: 'POST' }, POST_TIMEOUT_MS),
+  resetLearnPath:  (name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/reset`, { method: 'POST' }, POST_TIMEOUT_MS),
   completeLearnModule: (name: string, moduleIdx: number) =>
     req<LearnProgress>(`/learn/paths/${enc(name)}/complete`, {
       method: 'POST',

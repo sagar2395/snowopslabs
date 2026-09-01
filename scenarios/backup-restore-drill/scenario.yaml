@@ -55,6 +55,11 @@ checks:
     type: script
     script: scripts/check-backup-exists.sh
 
+snippets:
+  - label: "The restore canary this drill backs up"
+    description: "A ConfigMap in the go-api namespace acting as the canary: the drill backs it up, deletes it, then restores it. If its value survives the round-trip, the restore worked."
+    path: manifests/baseline.yaml
+
 explore:
   commands:
     - label: "1. Back up the go-api namespace to a manifest archive"

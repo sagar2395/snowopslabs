@@ -14,8 +14,8 @@ metadata:
 spec:
   scaleTargetRef:
     name: go-api
-  minReplicaCount: 1
-  maxReplicaCount: 6
+  minReplicaCount: {{.MinReplicas}}
+  maxReplicaCount: {{.MaxReplicas}}
   pollingInterval: 15      # seconds between metric polls
   cooldownPeriod: 60       # seconds at/under threshold before scaling down
   advanced:
@@ -29,6 +29,5 @@ spec:
     - type: prometheus
       metadata:
         serverAddress: "http://prometheus-kube-prometheus-prometheus.{{.MonitoringNamespace}}.svc:9090"
-        metricName: go_api_requests_per_second
-        query: "sum(rate(http_requests_total{app=\"go-api\"}[1m]))"
-        threshold: "25"
+        query: "sum(rate(http_requests_total{app=\"go-api\"}[1m]))"  # total RPS across pods
+        threshold: "{{.Threshold}}"                                  # RPS per replica

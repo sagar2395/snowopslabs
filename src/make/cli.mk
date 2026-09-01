@@ -35,6 +35,10 @@ ui-build: ui-deps
 cli-build: ui-build
 	@echo "==> Embedding UI assets"
 	@mkdir -p $(CLI_UI_DEST)
+	@# Clear the previous bundle first so old hashed assets don't accumulate in
+	@# the embed dir (and the binary) build over build.
+	@rm -rf $(CLI_UI_DEST)/assets
+	@find $(CLI_UI_DEST) -maxdepth 1 -type f ! -name '.gitkeep' -delete 2>/dev/null || true
 	@cp -R $(CLI_UI_SRC)/. $(CLI_UI_DEST)/
 	@echo "==> Building labctl $(VERSION) for $$(go env GOOS)/$$(go env GOARCH)"
 	@mkdir -p $(BIN_DIR)
@@ -44,6 +48,8 @@ cli-build: ui-build
 ## cli-build-all: cross-compile every release target into dist/
 cli-build-all: ui-build
 	@mkdir -p $(CLI_UI_DEST) dist
+	@rm -rf $(CLI_UI_DEST)/assets
+	@find $(CLI_UI_DEST) -maxdepth 1 -type f ! -name '.gitkeep' -delete 2>/dev/null || true
 	@cp -R $(CLI_UI_SRC)/. $(CLI_UI_DEST)/
 	@for target in $(CLI_TARGETS); do \
 	  goos=$${target%/*}; goarch=$${target#*/}; \

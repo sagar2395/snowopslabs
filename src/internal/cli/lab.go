@@ -164,8 +164,20 @@ stays up. Tip: take a snapshot first — labctl lab snapshot before-reset.`,
 		}
 
 		// Continue on error: tear down as much as possible, report what stuck.
-		if err := lab.Execute(plan, labDeps(true)); err != nil {
-			return err
+		execErr := lab.Execute(plan, labDeps(true))
+
+		// Force-clear scenario and incident activation state
+		if cleared := scenes.DeactivateAll(); len(cleared) > 0 {
+			fmt.Printf("Deactivated scenarios: %s\n", strings.Join(cleared, ", "))
+		}
+		if incEng != nil {
+			if fault := incEng.ClearActiveState(); fault != "" {
+				fmt.Printf("Deactivated incident: %s\n", fault)
+			}
+		}
+
+		if execErr != nil {
+			return execErr
 		}
 		fmt.Println("\nLab reset to post-init state.")
 		return nil

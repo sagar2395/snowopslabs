@@ -54,6 +54,75 @@ export interface PlatformProviderEntry {
  *  Category keys may be nested ("monitoring/metrics"). */
 export type PlatformProvidersMap = Record<string, PlatformProviderEntry[]>
 
+/** A compact scenario pointer (used by the "used in scenarios" list). */
+export interface ScenarioRef {
+  name: string
+  displayName: string
+}
+
+/** GET /api/platform/component/:cat/:name — the per-tool details page. */
+export interface PlatformComponentDetail {
+  category: string
+  name: string
+  namespace: string
+  installed: boolean
+  description: string
+  provides: string[]
+  ports: string[]
+  dependencies: string[]
+  resources: string[]
+  chart: string
+  /** The helm/kubectl commands install.sh actually runs, for "how it's set up". */
+  installCommands: string[]
+  /** Legend for the shell variables appearing in installCommands. */
+  installVars?: InstallVar[]
+  usedInScenarios: ScenarioRef[]
+}
+
+/** One shell variable referenced by a component's install commands. */
+export interface InstallVar {
+  name: string
+  value: string
+  description: string
+}
+
+/** One source file surfaced on an app's details page. */
+export interface AppFileRef {
+  path: string
+  content: string
+  truncated?: boolean
+}
+
+/** GET /api/apps/:name/detail — how an app is built and deployed. */
+export interface AppDetail {
+  name: string
+  description: string
+  tech: string[]
+  buildStrategy: string
+  deployStrategy: string
+  namespace: string
+  dockerfile?: AppFileRef
+  chartYaml?: AppFileRef
+  valuesFile?: AppFileRef
+  helmChartPath?: string
+  templates?: string[]
+}
+
+/** Live HorizontalPodAutoscaler state for an app (present ⇔ an HPA, including a
+ *  KEDA-managed one, targets it). Metric* strings are pre-rendered by the API,
+ *  e.g. current "27467m" vs target "25", or "92%" vs "80%" for a CPU HPA. */
+export interface HPAStatus {
+  present: boolean
+  name: string
+  minReplicas: number
+  maxReplicas: number
+  currentReplicas: number
+  desiredReplicas: number
+  metricName?: string
+  metricCurrent?: string
+  metricTarget?: string
+}
+
 export interface AppInfo {
   name: string
   buildStrategy: string
@@ -64,6 +133,8 @@ export interface AppInfo {
   namespace?: string
   /** Ingress URL (http://<app>.<domainSuffix>), set once deployed. */
   url?: string
+  /** Autoscaler state, present only when an HPA targets the app. */
+  hpa?: HPAStatus
 }
 
 export interface StatusResponse {
@@ -106,6 +177,44 @@ export interface ScenarioComponent {
   version?: string
 }
 
+/** A user-tunable knob a scenario exposes at activation time (e.g. an
+ *  autoscaler's min/max replicas and threshold). Substituted into the scenario's
+ *  manifests as a {{.name}} template variable. */
+export interface ScenarioParameter {
+  name: string
+  displayName?: string
+  description?: string
+  default: string
+  type?: 'int' | 'string'
+  min?: number
+  max?: number
+  notGreaterThan?: string
+}
+
+/** A machine-verifiable check declared by a scenario (pkg/checks.Check). The
+ *  assertion is either a kubectl resource/jsonpath or a promql query, compared
+ *  to `value` with `operator`. */
+export interface ScenarioCheck {
+  name: string
+  type?: string
+  resource?: string
+  namespace?: string
+  jsonpath?: string
+  query?: string
+  operator?: string
+  value?: string
+}
+
+/** An applyable manifest fragment a scenario surfaces for hands-on learning.
+ *  `yaml` carries the display content (inlined from `path` by the server, with
+ *  parameter defaults resolved); `path` names its source file. */
+export interface ScenarioSnippet {
+  label: string
+  description?: string
+  yaml?: string
+  path?: string
+}
+
 export interface Scenario {
   name: string
   displayName: string
@@ -116,6 +225,30 @@ export interface Scenario {
   prerequisites?: ScenarioPrerequisites
   components?: ScenarioComponent[]
   explore?: Explore
+  parameters?: ScenarioParameter[]
+  objectives?: string[]
+  checks?: ScenarioCheck[]
+  snippets?: ScenarioSnippet[]
+}
+
+/** One check outcome from POST /api/scenarios/{name}/verify (pkg/checks.Result).
+ *  Pass ⇔ the asserted post-state holds. */
+export interface ScenarioCheckResult {
+  name: string
+  type?: string
+  pass: boolean
+  got?: string
+  want?: string
+  explanation?: string
+  error?: string
+  durationMs?: number
+}
+
+/** POST /api/scenarios/{name}/verify response. */
+export interface ScenarioVerifyResult {
+  scenario: string
+  passed: boolean
+  results: ScenarioCheckResult[]
 }
 
 // ── Dashboards & Runtimes ────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"os"
 	osExec "os/exec"
 	"runtime"
 
@@ -21,6 +22,7 @@ var (
 	uiBind    string
 	uiTLSCert string
 	uiTLSKey  string
+	uiDir     string
 )
 
 var uiCmd = &cobra.Command{
@@ -54,17 +56,28 @@ var uiCmd = &cobra.Command{
 		// Try to open browser
 		go openBrowser(url)
 
+		if ln, err := net.Listen("tcp", addr); err != nil {
+			return fmt.Errorf("cannot bind %s: %w\nAnother `labctl ui` may already be running — stop it first (e.g. pkill -f 'labctl ui'), or choose another --port", addr, err)
+		} else {
+			_ = ln.Close()
+		}
+
 		// Use embedded UI assets (sub-directory "dist" within the embed.FS)
 		uiFS, _ := fs.Sub(webui.DistFS, "dist")
 
 		// Optional Prometheus endpoint, off unless LABCTL_METRICS=true.
 		var opts []httpapi.ServerOption
+		if uiDir != "" {
+			opts = append(opts, httpapi.WithUIDir(uiDir))
+		}
 		if metrics.Enabled() {
 			opts = append(opts, httpapi.WithMetrics(metrics.NewApp(rootCmd.Version)))
 			fmt.Printf("Metrics enabled at %s/metrics\n", url)
 		}
 
 		server := httpapi.NewServer(cfg, exec, reg, scenes, incEng, svcReg, rtm, uiFS, opts...)
+		// Name the exact bundle being served so a stale process is obvious.
+		fmt.Printf("Serving %s\n", server.UIInfo())
 		if uiTLSCert != "" {
 			return server.StartTLS(addr, uiTLSCert, uiTLSKey)
 		}
@@ -99,5 +112,6 @@ func init() {
 	uiCmd.Flags().StringVar(&uiBind, "bind", "127.0.0.1", "address to bind (use 0.0.0.0 to expose on the network; requires auth)")
 	uiCmd.Flags().StringVar(&uiTLSCert, "tls-cert", "", "path to a TLS certificate (PEM); enables HTTPS when set with --tls-key")
 	uiCmd.Flags().StringVar(&uiTLSKey, "tls-key", "", "path to the TLS private key (PEM)")
+	uiCmd.Flags().StringVar(&uiDir, "ui-dir", os.Getenv("LABCTL_UI_DIR"), "serve the UI live from this directory (e.g. src/ui/dist) instead of the embedded bundle; defaults to $LABCTL_UI_DIR")
 	rootCmd.AddCommand(uiCmd)
 }

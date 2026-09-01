@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -46,6 +48,8 @@ type (
 	Explore        = schema.Explore
 	ExploreURL     = schema.ExploreURL
 	ExploreCommand = schema.ExploreCommand
+	Parameter      = schema.Parameter
+	Snippet        = schema.Snippet
 )
 
 // Engine discovers, loads, and manages scenarios.
@@ -69,7 +73,18 @@ type Engine struct {
 	// points it at the run's transcript so activation output is recorded and
 	// streamed through the run engine rather than racing on os.Stdout.
 	out io.Writer
+
+	// activationParams: raw user overrides for the next Up (set via
+	// SetActivationParams, cleared after). resolvedParams: the effective values
+	// (defaults overlaid with overrides) that resolveTemplate substitutes for
+	// {{.ParamName}} during that Up. Both follow the SetOutput serialisation rule.
+	activationParams map[string]string
+	resolvedParams   map[string]string
 }
+
+// SetActivationParams stages parameter overrides for the next Up (nil clears).
+// Like SetOutput, callers must serialise per engine.
+func (e *Engine) SetActivationParams(params map[string]string) { e.activationParams = params }
 
 // SetOutput redirects the progress output of Up/Down. Not safe to call while an
 // activation is in flight on the same engine; callers serialise per engine.
@@ -220,6 +235,15 @@ func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 		return err
 	}
 
+	// Validate parameter overrides before installing anything, so a bad value
+	// (out of range, or minReplicas > maxReplicas) fails up front.
+	params, err := e.effectiveParams(s)
+	if err != nil {
+		return err
+	}
+	e.resolvedParams = params
+	defer func() { e.resolvedParams = nil }()
+
 	fmt.Fprintf(e.output(), "Activating scenario: %s\n", s.DisplayName)
 	fmt.Fprintf(e.output(), "  %s\n\n", s.Description)
 
@@ -227,6 +251,20 @@ func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 		fmt.Fprintln(e.output(), "Objectives:")
 		for _, o := range s.Objectives {
 			fmt.Fprintf(e.output(), "  - %s\n", o)
+		}
+		fmt.Fprintln(e.output())
+	}
+
+	// Echo the effective parameter values (marking any the user overrode) so the
+	// activation transcript records exactly what was applied.
+	if len(s.Parameters) > 0 {
+		fmt.Fprintln(e.output(), "Parameters:")
+		for _, p := range s.Parameters {
+			marker := ""
+			if _, overridden := e.activationParams[p.Name]; overridden {
+				marker = "  (overridden)"
+			}
+			fmt.Fprintf(e.output(), "  - %s = %s%s\n", p.Name, params[p.Name], marker)
 		}
 		fmt.Fprintln(e.output())
 	}
@@ -371,6 +409,27 @@ func (e *Engine) Status() []ScenarioStatus {
 		})
 	}
 	return result
+}
+
+// DeactivateAll clears every active-scenario marker without running teardown,
+// and returns the names it cleared. Lab reset uses this: after a reset the
+// scenarios' prerequisites are gone, so they must read as inactive (and be
+// re-activatable) even when their normal component teardown could not complete.
+func (e *Engine) DeactivateAll() []string {
+	entries, err := os.ReadDir(e.stateDir)
+	if err != nil {
+		return nil
+	}
+	var cleared []string
+	for _, en := range entries {
+		if en.IsDir() || !strings.HasSuffix(en.Name(), ".active") {
+			continue
+		}
+		name := strings.TrimSuffix(en.Name(), ".active")
+		e.markInactive(name)
+		cleared = append(cleared, name)
+	}
+	return cleared
 }
 
 // ScenarioStatus is a lightweight status for listing scenarios.
@@ -629,10 +688,10 @@ func (e *Engine) installGrafanaDashboard(s *Scenario, comp *Component, exec Comm
 		return fmt.Errorf("reading dashboard dir: %w", err)
 	}
 
-	ns := comp.Namespace
-	if ns == "" {
-		ns = e.MonitoringNamespace
-	}
+	// Template the namespace like every other installer. Using the raw
+	// comp.Namespace shipped a literal "{{.MonitoringNamespace}}" that kubectl
+	// rejected — and the error was swallowed, so Up wrongly reported success.
+	ns := e.componentNamespace(comp, e.MonitoringNamespace)
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
@@ -641,7 +700,7 @@ func (e *Engine) installGrafanaDashboard(s *Scenario, comp *Component, exec Comm
 
 		data, err := os.ReadFile(filepath.Join(dashDir, entry.Name()))
 		if err != nil {
-			continue
+			return fmt.Errorf("reading dashboard %s: %w", entry.Name(), err)
 		}
 
 		cmName := fmt.Sprintf("scenario-%s-%s", s.Name, strings.TrimSuffix(entry.Name(), ".json"))
@@ -661,10 +720,15 @@ data:
 
 		tmpPath, cleanup, err := writeTempManifest(cm)
 		if err != nil {
-			continue
+			return fmt.Errorf("writing dashboard manifest %s: %w", entry.Name(), err)
 		}
-		_, _ = exec.RunCommandStreamed("Apply dashboard "+entry.Name(), "kubectl", "apply", "-f", tmpPath)
+		// Propagate apply failures instead of discarding them, so a broken
+		// dashboard surfaces as a failed activation rather than a false success.
+		_, err = exec.RunCommandStreamed("Apply dashboard "+entry.Name(), "kubectl", "apply", "-f", tmpPath)
 		cleanup()
+		if err != nil {
+			return fmt.Errorf("applying dashboard %s: %w", entry.Name(), err)
+		}
 	}
 
 	return nil
@@ -677,10 +741,9 @@ func (e *Engine) uninstallGrafanaDashboard(s *Scenario, comp *Component, exec Co
 		return nil //nolint:nilerr // no dashboard dir means nothing to delete — uninstall is a no-op
 	}
 
-	ns := comp.Namespace
-	if ns == "" {
-		ns = e.MonitoringNamespace
-	}
+	// Template the namespace as install does, or delete hits the wrong namespace
+	// and the ConfigMap leaks while `scenario down` reports success.
+	ns := e.componentNamespace(comp, e.MonitoringNamespace)
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
@@ -758,7 +821,74 @@ func (e *Engine) ResolveTemplate(input string) string {
 // verbatim and the apply failed.
 var labctlVar = regexp.MustCompile(`{{\s*\.(\w+)\s*}}`)
 
+// effectiveParams resolves each declared parameter to its default or user
+// override, validated for type, bounds, and NotGreaterThan. An unknown override
+// key is an error so a typo'd name fails loudly instead of being ignored.
+func (e *Engine) effectiveParams(s *Scenario) (map[string]string, error) {
+	declared := make(map[string]Parameter, len(s.Parameters))
+	for _, p := range s.Parameters {
+		declared[p.Name] = p
+	}
+	for k := range e.activationParams {
+		if _, ok := declared[k]; !ok {
+			names := make([]string, 0, len(s.Parameters))
+			for _, p := range s.Parameters {
+				names = append(names, p.Name)
+			}
+			sort.Strings(names)
+			if len(names) == 0 {
+				return nil, fmt.Errorf("scenario %q accepts no parameters", s.Name)
+			}
+			return nil, fmt.Errorf("unknown parameter %q (scenario %q accepts: %s)", k, s.Name, strings.Join(names, ", "))
+		}
+	}
+
+	values := make(map[string]string, len(s.Parameters))
+	ints := make(map[string]int, len(s.Parameters))
+	for _, p := range s.Parameters {
+		val, label := p.Default, "default"
+		if ov, ok := e.activationParams[p.Name]; ok {
+			val, label = strings.TrimSpace(ov), "override"
+		}
+		if err := p.ValidateValue(val, label); err != nil {
+			return nil, err
+		}
+		values[p.Name] = val
+		if p.IsInt() {
+			n, _ := strconv.Atoi(val) // safe: ValidateValue parsed it
+			ints[p.Name] = n
+		}
+	}
+
+	// Relational constraints, e.g. minReplicas ≤ maxReplicas.
+	for _, p := range s.Parameters {
+		if p.NotGreaterThan == "" {
+			continue
+		}
+		if this, ok1 := ints[p.Name]; ok1 {
+			if other, ok2 := ints[p.NotGreaterThan]; ok2 && this > other {
+				return nil, fmt.Errorf("parameter %q (%d) must not be greater than %q (%d)", p.Name, this, p.NotGreaterThan, other)
+			}
+		}
+	}
+	return values, nil
+}
+
 func (e *Engine) resolveTemplate(input string) string {
+	return e.resolveTemplateWith(input, nil)
+}
+
+// ResolveTemplateWithParams resolves template vars using the given parameter
+// values on top of the engine's built-ins. Used to render a scenario's snippets
+// and explore hints with parameter defaults so {{.Param}} shows a real value.
+func (e *Engine) ResolveTemplateWithParams(input string, params map[string]string) string {
+	return e.resolveTemplateWith(input, params)
+}
+
+// resolveTemplateWith substitutes {{.Var}} placeholders. Precedence: built-ins,
+// then the active activation's resolvedParams, then extra — so a parameter can
+// never shadow a built-in, and live activation values win over display defaults.
+func (e *Engine) resolveTemplateWith(input string, extra map[string]string) string {
 	data := map[string]string{
 		"DomainSuffix":        e.DomainSuffix,
 		"ProjectRoot":         e.ProjectRoot,
@@ -766,6 +896,15 @@ func (e *Engine) resolveTemplate(input string) string {
 		"LokiRetentionPeriod": lokiRetentionPeriod(),
 		"IngressClass":        ingressClassOr(e.IngressClass),
 	}
+	overlay := func(src map[string]string) {
+		for k, v := range src {
+			if _, taken := data[k]; !taken {
+				data[k] = v
+			}
+		}
+	}
+	overlay(e.resolvedParams)
+	overlay(extra)
 	return labctlVar.ReplaceAllStringFunc(input, func(match string) string {
 		key := labctlVar.FindStringSubmatch(match)[1]
 		if v, ok := data[key]; ok {
@@ -773,6 +912,62 @@ func (e *Engine) resolveTemplate(input string) string {
 		}
 		return match // unknown {{.Var}} — leave it for whoever else consumes it
 	})
+}
+
+// ParamDefaults maps each declared parameter to its default value, or nil when
+// the scenario declares none.
+func (e *Engine) ParamDefaults(s *Scenario) map[string]string {
+	if len(s.Parameters) == 0 {
+		return nil
+	}
+	m := make(map[string]string, len(s.Parameters))
+	for _, p := range s.Parameters {
+		m[p.Name] = p.Default
+	}
+	return m
+}
+
+// SnippetContent returns a snippet's display text — its inline YAML or the
+// contents of its Path file — template-resolved with the scenario's parameter
+// defaults so {{.Param}} placeholders show real values. Path reads are confined
+// to the scenario directory. A file's leading comment banner is stripped so the
+// UI shows clean code (the banner's explanation belongs in the snippet's
+// description); inline comments on individual fields are kept.
+func (e *Engine) SnippetContent(s *Scenario, sn Snippet) (string, error) {
+	defaults := e.ParamDefaults(s)
+	if sn.YAML != "" {
+		return e.resolveTemplateWith(sn.YAML, defaults), nil
+	}
+	if sn.Path == "" {
+		return "", nil
+	}
+	full := filepath.Join(s.Dir, filepath.Clean(sn.Path))
+	if !strings.HasPrefix(full, filepath.Clean(s.Dir)+string(os.PathSeparator)) {
+		return "", fmt.Errorf("snippet path %q escapes the scenario directory", sn.Path)
+	}
+	data, err := os.ReadFile(full)
+	if err != nil {
+		return "", err
+	}
+	return e.resolveTemplateWith(stripLeadingCommentBanner(string(data)), defaults), nil
+}
+
+// stripLeadingCommentBanner drops a manifest's leading block of "#" comment and
+// blank lines — the header that documents the file for repo readers — so the
+// snippet shown in the UI starts at the first real line of config. Inline
+// comments further down (e.g. after a YAML field) are untouched.
+func stripLeadingCommentBanner(src string) string {
+	lines := strings.Split(src, "\n")
+	i := 0
+	for i < len(lines) {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			i++
+			continue
+		}
+		break
+	}
+	return strings.Join(lines[i:], "\n")
 }
 
 // ingressClassOr falls back to traefik (the k3d default) when no class is set,

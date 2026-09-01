@@ -3,9 +3,11 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ include "go-api.fullname" . }}
-  namespace: {{ .Values.serviceMonitor.namespace }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "go-api.labels" . | nindent 4 }}
+    # Required: the stack only selects ServiceMonitors carrying this release label.
+    release: {{ .Values.serviceMonitor.releaseLabel }}
 spec:
   selector:
     matchLabels:

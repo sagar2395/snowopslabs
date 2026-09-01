@@ -30,7 +30,6 @@ github.com/sagar2395/snowopslabs/internal/httpapi     43.6   W5  rebuilt as /api
 github.com/sagar2395/snowopslabs/internal/scenario    43.4   W4  rebuilt on the catalog + run engine
 github.com/sagar2395/snowopslabs/internal/runtime     59.0   W3  reduced to k3d/kind/incluster and moved onto the run engine
 github.com/sagar2395/snowopslabs/internal/services    55.9   W3  moved onto the run engine
-github.com/sagar2395/snowopslabs/internal/platform    76.5   W3  moved onto the run engine
 github.com/sagar2395/snowopslabs/internal/lab         76.3   W3  moved onto the run engine
 github.com/sagar2395/snowopslabs/internal/learn       76.7   W7  reworked with the assessment UI
 

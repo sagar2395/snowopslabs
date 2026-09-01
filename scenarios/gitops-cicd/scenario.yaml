@@ -6,6 +6,7 @@ category: delivery
 prerequisites:
   platform:
     - ingress
+    - gitops/argocd
   apps: []
 runtimes:
   - k3d
@@ -50,6 +51,11 @@ checks:
     type: kubectl
     resource: application/echo-server
     namespace: argocd
+
+snippets:
+  - label: "ArgoCD Application CRDs for go-api and echo-server"
+    description: "The declarative GitOps contract: ArgoCD watches each app's Helm path in Git and keeps the cluster in sync. automated.prune + selfHeal mean drift is corrected automatically."
+    path: manifests/argocd-applications.yaml
 
 explore:
   urls:

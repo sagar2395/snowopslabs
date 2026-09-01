@@ -21,7 +21,7 @@ export type IconName =
   | 'check' | 'check-circle' | 'x-circle' | 'alert-triangle' | 'info'
   | 'x' | 'chevron-down' | 'chevron-up' | 'chevron-right' | 'arrow-right'
   | 'play' | 'stop' | 'clock' | 'zap' | 'plus' | 'trash' | 'hammer'
-  | 'lightbulb' | 'target' | 'terminal' | 'dot'
+  | 'lightbulb' | 'target' | 'terminal' | 'dot' | 'trending-up'
 
 // Inner markup per icon. Paths use round joins/caps set on the parent <svg>.
 const PATHS: Record<IconName, JSX.Element> = {
@@ -77,6 +77,7 @@ const PATHS: Record<IconName, JSX.Element> = {
   target: <><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></>,
   terminal: <><polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" /></>,
   dot: <><circle cx="12" cy="12" r="5" /></>,
+  'trending-up': <><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" /><polyline points="16 7 22 7 22 13" /></>,
 }
 
 interface IconProps extends Omit<SVGProps<SVGSVGElement>, 'name'> {

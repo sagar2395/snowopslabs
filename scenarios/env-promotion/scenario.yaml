@@ -93,6 +93,11 @@ checks:
     resource: configmap/env-metadata
     namespace: env-prod
 
+snippets:
+  - label: "The dev environment (namespace, deployment, service, ingress)"
+    description: "One environment's full stack in its own namespace, tagged with the image version. Staging and prod are the same shape — promotion carries the image tag forward from one to the next."
+    path: manifests/dev-env.yaml
+
 explore:
   urls:
     - label: "go-api — dev environment"

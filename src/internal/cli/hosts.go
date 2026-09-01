@@ -29,6 +29,7 @@ var knownSubdomains = []string{
 	"argocd",
 	"traefik",
 	"kubernetes-dashboard",
+	"chaos", // chaos-engineering: Chaos Mesh dashboard ingress
 }
 
 var hostsCmd = &cobra.Command{

@@ -20,6 +20,7 @@ import (
 var scenarioNewForce bool
 var scenarioUpForce bool
 var scenarioDeployPrereqs bool
+var scenarioUpParams map[string]string
 
 var scenarioNewCmd = &cobra.Command{
 	Use:   "new <name>",
@@ -105,7 +106,7 @@ var scenarioUpCmd = &cobra.Command{
 			return nil
 		}
 		return runScenarioOp(cmd, "activate", name, func(ctx context.Context, svc *scnsvc.Service) (string, error) {
-			return svc.Activate(ctx, name, scenarioUpForce)
+			return svc.ActivateWithParams(ctx, name, scenarioUpForce, scenarioUpParams)
 		})
 	},
 }
@@ -408,6 +409,7 @@ func init() {
 	scenarioNewCmd.Flags().BoolVar(&scenarioNewForce, "force", false, "overwrite the scenario if it already exists")
 	scenarioUpCmd.Flags().BoolVar(&scenarioUpForce, "force", false, "reinstall even if the scenario is already active")
 	scenarioUpCmd.Flags().BoolVar(&scenarioDeployPrereqs, "deploy-prereqs", false, "build and deploy any prerequisite apps that are not yet running")
+	scenarioUpCmd.Flags().StringToStringVar(&scenarioUpParams, "set", nil, "override a scenario parameter (repeatable): --set key=value (e.g. --set threshold=15 --set maxReplicas=4)")
 
 	scenarioCmd.AddCommand(scenarioNewCmd)
 	scenarioCmd.AddCommand(scenarioListCmd)

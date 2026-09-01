@@ -8,6 +8,8 @@ prerequisites:
     - ingress
     - monitoring/metrics
     - monitoring/grafana
+    - security/policy/kyverno
+    - security/tls/cert-manager
   apps:
     - go-api
 runtimes:
@@ -70,6 +72,14 @@ checks:
     type: kubectl
     resource: networkpolicy/default-deny-all
     namespace: go-api
+
+snippets:
+  - label: "Kyverno ClusterPolicies (no privilege escalation, non-root, explicit tags)"
+    description: "Pod-security and best-practice policies in Audit mode, so existing workloads aren't disrupted on activation. Review the policy reports, then switch to Enforce once violations are resolved."
+    path: manifests/kyverno-policies.yaml
+  - label: "Default-deny NetworkPolicies with explicit allow rules"
+    description: "Locks the go-api namespace to default-deny, then re-opens exactly what it needs: DNS, Traefik ingress, and Prometheus scraping — the model for zero-trust namespace isolation."
+    path: manifests/network-policies.yaml
 
 explore:
   urls:

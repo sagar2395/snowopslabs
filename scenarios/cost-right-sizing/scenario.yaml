@@ -62,12 +62,17 @@ checks:
     operator: ">="
     value: "1"
 
+snippets:
+  - label: "The over-provisioned 'before' state (40× CPU, 32× memory)"
+    description: "go-api's deliberately inflated resource requests. This is the waste OpenCost surfaces — right-size these requests, re-deploy, and verify the cost drops."
+    path: values/overprovisioned.yaml
+
 explore:
   urls:
     - label: "OpenCost UI — per-namespace cost breakdown"
       url: "http://localhost:9090 (port-forward first — see commands below)"
     - label: "Grafana — go-api resource usage vs requests"
-      url: "http://grafana.{{.DomainSuffix}}"
+      url: "http://grafana.{{.DomainSuffix}}/d/pod-resources"
   commands:
     - label: "0. Open the OpenCost UI (run in background)"
       command: "kubectl -n opencost port-forward svc/opencost 9090 &"
@@ -84,6 +89,7 @@ explore:
     - label: "Inspect the current CPU request"
       command: "kubectl -n go-api get deploy go-api -o jsonpath='{.spec.template.spec.containers[0].resources}'"
   tips:
+    - "Grafana → the linked Pod Resources dashboard: compare the flat 'requests' line against the much lower 'usage' line — that gap is the waste. After right-sizing, requests should drop toward actual usage."
     - "OpenCost uses on-prem pricing defaults in k3d (~$0.048/CPU-hr, ~$0.006/GB-hr). Numbers are relative — useful for comparing before vs after, not real invoices."
     - "Requests drive Kubernetes scheduling and cloud node billing. Limits cap container usage but don't affect node cost. Right-sizing requests is where the savings are."
     - "2000m CPU request = 2 vCPUs reserved per pod even at idle. At ~$0.048/vCPU-hr that's ~$2.30/pod/day before any actual load — for a go-api serving <1 RPS."

@@ -55,7 +55,10 @@ jobs:
           kind load docker-image go-api:latest --name "$CLUSTER_NAME"
 
       - name: Activate scenario
-        run: labctl scenario up env-promotion
+        # env-promotion lists go-api as a prerequisite app; --deploy-prereqs
+        # builds and deploys it (the image is already loaded into kind above)
+        # before activating, so the run doesn't fail preflight.
+        run: labctl scenario up env-promotion --deploy-prereqs
 
       - name: Verify scenario checks pass
         run: labctl scenario verify env-promotion

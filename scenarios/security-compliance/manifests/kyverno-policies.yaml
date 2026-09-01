@@ -13,7 +13,6 @@ apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: deny-privilege-escalation
-  name: deny-privilege-escalation
   annotations:
     policies.kyverno.io/title: Deny Privilege Escalation
     policies.kyverno.io/category: Pod Security Standards
@@ -25,10 +24,8 @@ metadata:
       allowPrivilegeEscalation: false.
 spec:
   validationFailureAction: Audit
-  validationFailureAction: Audit
   background: true
   rules:
-    - name: deny-privilege-escalation
     - name: deny-privilege-escalation
       match:
         any:
@@ -51,7 +48,6 @@ spec:
             containers:
               - securityContext:
                   allowPrivilegeEscalation: false
-                  allowPrivilegeEscalation: false
 ---
 # Policy 2: Require non-root user
 # All containers must set runAsNonRoot: true to prevent processes running as
@@ -59,7 +55,6 @@ spec:
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: require-non-root-user
   name: require-non-root-user
   annotations:
     policies.kyverno.io/title: Require Non-Root User
@@ -101,9 +96,9 @@ spec:
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: require-explicit-image-tag
+  name: require-resource-limits
   annotations:
-    policies.kyverno.io/title: Require Explicit Image Tag
+    policies.kyverno.io/title: Require Resource Limits
     policies.kyverno.io/category: Best Practices
     policies.kyverno.io/severity: medium
     policies.kyverno.io/description: >-
@@ -113,7 +108,7 @@ spec:
   validationFailureAction: Audit
   background: true
   rules:
-    - name: require-image-tag
+    - name: require-resource-limits
       match:
         any:
           - resources:
@@ -129,7 +124,7 @@ spec:
                 - argocd
                 - chaos-mesh
       validate:
-        message: "Images must use an explicit tag."
+        message: "Containers must declare CPU and memory limits."
         pattern:
           spec:
             containers:
