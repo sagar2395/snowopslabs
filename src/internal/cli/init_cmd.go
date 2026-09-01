@@ -3,6 +3,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -57,9 +58,23 @@ func printPostInitHints() {
 
 var teardownCmd = &cobra.Command{
 	Use:   "teardown",
-	Short: "Tear down the lab (destroy apps + platform + cluster)",
+	Short: "Tear down the lab (deactivate scenarios/incidents + destroy apps + platform + cluster)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println("=== Destroying all apps ===")
+		// Deactivate scenarios and incidents FIRST — before their platform/app
+		// prerequisites are destroyed. Their state markers live on disk and would
+		// otherwise survive the teardown, leaving scenarios/incidents reading as
+		// "active" against a cluster where nothing they rely on exists.
+		fmt.Println("=== Deactivating scenarios and incidents ===")
+		if cleared := scenes.DeactivateAll(); len(cleared) > 0 {
+			fmt.Printf("Deactivated scenarios: %s\n", strings.Join(cleared, ", "))
+		}
+		if incEng != nil {
+			if fault := incEng.ClearActiveState(); fault != "" {
+				fmt.Printf("Deactivated incident: %s\n", fault)
+			}
+		}
+
+		fmt.Println("\n=== Destroying all apps ===")
 		apps, _ := config.ListApps(cfg.ProjectRoot)
 		for _, app := range apps {
 			fmt.Printf("Destroying %s...\n", app)

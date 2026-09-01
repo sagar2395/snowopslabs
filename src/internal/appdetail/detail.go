@@ -37,7 +37,6 @@ type Detail struct {
 	Dockerfile     *FileRef `json:"dockerfile,omitempty"`
 	ChartYAML      *FileRef `json:"chartYaml,omitempty"`
 	ValuesFile     *FileRef `json:"valuesFile,omitempty"`
-	Entrypoint     *FileRef `json:"entrypoint,omitempty"`
 	HelmChartPath  string   `json:"helmChartPath,omitempty"`
 	Templates      []string `json:"templates,omitempty"`
 }
@@ -63,9 +62,6 @@ func Build(projectRoot, name, buildStrategy, deployStrategy, namespace, valuesFi
 
 	if fr := readFile(projectRoot, filepath.Join(appDir, "Dockerfile")); fr != nil {
 		d.Dockerfile = fr
-	}
-	if fr := entrypoint(projectRoot, appDir); fr != nil {
-		d.Entrypoint = fr
 	}
 
 	chartDir := filepath.Join(appDir, "deploy", "helm")
@@ -150,16 +146,6 @@ func detectTech(appDir string) []string {
 		add("Kubernetes")
 	}
 	return tech
-}
-
-// entrypoint returns the app's main source file, if it has a recognisable one.
-func entrypoint(projectRoot, appDir string) *FileRef {
-	for _, cand := range []string{"main.go", "main.py", "index.js", "server.js", "app.py"} {
-		if p := filepath.Join(appDir, cand); exists(p) {
-			return readFile(projectRoot, p)
-		}
-	}
-	return nil
 }
 
 // templateList returns the Helm template filenames (repo-relative), so the page

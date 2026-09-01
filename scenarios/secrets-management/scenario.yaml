@@ -68,6 +68,11 @@ checks:
     type: script
     script: checks/verify-rotation.sh
 
+snippets:
+  - label: "External Secrets wiring: Vault SecretStore + ExternalSecret"
+    description: "The sync contract — a SecretStore pointing at Vault and an ExternalSecret that materializes a Kubernetes Secret from it. refreshInterval: 10s makes rotation visible quickly; rotate the value in Vault and watch it propagate."
+    path: manifests/es-wiring.yaml
+
 explore:
   urls:
     - label: "Vault UI"

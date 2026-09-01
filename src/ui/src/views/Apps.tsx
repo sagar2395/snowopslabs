@@ -280,7 +280,6 @@ function AppDetailModal({ detail, loading, onClose, onCopy }: {
             {detail.dockerfile && <FileBlock label="Dockerfile" file={detail.dockerfile} onCopy={onCopy} />}
             {detail.valuesFile && <FileBlock label="Helm values (used by Deploy)" file={detail.valuesFile} onCopy={onCopy} />}
             {detail.chartYaml && <FileBlock label="Chart.yaml" file={detail.chartYaml} onCopy={onCopy} />}
-            {detail.entrypoint && <FileBlock label="Entrypoint" file={detail.entrypoint} onCopy={onCopy} />}
 
             {templates.length > 0 && (
               <div className="modal-section">

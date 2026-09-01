@@ -79,6 +79,21 @@ reset: teardown init
 run:
 	@$(MAKE) local-run APP_NAME=$(APP_NAME)
 
+## ui: rebuild the UI + binary (fresh embed) and launch the web UI
+# One command so "rebuild and see new code" can't skip the UI build or run a
+# stale binary. It runs in the foreground; the server refuses to start if another
+# labctl ui already holds the port.
+ui: cli-build
+	@./bin/labctl ui
+
+## ui-dev: launch the web UI serving the UI live from src/ui/dist on disk
+# No Go rebuild to see UI changes: edit the UI, run `make -C src ui-build`
+# (or `cd src/ui && npm run build`), then refresh the browser. Needs bin/labctl
+# to exist once (build it with `make cli-build`).
+.PHONY: ui ui-dev
+ui-dev:
+	@LABCTL_UI_DIR=$(CURDIR)/src/ui/dist ./bin/labctl ui
+
 # ── Help ─────────────────────────────────────────────────────────────────────
 
 help:
@@ -86,6 +101,8 @@ help:
 	@echo ""
 	@echo "  Quick start:"
 	@echo "    make cli-build           Build bin/labctl (UI embedded)"
+	@echo "    make ui                  Rebuild UI + binary and launch the web UI"
+	@echo "    make ui-dev              Launch the web UI serving src/ui/dist live (no Go rebuild)"
 	@echo "    make init                setup-tools + runtime-up + platform-up"
 	@echo "    make teardown            Remove apps, platform and cluster"
 	@echo "    make reset               teardown then init"

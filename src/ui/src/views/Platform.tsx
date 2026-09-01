@@ -291,6 +291,7 @@ function ComponentDetailModal({ detail, loading, onClose, onCopy }: {
   const dependencies = detail.dependencies ?? []
   const resources = detail.resources ?? []
   const installCommands = detail.installCommands ?? []
+  const installVars = detail.installVars ?? []
   const usedInScenarios = detail.usedInScenarios ?? []
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -342,6 +343,22 @@ function ComponentDetailModal({ detail, loading, onClose, onCopy }: {
                     <button className="cmd-copy" onClick={() => onCopy(cmd)}>Copy</button>
                   </div>
                 ))}
+                {installVars.length > 0 && (
+                  <div className="install-vars">
+                    <div className="hint-text">Variables used in these commands:</div>
+                    <table className="var-table">
+                      <tbody>
+                        {installVars.map(v => (
+                          <tr key={v.name}>
+                            <td><code>${'{'}{v.name}{'}'}</code></td>
+                            <td>{v.value ? <code>{v.value}</code> : <span className="hint-text">set via environment</span>}</td>
+                            <td className="var-desc">{v.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 

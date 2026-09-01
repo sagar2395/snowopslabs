@@ -39,16 +39,23 @@ datasources:
   datasources.yaml:
     apiVersion: 1
     datasources:
+      # Stable uids (not Grafana's random per-install ones) so dashboards and
+      # Explore deep links can reference a datasource by a known id. Dashboard
+      # JSON targets uid "prometheus"; the app "Logs"/"Traces" links target
+      # "loki"/"tempo".
       - name: Prometheus
+        uid: prometheus
         type: prometheus
         url: http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
         isDefault: true
         editable: true
       - name: Loki
+        uid: loki
         type: loki
         url: http://loki-gateway.monitoring.svc.cluster.local
         editable: true
       - name: Tempo
+        uid: tempo
         type: tempo
         url: http://tempo.monitoring.svc.cluster.local:3100
         editable: true

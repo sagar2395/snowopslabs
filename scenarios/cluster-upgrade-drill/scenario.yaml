@@ -50,10 +50,15 @@ checks:
     operator: ">="
     value: "0.99"
 
+snippets:
+  - label: "PodDisruptionBudget that keeps go-api up across the node roll"
+    description: "maxUnavailable: 1 forces the rolling upgrade to wait for a Ready replacement before evicting the next pod — the mechanism that keeps availability up while worker nodes are replaced one at a time."
+    path: manifests/baseline.yaml
+
 explore:
   urls:
     - label: "Grafana — go-api availability"
-      url: "http://grafana.{{.DomainSuffix}}"
+      url: "http://grafana.{{.DomainSuffix}}/d/app-requests"
   commands:
     - label: "1. Start steady background traffic (keep running in another terminal)"
       command: "labctl traffic start --profile steady --rps 20"
@@ -67,6 +72,7 @@ explore:
       command: "kubectl get nodes -o custom-columns=NAME:.metadata.name,VERSION:.status.nodeInfo.kubeletVersion"
   tips:
     - "Start traffic FIRST — the availability check reads http_requests_total from Prometheus over a 10m window covering the upgrade."
+    - "Grafana → the linked availability dashboard: the request-success line should stay near 100% across the whole node roll — expect only brief dips as each node cycles out and back in."
     - "HONEST SCOPE: k3d cannot upgrade a node in place. upgrade.sh deletes each agent node and recreates it on the target k3s image — a faithful simulation of a rolling WORKER upgrade. The server/control-plane node is left as-is; on a managed cluster (EKS/AKS) the provider upgrades the control plane first, then the nodes."
     - "The PDB (maxUnavailable: 1) makes each node's drain block until go-api has a Ready replica elsewhere — that is what keeps the success rate up."
     - "Roll one node at a time. Recreating all agents at once would briefly leave nowhere to run go-api and tank availability — that is the anti-pattern this drill teaches against."

@@ -74,7 +74,16 @@ export interface PlatformComponentDetail {
   chart: string
   /** The helm/kubectl commands install.sh actually runs, for "how it's set up". */
   installCommands: string[]
+  /** Legend for the shell variables appearing in installCommands. */
+  installVars?: InstallVar[]
   usedInScenarios: ScenarioRef[]
+}
+
+/** One shell variable referenced by a component's install commands. */
+export interface InstallVar {
+  name: string
+  value: string
+  description: string
 }
 
 /** One source file surfaced on an app's details page. */
@@ -95,7 +104,6 @@ export interface AppDetail {
   dockerfile?: AppFileRef
   chartYaml?: AppFileRef
   valuesFile?: AppFileRef
-  entrypoint?: AppFileRef
   helmChartPath?: string
   templates?: string[]
 }

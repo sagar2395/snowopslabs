@@ -81,6 +81,12 @@ func New(engine *run.Engine, st *store.Store, scenes *scn.Engine, runner toolcha
 // records each in the component inventory. A concurrent op on the same scenario
 // is refused with *run.LockConflictError.
 func (s *Service) Activate(ctx context.Context, name string, force bool) (string, error) {
+	return s.ActivateWithParams(ctx, name, force, nil)
+}
+
+// ActivateWithParams is Activate with scenario parameter overrides, staged on
+// the engine for this run only. A nil/empty map behaves exactly like Activate.
+func (s *Service) ActivateWithParams(ctx context.Context, name string, force bool, params map[string]string) (string, error) {
 	sc, err := s.lookup(name)
 	if err != nil {
 		return "", err
@@ -93,6 +99,9 @@ func (s *Service) Activate(ctx context.Context, name string, force bool) (string
 			// than racing on os.Stdout.
 			s.scenes.SetOutput(out)
 			defer s.scenes.SetOutput(nil)
+			// Stage the parameter overrides for exactly this activation.
+			s.scenes.SetActivationParams(params)
+			defer s.scenes.SetActivationParams(nil)
 			exec := s.newExec(fctx, out)
 			if err := s.scenes.Up(name, exec, force); err != nil {
 				return err

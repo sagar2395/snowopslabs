@@ -2,6 +2,7 @@
 package scenario
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,6 +108,86 @@ func TestHelm_InstallAndUninstallUseSameResolvedNamespace(t *testing.T) {
 
 // namespaceOf reads the --namespace value from a recorded helm call.
 func (e *Engine) namespaceOf(call []string) string { return flagValue(call, "--namespace") }
+
+// failingExec returns an error from every RunCommandStreamed call, simulating a
+// kubectl apply that the cluster rejects.
+type failingExec struct{ recordingExec }
+
+func (f *failingExec) RunCommandStreamed(label, name string, args ...string) (string, error) {
+	_, _ = f.recordingExec.RunCommandStreamed(label, name, args...)
+	return "", fmt.Errorf("kubectl apply rejected the manifest")
+}
+
+// installGrafanaDashboard must resolve the namespace template like the other
+// installers (a raw "{{.MonitoringNamespace}}" produced an invalid ConfigMap
+// that kubectl rejected), and uninstall must target the same resolved namespace
+// so `scenario down` deletes what `up` created.
+func TestGrafanaDashboard_InstallAndUninstallUseSameResolvedNamespace(t *testing.T) {
+	eng := newTestEngine(t)
+	dir := t.TempDir()
+	dashDir := filepath.Join(dir, "dashboards")
+	if err := os.MkdirAll(dashDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dashDir, "autoscaling.json"), []byte(`{"title":"Autoscaling"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Scenario{Name: "autoscaling-under-load", Dir: dir}
+	comp := &Component{
+		Name:      "autoscaling-dashboard",
+		Type:      "grafana-dashboard",
+		Path:      "dashboards",
+		Namespace: "{{.MonitoringNamespace}}",
+	}
+
+	install := &recordingExec{}
+	if err := eng.installGrafanaDashboard(s, comp, install); err != nil {
+		t.Fatalf("installGrafanaDashboard: %v", err)
+	}
+	apply := install.find("kubectl", "apply")
+	if apply == nil {
+		t.Fatalf("expected a kubectl apply call, got %v", install.calls)
+	}
+	out := install.files[flagValue(apply, "-f")]
+	if strings.Contains(out, "{{.MonitoringNamespace}}") {
+		t.Errorf("raw template leaked into ConfigMap:\n%s", out)
+	}
+	if !strings.Contains(out, "namespace: observability") {
+		t.Errorf("namespace not resolved to observability:\n%s", out)
+	}
+
+	uninstall := &recordingExec{}
+	if err := eng.uninstallGrafanaDashboard(s, comp, uninstall); err != nil {
+		t.Fatalf("uninstallGrafanaDashboard: %v", err)
+	}
+	del := uninstall.find("kubectl", "delete")
+	if del == nil {
+		t.Fatalf("expected a kubectl delete call, got %v", uninstall.calls)
+	}
+	if got := flagValue(del, "--namespace"); got != "observability" {
+		t.Errorf("uninstall namespace = %q, want %q (raw template must not leak)", got, "observability")
+	}
+}
+
+// A dashboard apply that the cluster rejects must fail the activation, not be
+// silently swallowed — the false-success bug the audit flagged as P0.
+func TestGrafanaDashboard_ApplyFailurePropagates(t *testing.T) {
+	eng := newTestEngine(t)
+	dir := t.TempDir()
+	dashDir := filepath.Join(dir, "dashboards")
+	if err := os.MkdirAll(dashDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dashDir, "autoscaling.json"), []byte(`{"title":"Autoscaling"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Scenario{Name: "autoscaling-under-load", Dir: dir}
+	comp := &Component{Name: "autoscaling-dashboard", Type: "grafana-dashboard", Path: "dashboards"}
+
+	if err := eng.installGrafanaDashboard(s, comp, &failingExec{}); err == nil {
+		t.Fatal("expected installGrafanaDashboard to return the apply error, got nil")
+	}
+}
 
 // installManifest must render labctl's own template vars before applying, while
 // leaving foreign templating (Prometheus/Grafana) untouched.

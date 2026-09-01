@@ -502,6 +502,71 @@ code, pre, .mono { font-family: var(--font-mono); }
 .scenario-actions { display: flex; gap: var(--space-2); align-items: center; flex-shrink: 0; flex-wrap: wrap; }
 .scenario-meta { color: var(--muted); font-size: var(--text-xs); margin-top: var(--space-1); }
 
+/* Scenario rows are wrapped in .scenario-item so verify results can render
+ * beneath each row while the row keeps its own separator. */
+.scenario-item:last-child .scenario-row { border-bottom: none; }
+
+/* Autoscaler (HPA) summary on an app card: replica bounds + the driving metric
+ * against its target, so "why did it scale" is answerable without a terminal. */
+.hpa-line {
+  display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  margin-top: var(--space-2);
+  font-size: var(--text-xs); font-family: var(--font-mono);
+  color: var(--text);
+}
+.hpa-icon { color: var(--accent); flex-shrink: 0; }
+.hpa-label {
+  text-transform: uppercase; letter-spacing: .04em; font-size: 10px;
+  color: var(--accent); font-weight: 600;
+}
+.hpa-stat {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
+}
+.hpa-stat.hpa-metric { background: var(--accent-soft); border-color: transparent; color: var(--text-strong); }
+.hpa-stat.hpa-pending { background: var(--warning-soft); border-color: transparent; color: var(--warning); }
+.hpa-stat.hpa-bounds { color: var(--muted); }
+
+/* Scenario verify results (per-check PASS/FAIL breakdown). */
+.verify-results { margin: var(--space-3) 0 var(--space-2); display: flex; flex-direction: column; gap: var(--space-2); }
+.verify-error { color: var(--danger); }
+
+/* Parameter form in the Activate dialog (tunable scenario knobs). */
+.param-form { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-2); }
+.param-field { display: flex; flex-direction: column; gap: 3px; }
+.param-field > label { font-size: var(--text-sm); font-weight: 500; color: var(--text-strong); }
+.param-input {
+  width: 100%; max-width: 220px;
+  padding: 6px 10px;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: var(--text-sm);
+}
+.param-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Default-credential hint under the Grafana dashboard link. */
+.cred-hint { margin-top: var(--space-3); }
+.cred-hint code { background: var(--surface-2); padding: 1px 5px; border-radius: var(--radius-sm); }
+
+/* Scenario snippets ("How it's implemented") — the manifest a learner applies. */
+.snippet { border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3); background: var(--surface-2); }
+.snippet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
+.snippet-label { font-weight: 500; color: var(--text-strong); font-size: var(--text-sm); }
+/* The copy control is absolutely positioned inside .cmd-block, but here it is a
+ * flex child of the header row — pin it back to static so it sits at the end. */
+.snippet-head .cmd-copy { position: static; flex-shrink: 0; }
+.snippet-desc { color: var(--text); font-size: var(--text-sm); margin: 3px 0 var(--space-2); }
+.snippet-source { margin: 3px 0 var(--space-2); }
+.snippet-source code { background: var(--surface-3); padding: 1px 5px; border-radius: var(--radius-sm); }
+.snippet-code {
+  margin: 0; padding: var(--space-3);
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.5;
+  overflow-x: auto; white-space: pre;
+}
+
 /* Inline verified / meta hint text */
 .hint-text { color: var(--muted); font-size: var(--text-xs); }
 .hint-inline { color: var(--muted); font-size: var(--text-sm); }
@@ -881,6 +946,15 @@ code, pre, .mono { font-family: var(--font-mono); }
   transition: color .15s, border-color .15s;
 }
 .cmd-copy:hover { color: var(--accent); border-color: var(--accent); }
+
+/* Install-command variable legend (platform component details) */
+.install-vars { margin-top: var(--space-3); }
+.install-vars .hint-text { margin-bottom: var(--space-2); }
+.var-table { width: 100%; border-collapse: collapse; font-size: var(--text-sm); }
+.var-table td { padding: var(--space-2) var(--space-3); border-top: 1px solid var(--border); vertical-align: top; }
+.var-table td:first-child { white-space: nowrap; }
+.var-table code { font-family: var(--font-mono); background: var(--muted-soft); padding: 1px 5px; border-radius: 4px; }
+.var-table .var-desc { color: var(--muted); font-family: var(--font-sans); }
 
 /* Inline code snippet used for CLI hints in rows */
 .cli-hint { font-size: var(--text-xs); color: var(--muted); }

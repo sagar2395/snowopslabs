@@ -59,10 +59,15 @@ checks:
     type: script
     script: scripts/check-no-cordon.sh
 
+snippets:
+  - label: "PodDisruptionBudget that makes the drain non-disruptive"
+    description: "maxUnavailable: 1 means evicting one go-api pod blocks until a replacement is Ready on another node — the core mechanism that keeps the service up while a node is drained."
+    path: manifests/baseline.yaml
+
 explore:
   urls:
     - label: "Grafana — go-api availability"
-      url: "http://grafana.{{.DomainSuffix}}"
+      url: "http://grafana.{{.DomainSuffix}}/d/app-requests"
   commands:
     - label: "1. Start steady background traffic (keep running in another terminal)"
       command: "labctl traffic start --profile steady --rps 20"
@@ -78,6 +83,7 @@ explore:
       command: "kubectl -n go-api get pdb go-api-drill-pdb -o yaml"
   tips:
     - "Start traffic FIRST — the availability check reads http_requests_total from Prometheus, which needs live requests to be meaningful."
+    - "Grafana → the linked availability dashboard: RPS and success rate should stay flat through the drain. A visible dip means the PDB or replica headroom wasn't enough to cover the eviction."
     - "The PDB uses maxUnavailable: 1, so at most one go-api pod can be evicted at a time; the drain blocks until a replacement is Ready elsewhere."
     - "On single-node clusters a drain has nowhere to reschedule pods. k3d defaults to 2 agents (AGENTS env var) precisely so this drill works."
     - "drain.sh always uncordons the node at the end, even on failure, so the cluster never gets stuck SchedulingDisabled."

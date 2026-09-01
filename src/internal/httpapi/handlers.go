@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -440,42 +441,109 @@ type ScenarioRef struct {
 // PlatformComponentDetail is the per-tool details payload: what it is, how it's
 // installed, and which scenarios depend on it.
 type PlatformComponentDetail struct {
-	Category        string        `json:"category"`
-	Name            string        `json:"name"`
-	Namespace       string        `json:"namespace"`
-	Installed       bool          `json:"installed"`
-	Description     string        `json:"description"`
-	Provides        []string      `json:"provides"`
-	Ports           []string      `json:"ports"`
-	Dependencies    []string      `json:"dependencies"`
-	Resources       []string      `json:"resources"`
-	Chart           string        `json:"chart"`
-	InstallCommands []string      `json:"installCommands"`
+	Category        string   `json:"category"`
+	Name            string   `json:"name"`
+	Namespace       string   `json:"namespace"`
+	Installed       bool     `json:"installed"`
+	Description     string   `json:"description"`
+	Provides        []string `json:"provides"`
+	Ports           []string `json:"ports"`
+	Dependencies    []string `json:"dependencies"`
+	Resources       []string `json:"resources"`
+	Chart           string   `json:"chart"`
+	InstallCommands []string `json:"installCommands"`
+	// InstallVars documents every shell variable that appears in the install
+	// commands — its resolved value (where the server can determine it) and what
+	// it means — so a learner can read the commands without guessing.
+	InstallVars     []InstallVar  `json:"installVars"`
 	UsedInScenarios []ScenarioRef `json:"usedInScenarios"`
 }
 
-// resolveInstallVars substitutes the shell variables an install.sh uses into
-// the commands shown on the details page, so a learner sees the real values
-// (namespace, ingress host) instead of raw $NAMESPACE / ${DOMAIN_SUFFIX}. Only
-// the variables the server can resolve are replaced; secrets and script-local
-// temp paths (e.g. $GRAFANA_ADMIN_PASSWORD, $VALUES_FILE) are left as-is —
-// they are meant to be supplied at install time, not shown.
-func resolveInstallVars(cmds []string, namespace, domain string) []string {
-	repl := []struct{ from, to string }{}
-	if namespace != "" {
-		repl = append(repl, struct{ from, to string }{"${NAMESPACE}", namespace}, struct{ from, to string }{"$NAMESPACE", namespace})
+// InstallVar is one shell variable referenced by a provider's install commands,
+// with its resolved value (empty when it is a secret/env-provided) and a short
+// explanation.
+type InstallVar struct {
+	Name        string `json:"name"`
+	Value       string `json:"value"`
+	Description string `json:"description"`
+}
+
+// shellVarRe matches a shell variable reference ($VAR or ${VAR}) in an install
+// command.
+var shellVarRe = regexp.MustCompile(`\$\{?([A-Z_][A-Z0-9_]*)\}?`)
+
+// installCommandVars resolves the deterministically-known shell variables in a
+// provider's install commands (so the shown commands read with real values, not
+// $NAMESPACE / $SCRIPT_DIR) and returns a legend documenting every variable that
+// appeared — its value where the server can determine it, and what it means —
+// so the details page can explain the commands instead of leaving raw $VARs.
+// providerDir is the provider's directory relative to the repo root.
+func installCommandVars(cmds []string, namespace, domain, providerDir string) ([]string, []InstallVar) {
+	valuesFile := ""
+	if providerDir != "" {
+		valuesFile = providerDir + "/values.yaml"
 	}
-	if domain != "" {
-		repl = append(repl, struct{ from, to string }{"${DOMAIN_SUFFIX}", domain}, struct{ from, to string }{"$DOMAIN_SUFFIX", domain})
+	// Inline substitutions: variables the server can resolve to a concrete value.
+	// Secrets and other env-provided variables are intentionally left as $VAR and
+	// only explained in the legend.
+	inline := map[string]string{
+		"NAMESPACE":     namespace,
+		"DOMAIN_SUFFIX": domain,
+		"SCRIPT_DIR":    providerDir,
+		"VALUES_FILE":   valuesFile,
 	}
-	out := make([]string, len(cmds))
+
+	resolved := make([]string, len(cmds))
 	for i, c := range cmds {
-		for _, r := range repl {
-			c = strings.ReplaceAll(c, r.from, r.to)
+		for name, val := range inline {
+			if val == "" {
+				continue
+			}
+			c = strings.ReplaceAll(c, "${"+name+"}", val)
+			c = strings.ReplaceAll(c, "$"+name, val)
 		}
-		out[i] = c
+		resolved[i] = c
 	}
-	return out
+
+	// Build the legend from the ORIGINAL commands so resolved variables are still
+	// explained. Order of first appearance, de-duplicated.
+	seen := map[string]bool{}
+	var vars []InstallVar
+	for _, c := range cmds {
+		for _, m := range shellVarRe.FindAllStringSubmatch(c, -1) {
+			vname := m[1]
+			if seen[vname] {
+				continue
+			}
+			seen[vname] = true
+			vars = append(vars, describeInstallVar(vname, inline))
+		}
+	}
+	return resolved, vars
+}
+
+// describeInstallVar returns the value/meaning of one install-command variable.
+// Known lab variables get a concrete value; recognised secret patterns are
+// flagged as env-provided; anything else is described generically.
+func describeInstallVar(name string, inline map[string]string) InstallVar {
+	switch name {
+	case "NAMESPACE":
+		return InstallVar{name, inline[name], "Kubernetes namespace this component installs into."}
+	case "DOMAIN_SUFFIX":
+		return InstallVar{name, inline[name], "Ingress domain suffix for this lab (host = <service>.<suffix>)."}
+	case "SCRIPT_DIR":
+		return InstallVar{name, inline[name], "This provider's directory, where install.sh and values.yaml live."}
+	case "VALUES_FILE":
+		return InstallVar{name, inline[name], "Helm values file the install renders and applies (a temp copy of this provider's values.yaml)."}
+	case "MONITORING_NAMESPACE":
+		return InstallVar{name, "monitoring", "Namespace of the monitoring stack (Prometheus/Grafana), used for cross-references."}
+	case "PROFILE":
+		return InstallVar{name, "", "Active runtime profile (k3d | kind | aks | eks), selected by the lab."}
+	}
+	if strings.HasSuffix(name, "_PASSWORD") || strings.HasSuffix(name, "_TOKEN") || strings.HasSuffix(name, "_KEY") {
+		return InstallVar{name, "", "Secret — export this environment variable before installing (a built-in default is used otherwise)."}
+	}
+	return InstallVar{name, "", "Environment variable read by the install script (provide it before installing to override the default)."}
 }
 
 // nonNilStrings returns s, or an empty (non-nil) slice when s is nil, so it
@@ -509,6 +577,11 @@ func (s *Server) handlePlatformComponentDetail(w http.ResponseWriter, r *http.Re
 	}
 
 	meta := p.Meta()
+	providerDir := p.Name
+	if rel, err := filepath.Rel(s.cfg.ProjectRoot, p.Path); err == nil {
+		providerDir = filepath.ToSlash(rel)
+	}
+	resolvedCmds, installVars := installCommandVars(p.InstallCommands(), p.Namespace(), s.cfg.DomainSuffix, providerDir)
 	// Guarantee non-nil slices: a Go nil slice marshals to JSON null, and the UI
 	// reads e.g. detail.provides.length — a null there crashes the details view.
 	detail := PlatformComponentDetail{
@@ -522,7 +595,8 @@ func (s *Server) handlePlatformComponentDetail(w http.ResponseWriter, r *http.Re
 		Dependencies:    nonNilStrings(meta.Dependencies),
 		Resources:       nonNilStrings(meta.Resources),
 		Chart:           meta.Chart,
-		InstallCommands: nonNilStrings(resolveInstallVars(p.InstallCommands(), p.Namespace(), s.cfg.DomainSuffix)),
+		InstallCommands: nonNilStrings(resolvedCmds),
+		InstallVars:     installVars,
 		UsedInScenarios: s.scenariosUsingComponent(category, name),
 	}
 	respondJSON(w, http.StatusOK, detail)

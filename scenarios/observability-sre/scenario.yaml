@@ -98,10 +98,15 @@ checks:
     url: "http://grafana.{{.DomainSuffix}}"
     expectStatus: 200
 
+snippets:
+  - label: "SRE alerting rules (error rate, latency, saturation, readiness)"
+    description: "A PrometheusRule with the golden-signal alerts this scenario installs: 5xx error rate, p99 latency, memory/CPU saturation, and pod readiness. Trip one with the traffic/fault commands and watch it fire."
+    path: manifests/alerting-rules.yaml
+
 explore:
   urls:
-    - label: "Grafana Dashboards"
-      url: "http://grafana.{{.DomainSuffix}}"
+    - label: "Grafana — SRE Golden Signals dashboard"
+      url: "http://grafana.{{.DomainSuffix}}/d/observability-sre"
     - label: "Prometheus"
       url: "http://prometheus.{{.DomainSuffix}}"
   commands:

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -38,6 +40,25 @@ type AppStatus struct {
 	Available string    `json:"available"`
 	Pods      []PodInfo `json:"pods"`
 	Deployed  bool      `json:"deployed"`
+}
+
+// HPAStatus holds the live autoscaler state for a Deployment — replica counts,
+// bounds, and the driving metric vs its target — the same info `kubectl get hpa`
+// prints, structured for the UI. Present is false when no HPA targets the
+// Deployment (KEDA-created HPAs count; KEDA renders a normal HPA underneath).
+type HPAStatus struct {
+	Present         bool   `json:"present"`
+	Name            string `json:"name"`
+	MinReplicas     int    `json:"minReplicas"`
+	MaxReplicas     int    `json:"maxReplicas"`
+	CurrentReplicas int    `json:"currentReplicas"`
+	DesiredReplicas int    `json:"desiredReplicas"`
+	// The scaling trigger: an External metric for KEDA/Prometheus, a Resource
+	// metric (cpu/memory) for a classic HPA. Current/Target are pre-rendered
+	// strings, e.g. "27467m / 25" or "27% / 80%".
+	MetricName    string `json:"metricName,omitempty"`
+	MetricCurrent string `json:"metricCurrent,omitempty"`
+	MetricTarget  string `json:"metricTarget,omitempty"`
 }
 
 // GetClusterInfo returns current cluster information.
@@ -169,6 +190,159 @@ func GetAppStatus(ctx context.Context, appName, namespace string) (*AppStatus, e
 	}
 
 	return status, nil
+}
+
+// GetHPAStatus returns the HPA state for a Deployment, or Present=false when
+// none targets it. "No HPA" is never an error — it just means "not autoscaled".
+func GetHPAStatus(ctx context.Context, namespace, deploymentName string) (*HPAStatus, error) {
+	out, err := kubectl(ctx, "get", "hpa", "-n", namespace, "-o", "json")
+	if err != nil {
+		// A missing namespace or no HPA resource is not an error for the caller;
+		// it simply means the app is not autoscaled.
+		return &HPAStatus{Present: false}, nil //nolint:nilerr
+	}
+	return parseHPAList(out, deploymentName)
+}
+
+// hpaMetricValue is the subset of a v2 HPA metric target/current we render.
+type hpaMetricValue struct {
+	AverageValue       string `json:"averageValue"`
+	Value              string `json:"value"`
+	AverageUtilization *int   `json:"averageUtilization"`
+}
+
+type hpaMetric struct {
+	Type     string `json:"type"`
+	External *struct {
+		Metric  struct{ Name string } `json:"metric"`
+		Target  hpaMetricValue        `json:"target"`
+		Current hpaMetricValue        `json:"current"`
+	} `json:"external"`
+	Resource *struct {
+		Name    string         `json:"name"`
+		Target  hpaMetricValue `json:"target"`
+		Current hpaMetricValue `json:"current"`
+	} `json:"resource"`
+}
+
+// parseHPAList finds the HPA whose scaleTargetRef points at deploymentName and
+// returns its structured status. Kept as a pure function (no kubectl) so it can
+// be unit-tested with fixture JSON.
+func parseHPAList(raw, deploymentName string) (*HPAStatus, error) {
+	var list struct {
+		Items []struct {
+			Metadata struct{ Name string } `json:"metadata"`
+			Spec     struct {
+				ScaleTargetRef struct {
+					Kind string `json:"kind"`
+					Name string `json:"name"`
+				} `json:"scaleTargetRef"`
+				MinReplicas *int        `json:"minReplicas"`
+				MaxReplicas int         `json:"maxReplicas"`
+				Metrics     []hpaMetric `json:"metrics"`
+			} `json:"spec"`
+			Status struct {
+				CurrentReplicas int         `json:"currentReplicas"`
+				DesiredReplicas int         `json:"desiredReplicas"`
+				CurrentMetrics  []hpaMetric `json:"currentMetrics"`
+			} `json:"status"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(raw), &list); err != nil {
+		return nil, fmt.Errorf("parsing hpa list: %w", err)
+	}
+
+	for _, it := range list.Items {
+		if it.Spec.ScaleTargetRef.Name != deploymentName {
+			continue
+		}
+		hpa := &HPAStatus{
+			Present:         true,
+			Name:            it.Metadata.Name,
+			MaxReplicas:     it.Spec.MaxReplicas,
+			CurrentReplicas: it.Status.CurrentReplicas,
+			DesiredReplicas: it.Status.DesiredReplicas,
+		}
+		if it.Spec.MinReplicas != nil {
+			hpa.MinReplicas = *it.Spec.MinReplicas
+		} else {
+			hpa.MinReplicas = 1 // HPA default when unset
+		}
+		if len(it.Spec.Metrics) > 0 {
+			name, target := metricNameAndValue(it.Spec.Metrics[0], true)
+			hpa.MetricName = name
+			hpa.MetricTarget = target
+		}
+		if len(it.Status.CurrentMetrics) > 0 {
+			_, current := metricNameAndValue(it.Status.CurrentMetrics[0], false)
+			hpa.MetricCurrent = current
+		}
+		return hpa, nil
+	}
+	return &HPAStatus{Present: false}, nil
+}
+
+// metricNameAndValue extracts a v2 HPA metric's name and rendered value —
+// target when target is true, else current. Handles External (KEDA/Prometheus)
+// and Resource (cpu/memory) metrics, the two kinds this lab produces. Values are
+// humanized (300m → 0.3) and KEDA's "s0-" scaler prefix is stripped from names.
+func metricNameAndValue(m hpaMetric, target bool) (name, value string) {
+	pick := func(v hpaMetricValue, suffix string) string {
+		switch {
+		case v.AverageValue != "":
+			return humanizeQuantity(v.AverageValue)
+		case v.Value != "":
+			return humanizeQuantity(v.Value)
+		case v.AverageUtilization != nil:
+			return fmt.Sprintf("%d%s", *v.AverageUtilization, suffix)
+		}
+		return ""
+	}
+	switch {
+	case m.External != nil:
+		name = cleanMetricName(m.External.Metric.Name)
+		if target {
+			value = pick(m.External.Target, "")
+		} else {
+			value = pick(m.External.Current, "")
+		}
+	case m.Resource != nil:
+		name = m.Resource.Name
+		if target {
+			value = pick(m.Resource.Target, "%")
+		} else {
+			value = pick(m.Resource.Current, "%")
+		}
+	}
+	return name, value
+}
+
+// kedaScalerPrefix matches the "s0-"/"s1-" scaler-index prefix KEDA prepends to
+// the external metric names it registers, optionally followed by the scaler-type
+// word (e.g. "s0-prometheus-go_api_requests_per_second" or "s0-kafka-lag").
+var kedaScalerPrefix = regexp.MustCompile(`^s\d+-(?:prometheus|kafka|cron|cpu|memory)-`)
+
+// cleanMetricName strips KEDA's scaler prefix so the UI shows the raw metric a
+// learner declared, not KEDA's internal registration name. The bare "s0-" form
+// (no scaler-type word) is stripped too.
+func cleanMetricName(name string) string {
+	if cleaned := kedaScalerPrefix.ReplaceAllString(name, ""); cleaned != name {
+		return cleaned
+	}
+	return regexp.MustCompile(`^s\d+-`).ReplaceAllString(name, "")
+}
+
+// humanizeQuantity renders a Kubernetes quantity as a plain decimal. HPA metric
+// values below 1 come back in milli notation ("300m" = 0.3), which is opaque to
+// most users; this converts the common milli and plain-integer cases and leaves
+// anything else (binary suffixes, unusual units) untouched.
+func humanizeQuantity(q string) string {
+	if strings.HasSuffix(q, "m") {
+		if n, err := strconv.ParseInt(strings.TrimSuffix(q, "m"), 10, 64); err == nil {
+			return strconv.FormatFloat(float64(n)/1000, 'f', -1, 64)
+		}
+	}
+	return q
 }
 
 // NamespaceExists checks if a namespace exists.

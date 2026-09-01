@@ -8,6 +8,7 @@ prerequisites:
     - ingress
     - monitoring/metrics
     - monitoring/grafana
+    - chaos/chaos-mesh
   apps:
     - go-api
 runtimes:
