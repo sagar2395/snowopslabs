@@ -80,7 +80,7 @@ func (p *Provider) InstallCommands() []string {
 	if err != nil {
 		return nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var cmds []string
 	var cont strings.Builder
