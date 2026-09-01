@@ -9,6 +9,20 @@ import (
 	"testing"
 )
 
+func TestBuildHostList_IncludesOpenCost(t *testing.T) {
+	hosts := buildHostList("k3d.local")
+	found := false
+	for _, h := range hosts {
+		if h == "opencost.k3d.local" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("buildHostList missing opencost.k3d.local (needed for the OpenCost UI ingress); got %v", hosts)
+	}
+}
+
 func TestComputeHostsContent(t *testing.T) {
 	block := buildBlock([]string{"grafana.k3d.local", "argocd.k3d.local"})
 

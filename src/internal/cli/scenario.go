@@ -99,6 +99,10 @@ var scenarioUpCmd = &cobra.Command{
 		if err := ensureAppsDeployed(cmd.Context(), s.Prerequisites.Apps, scenarioDeployPrereqs); err != nil {
 			return err
 		}
+		// Platform prerequisites (opencost, prometheus, ingress, …) are not
+		// auto-installed; warn up front if any is missing so a later check
+		// failure isn't the first the learner hears of it.
+		warnMissingPlatformPrereqs(cmd.Context(), os.Stderr, s.Prerequisites.Platform)
 		// An already-active scenario is a friendly no-op unless --force (which
 		// re-installs; components are idempotent).
 		if s.Active && !scenarioUpForce {
@@ -142,13 +146,31 @@ in seconds rather than minutes.`,
 }
 
 var scenarioStatusCmd = &cobra.Command{
-	Use:   "status",
+	Use:   "status [scenario-name]",
 	Short: "Show scenario status",
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		statuses := scenes.Status()
 		if len(statuses) == 0 {
 			fmt.Println("No scenarios found.")
 			return nil
+		}
+
+		// With a name argument, report just that scenario's status instead of
+		// listing every active one — matching what `status <name>` implies.
+		if len(args) == 1 {
+			name := args[0]
+			for _, s := range statuses {
+				if s.Name == name {
+					state := "inactive"
+					if s.Active {
+						state = "active"
+					}
+					fmt.Printf("%s (%s): %s\n", s.Name, s.Category, state)
+					return nil
+				}
+			}
+			return fmt.Errorf("scenario %q not found (see 'labctl scenario list')", name)
 		}
 
 		hasActive := false
@@ -213,22 +235,31 @@ With --watch, checks are re-run every --interval until they all pass or
 				recordScenarioVerify(args[0], results, startedAt)
 				return nil
 			}
-			failed := 0
+			// Separate genuine failures from checks that are merely pending the
+			// user's next drill step, so "you haven't run backup yet" never reads
+			// as "the scenario is broken".
+			var failed, pending int
 			for _, r := range results {
-				if !r.Pass {
+				switch {
+				case r.Pass:
+				case r.Pending:
+					pending++
+				default:
 					failed++
 				}
 			}
 			if !verifyWatch || time.Now().After(deadline) {
-				if !verifyWatch {
-					fmt.Fprintln(os.Stderr, "\nChecks can fail while pods are still starting. Re-run with --watch to wait,")
-					fmt.Fprintln(os.Stderr, "or inspect with: kubectl get pods -A")
-				}
+				printVerifyRemediation(results)
 				recordScenarioVerify(args[0], results, startedAt)
+				if failed == 0 && pending > 0 {
+					// Nothing regressed — the scenario just isn't finished. Report
+					// it as an incomplete drill, not a failure.
+					return fmt.Errorf("%d step(s) still pending — complete the drill above, then re-verify", pending)
+				}
 				return fmt.Errorf("%d of %d checks failed", failed, len(results))
 			}
-			fmt.Printf("\n%d of %d checks failing — retrying in %s (until %s)...\n\n",
-				failed, len(results), verifyInterval, deadline.Format("15:04:05"))
+			fmt.Printf("\n%d of %d checks not yet passing — retrying in %s (until %s)...\n\n",
+				failed+pending, len(results), verifyInterval, deadline.Format("15:04:05"))
 			time.Sleep(verifyInterval)
 		}
 	},
@@ -285,7 +316,14 @@ func printCheckResults(results []checks.Result) {
 	for _, r := range results {
 		mark := "PASS"
 		if !r.Pass {
-			mark = "FAIL"
+			// A check declared pending is expected to be red until the user
+			// performs the matching drill step — render it as PENDING, not a
+			// hard FAIL, so it doesn't read as breakage.
+			if r.Pending {
+				mark = "PENDING"
+			} else {
+				mark = "FAIL"
+			}
 		}
 		detail := ""
 		if r.Got != "" || r.Want != "" {
@@ -304,6 +342,40 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// printVerifyRemediation prints targeted next-step guidance for the checks that
+// did not pass, instead of the old blanket "pods may still be starting" line
+// that misdirected troubleshooting whenever the real fix was an action (take a
+// backup, restore the marker). Each failing check with a declared Remediation
+// gets its own line; the generic pods/--watch hint is printed only when a check
+// failed with no remediation of its own — the case where waiting might actually
+// help (a rollout still settling).
+func printVerifyRemediation(results []checks.Result) {
+	var steps []string
+	genericFailure := false
+	for _, r := range results {
+		if r.Pass {
+			continue
+		}
+		if r.Remediation != "" {
+			steps = append(steps, fmt.Sprintf("  → %s: %s", r.Name, r.Remediation))
+			continue
+		}
+		if !r.Pending {
+			genericFailure = true
+		}
+	}
+	if len(steps) > 0 {
+		fmt.Fprintln(os.Stderr, "\nNext step(s):")
+		for _, s := range steps {
+			fmt.Fprintln(os.Stderr, s)
+		}
+	}
+	if genericFailure {
+		fmt.Fprintln(os.Stderr, "\nA check with no fix-it hint failed — a pod may still be starting.")
+		fmt.Fprintln(os.Stderr, "Re-run with --watch to wait, or inspect with: kubectl get pods -A")
+	}
 }
 
 var scenarioInfoCmd = &cobra.Command{
@@ -383,10 +455,10 @@ var scenarioInfoCmd = &cobra.Command{
 		if len(s.Explore.URLs) > 0 || len(s.Explore.Commands) > 0 || len(s.Explore.Tips) > 0 {
 			fmt.Println("\nExplore:")
 			for _, u := range s.Explore.URLs {
-				fmt.Printf("  URL: %-25s %s\n", u.Label, scenes.ResolveTemplate(u.URL))
+				fmt.Printf("  URL: %-25s %s\n", scenes.ResolveTemplate(u.Label), scenes.ResolveTemplate(u.URL))
 			}
 			for _, c := range s.Explore.Commands {
-				fmt.Printf("  CMD: %s\n       %s\n", c.Label, scenes.ResolveTemplate(c.Command))
+				fmt.Printf("  CMD: %s\n       %s\n", scenes.ResolveTemplate(c.Label), scenes.ResolveTemplate(c.Command))
 			}
 			for _, t := range s.Explore.Tips {
 				fmt.Printf("  TIP: %s\n", scenes.ResolveTemplate(t))

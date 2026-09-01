@@ -4,42 +4,56 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/sagar2395/snowopslabs/internal/platform"
 )
 
-func writeApp(t *testing.T, root, name, appEnv string) {
+// writeProvider creates platform/<relDir>/install.sh so the registry scan
+// discovers a provider at that path.
+func writeProvider(t *testing.T, root, relDir string) {
 	t.Helper()
-	dir := filepath.Join(root, "apps", name)
+	dir := filepath.Join(root, "platform", relDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "app.env"), []byte(appEnv), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "install.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestAppExistsAndNamespace(t *testing.T) {
+func TestPrereqNamespaces(t *testing.T) {
 	root := t.TempDir()
-	writeApp(t, root, "with-ns", "APP_NAME=with-ns\nNAMESPACE=custom-ns\n")
-	writeApp(t, root, "no-ns", "APP_NAME=no-ns\n")
+	writeProvider(t, root, "cost/opencost")                 // category/provider
+	writeProvider(t, root, "monitoring/metrics/prometheus") // sub-category with a provider
+	writeProvider(t, root, "ingress/traefik")               // bare category, provider owns its ns
+	writeProvider(t, root, "ingress/nginx")                 // second mutually-exclusive provider
+	reg := platform.NewRegistry(root)
 
-	saved := cfg
-	cfg = &config.Config{ProjectRoot: root}
-	t.Cleanup(func() { cfg = saved })
-
-	if !appExists("with-ns") {
-		t.Error("appExists(with-ns) = false, want true")
+	tests := []struct {
+		name   string
+		prereq string
+		want   []string
+	}{
+		{"category/provider resolves to provider namespace", "cost/opencost", []string{"opencost"}},
+		{"sub-category resolves to shared monitoring namespace", "monitoring/metrics", []string{"monitoring"}},
+		{"bare category resolves to every provider namespace", "ingress", []string{"nginx", "traefik"}},
+		{"unknown prereq resolves to nothing", "does/not/exist", nil},
 	}
-	if appExists("nope") {
-		t.Error("appExists(nope) = true, want false")
-	}
-	// Explicit NAMESPACE wins; otherwise the app name is the namespace.
-	if got := appNamespace("with-ns"); got != "custom-ns" {
-		t.Errorf("appNamespace(with-ns) = %q, want %q", got, "custom-ns")
-	}
-	if got := appNamespace("no-ns"); got != "no-ns" {
-		t.Errorf("appNamespace(no-ns) = %q, want %q", got, "no-ns")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := prereqNamespaces(reg, tc.prereq)
+			sort.Strings(got)
+			sort.Strings(tc.want)
+			if len(got) != len(tc.want) {
+				t.Fatalf("prereqNamespaces(%q) = %v, want %v", tc.prereq, got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Fatalf("prereqNamespaces(%q) = %v, want %v", tc.prereq, got, tc.want)
+				}
+			}
+		})
 	}
 }

@@ -45,14 +45,23 @@ func TestRenderSnippets_InlineAndPathWithTemplate(t *testing.T) {
 	renderSnippets(&buf, []scenario.Snippet{
 		{Label: "inline", Description: "a note", YAML: "kind: ConfigMap"},
 		{Label: "from file", Path: "so.yaml"},
+		{Label: "helm values", YAML: "resources: {}", Apply: "helm upgrade -f -"},
 	}, dir, upper)
 	got := buf.String()
 
-	if !strings.Contains(got, "Snippets (apply with: kubectl apply -f -):") {
+	if !strings.Contains(got, "Snippets:") {
 		t.Errorf("missing snippets header: %q", got)
 	}
 	if !strings.Contains(got, "# inline — a note") {
 		t.Errorf("inline label/description missing: %q", got)
+	}
+	// A snippet with no Apply hint defaults to the kubectl-apply instruction.
+	if !strings.Contains(got, "# apply with: kubectl apply -f -") {
+		t.Errorf("default apply hint missing: %q", got)
+	}
+	// A snippet with an explicit Apply hint uses it instead of the default.
+	if !strings.Contains(got, "# apply with: helm upgrade -f -") {
+		t.Errorf("custom apply hint missing: %q", got)
 	}
 	if !strings.Contains(got, "    kind: ConfigMap") {
 		t.Errorf("inline body not indented: %q", got)

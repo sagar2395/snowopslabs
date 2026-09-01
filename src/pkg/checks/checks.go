@@ -53,6 +53,21 @@ type Check struct {
 
 	// TimeoutSeconds overrides the runner's default per-check timeout.
 	TimeoutSeconds int `yaml:"timeoutSeconds,omitempty" json:"timeoutSeconds,omitempty"`
+
+	// Remediation is a one-line, human-readable hint telling the user how to
+	// make a failing check pass (e.g. "take a backup first: …"). Advisory only:
+	// it never affects pass/fail, but verify surfaces it under the failing check
+	// instead of a generic "pods may still be starting" guess, so troubleshooting
+	// points at the real next step.
+	Remediation string `yaml:"remediation,omitempty" json:"remediation,omitempty"`
+
+	// Pending marks a check that is expected to be red until the user performs a
+	// drill step (take the backup, restore the marker). When such a check fails,
+	// verify renders it PENDING rather than a hard FAIL and reports it as an
+	// incomplete step, so "you haven't done the drill yet" never reads as "the
+	// scenario is broken". Advisory only: a pending check that fails still keeps
+	// the scenario short of "all checks passed".
+	Pending bool `yaml:"pending,omitempty" json:"pending,omitempty"`
 }
 
 // fieldOwners maps each type-specific field to the check types allowed to set
@@ -194,6 +209,13 @@ type Result struct {
 	// passes or a deadline elapses.
 	Attempts   int   `json:"attempts,omitempty"`
 	DurationMS int64 `json:"durationMs"`
+
+	// Remediation and Pending are copied from the originating Check so every
+	// consumer (CLI verify, HTTP API, UI) can render the right next step and
+	// distinguish "pending your action" from a genuine regression without
+	// re-reading the scenario definition.
+	Remediation string `json:"remediation,omitempty"`
+	Pending     bool   `json:"pending,omitempty"`
 }
 
 // explain composes a single human-readable sentence describing the outcome,

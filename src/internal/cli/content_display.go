@@ -31,22 +31,30 @@ func renderReferences(w io.Writer, refs []scenario.Reference) {
 	}
 }
 
-// renderSnippets writes each applyable manifest snippet with its resolved body,
-// ready to copy into `kubectl apply -f -`. Path snippets are read from dir;
-// every body is template-resolved so it is applyable as printed. A snippet whose
-// file cannot be read is reported inline rather than silently dropped (the
-// loader already fails validation on a missing path, so this is belt-and-braces).
+// renderSnippets writes each reference snippet with its resolved body. Path
+// snippets are read from dir; every body is template-resolved so it prints as it
+// is used. Each snippet carries its own "apply with" hint (defaulting to
+// `kubectl apply -f -`) because not every snippet is a kubectl manifest — a Helm
+// values file, for instance, is applied differently, and labelling it as
+// kubectl-appliable would mislead the learner. A snippet whose file cannot be
+// read is reported inline rather than silently dropped (the loader already fails
+// validation on a missing path, so this is belt-and-braces).
 func renderSnippets(w io.Writer, snips []scenario.Snippet, dir string, resolve resolveFunc) {
 	if len(snips) == 0 {
 		return
 	}
-	fmt.Fprintf(w, "\nSnippets (apply with: kubectl apply -f -):\n")
+	fmt.Fprintf(w, "\nSnippets:\n")
 	for _, s := range snips {
+		apply := s.Apply
+		if apply == "" {
+			apply = "kubectl apply -f -"
+		}
 		fmt.Fprintf(w, "\n  # %s", s.Label)
 		if s.Description != "" {
 			fmt.Fprintf(w, " — %s", s.Description)
 		}
 		fmt.Fprintln(w)
+		fmt.Fprintf(w, "  # apply with: %s\n", apply)
 		body, err := snippetBody(s, dir, resolve)
 		if err != nil {
 			fmt.Fprintf(w, "    (unavailable: %v)\n", err)

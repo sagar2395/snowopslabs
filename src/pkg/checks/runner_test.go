@@ -311,3 +311,26 @@ func TestRun_TimeoutRespected(t *testing.T) {
 		t.Fatalf("check ran past its timeout: %v", time.Since(start))
 	}
 }
+
+// TestRun_CarriesAdvisoryMetadata verifies a check's Remediation and Pending
+// fields travel through to the Result, so the CLI/API/UI can render the right
+// next step and distinguish "pending your action" from a genuine regression.
+func TestRun_CarriesAdvisoryMetadata(t *testing.T) {
+	r := testRunner()
+	r.Exec = func(ctx context.Context, name string, args ...string) (string, error) {
+		return "", fmt.Errorf("kubectl: not found")
+	}
+	res := r.Run(context.Background(), Check{
+		Name: "restore-marker-present", Type: "kubectl", Resource: "configmap/restore-marker",
+		Namespace: "go-api", Pending: true, Remediation: "restore from the backup",
+	})
+	if res.Pass {
+		t.Fatalf("expected fail")
+	}
+	if !res.Pending {
+		t.Fatalf("expected Pending to propagate to the result")
+	}
+	if res.Remediation != "restore from the backup" {
+		t.Fatalf("expected Remediation to propagate, got %q", res.Remediation)
+	}
+}

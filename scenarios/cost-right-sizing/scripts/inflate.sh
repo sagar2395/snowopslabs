@@ -1,31 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Re-deploy go-api with deliberately over-provisioned CPU/memory requests — the
-# 'before' state to observe in OpenCost. We UPGRADE the existing `go-api` Helm
-# release in place rather than creating a second release: `labctl app deploy
-# go-api` already owns a `go-api` release (and the `go-api` Deployment) in the
-# go-api namespace, so a separate release trying to adopt the same namespace and
-# Deployment fails helm's ownership validation. Reusing the release converges
-# cleanly and matches the scenario's story ("re-deploy go-api over-provisioned").
+# inflate.sh — put go-api into the deliberately over-provisioned 'before' state
+# (40x CPU / 32x memory) so the waste is visible in OpenCost before you right-size.
+#
+# We mutate the running Deployment in place with `kubectl set resources` — the
+# exact inverse of the fix the learner performs (`kubectl set resources ...
+# --requests=cpu=50m,memory=32Mi`). This is deliberately symmetric and robust:
+# it works regardless of how go-api was deployed (helm release, `kubectl apply`,
+# or the kind-e2e bootstrap) and regardless of which field-manager owns the
+# resource fields. An earlier `helm upgrade` approach failed with server-side
+# apply conflicts ("conflicts with kubectl") whenever go-api was not owned by
+# helm — `kubectl set resources` sidesteps that entirely.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCENARIO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-PROJECT_ROOT="$(cd "$SCENARIO_DIR/../.." && pwd)"
-CHART="$PROJECT_ROOT/apps/go-api/deploy/helm"
-VALUES="$SCENARIO_DIR/values/overprovisioned.yaml"
+NAMESPACE="${NAMESPACE:-go-api}"
+APP="${APP:-go-api}"
 
-echo "Re-deploying go-api over-provisioned (helm release: go-api)..."
-# Match the canonical app deploy (src/engine/deploy/helm.sh): create the namespace
-# out-of-band and pass namespace.create=false, so the chart doesn't render a
-# Namespace object helm cannot adopt (the go-api namespace already exists,
-# created by kubectl rather than helm).
-kubectl create namespace go-api --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
-helm upgrade --install go-api "$CHART" \
-  --namespace go-api --create-namespace \
-  --set namespace.create=false \
-  -f "$VALUES" \
-  --wait --timeout 5m
+# The inflated 'before' values. Requests drive scheduling and node billing;
+# limits are matched to requests here so the pod is a single fat, wasteful slot.
+CPU_REQUEST="${CPU_REQUEST:-2000m}"
+MEM_REQUEST="${MEM_REQUEST:-1Gi}"
+CPU_LIMIT="${CPU_LIMIT:-2000m}"
+MEM_LIMIT="${MEM_LIMIT:-1Gi}"
 
-echo "Done. go-api now requests 2000m CPU / 1Gi memory (the inflated baseline)."
-echo "Observe the cost in OpenCost, then right-size with 'kubectl -n go-api set resources'."
+if ! kubectl get deployment "$APP" -n "$NAMESPACE" >/dev/null 2>&1; then
+  echo "ERROR: deployment ${NAMESPACE}/${APP} not found." >&2
+  echo "Deploy it first: labctl app deploy ${APP}" >&2
+  exit 1
+fi
+
+echo "Over-provisioning ${NAMESPACE}/${APP}: requests cpu=${CPU_REQUEST}, memory=${MEM_REQUEST} (limits ${CPU_LIMIT}/${MEM_LIMIT})..."
+kubectl -n "$NAMESPACE" set resources deployment "$APP" \
+  --requests="cpu=${CPU_REQUEST},memory=${MEM_REQUEST}" \
+  --limits="cpu=${CPU_LIMIT},memory=${MEM_LIMIT}"
+
+echo "Waiting for the over-provisioned pod to roll out..."
+kubectl -n "$NAMESPACE" rollout status deployment "$APP" --timeout=5m
+
+echo "Done. ${APP} now requests ${CPU_REQUEST} CPU / ${MEM_REQUEST} memory (the inflated baseline)."
+echo "Observe the cost in OpenCost, then right-size with 'kubectl -n ${NAMESPACE} set resources'."

@@ -105,6 +105,10 @@ func (r *Runner) Run(ctx context.Context, c Check) Result {
 	if res.Attempts == 0 {
 		res.Attempts = 1
 	}
+	// Advisory metadata travels with the result so the CLI, API and UI can all
+	// render the right next step without re-reading the scenario definition.
+	res.Remediation = c.Remediation
+	res.Pending = c.Pending
 	res.Explanation = res.explain()
 	res.DurationMS = time.Since(start).Milliseconds()
 	return res

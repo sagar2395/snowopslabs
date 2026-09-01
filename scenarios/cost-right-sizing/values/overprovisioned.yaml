@@ -1,6 +1,7 @@
 # Deliberately over-provisioned resource requests for the cost-right-sizing scenario.
-# These values represent the 'before' state: 80x the CPU and 32x the memory
-# that go-api actually needs at idle. In a real cluster this wastes node capacity
+# These values represent the 'before' state: 40x the CPU and 32x the memory
+# that go-api actually needs at idle (2000m vs the 50m baseline; 1Gi vs 32Mi).
+# In a real cluster this wastes node capacity
 # and inflates the per-namespace cost visible in OpenCost.
 #
 # The exercise: observe the inflated cost in OpenCost, then right-size the
