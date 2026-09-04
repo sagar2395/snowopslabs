@@ -35,7 +35,7 @@ else
   rules=$(kubectl -n "$NS" get networkpolicy default-deny-all -o jsonpath='{.spec.ingress}{.spec.egress}')
 
   case "$selector" in
-    ""|"{}") ;;
+    "" | "{}") ;;
     *) note "default-deny-all has a podSelector ($selector), so it denies only some pods; it must select every pod with 'podSelector: {}'." ;;
   esac
   case "$types" in

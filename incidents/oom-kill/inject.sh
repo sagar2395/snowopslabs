@@ -49,23 +49,36 @@ TRAFFIC_PROFILE=write \
   TRAFFIC_TARGET="http://$DEPLOY.$NS.svc.cluster.local:8080/" \
   TRAFFIC_RPS="${FAULT_RPS:-60}" \
   TRAFFIC_DURATION="${FAULT_DURATION:-30m}" \
-  sh "$PROJECT_ROOT/src/services/traffic/start.sh"
+  bash "$PROJECT_ROOT/src/services/traffic/start.sh"
 
 # An injection that returns before the symptom exists is how this fault used to
 # grade as already-fixed: the detection check ran in the window between the
 # limit change and the first kill, passed, and closed the incident.
-echo "Waiting for the first OOMKill..."
-i=0
-while [ "$i" -lt 60 ]; do
+#
+# The budget is an env knob because the wait needs a real cluster to ever end.
+# Set FAULT_WAIT_SECONDS=0 to stage the fault without blocking on it — that is
+# what the repo's script-contract test does, since it runs every fault script
+# against a stub kubectl with no cluster behind it.
+WAIT_SECONDS="${FAULT_WAIT_SECONDS:-300}"
+POLL_SECONDS=5
+
+if [ "$WAIT_SECONDS" -le 0 ]; then
+  echo "Injected the limit and started traffic; not waiting for the first OOMKill."
+  exit 0
+fi
+
+echo "Waiting up to ${WAIT_SECONDS}s for the first OOMKill..."
+waited=0
+while [ "$waited" -lt "$WAIT_SECONDS" ]; do
   if kubectl -n "$NS" get pods -o 'jsonpath={.items[*].status.containerStatuses[*].lastState.terminated.reason}' 2>/dev/null | grep -q OOMKilled; then
     echo "Injected. $DEPLOY is being OOMKilled under load."
     exit 0
   fi
-  i=$((i + 1))
-  sleep 5
+  sleep "$POLL_SECONDS"
+  waited=$((waited + POLL_SECONDS))
 done
 
-echo "Injected the limit and started traffic, but no OOMKill appeared in 5 minutes." >&2
+echo "Injected the limit and started traffic, but no OOMKill appeared in ${WAIT_SECONDS}s." >&2
 echo "The fault is not live. Check that the traffic generator is running:" >&2
 echo "  labctl traffic status" >&2
 exit 1

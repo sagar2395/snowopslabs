@@ -40,7 +40,8 @@ done
 [ "$fail" -eq 0 ] || exit 1
 
 # The behavioural half: a Pod that violates both policies must be refused.
-rejected=$(kubectl apply -n "$NS" --dry-run=server -f - >/dev/null 2>&1 <<'POD' && echo no || echo yes
+rejected=$(
+  kubectl apply -n "$NS" --dry-run=server -f - >/dev/null 2>&1 <<'POD' && echo no || echo yes
 apiVersion: v1
 kind: Pod
 metadata:

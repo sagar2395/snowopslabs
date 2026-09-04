@@ -34,8 +34,8 @@ if [ "$tls_secret" != "$SECRET" ]; then
 fi
 
 # What is actually presented on the wire for this SNI name?
-served=$(echo | openssl s_client -connect "${HOST}:443" -servername "$HOST" 2>/dev/null \
-  | openssl x509 -noout -issuer -subject 2>/dev/null || echo "")
+served=$(echo | openssl s_client -connect "${HOST}:443" -servername "$HOST" 2>/dev/null |
+  openssl x509 -noout -issuer -subject 2>/dev/null || echo "")
 
 if [ -z "$served" ]; then
   echo "FAIL: nothing completed a TLS handshake at ${HOST}:443." >&2
