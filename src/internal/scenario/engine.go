@@ -346,7 +346,7 @@ func (e *Engine) Verify(ctx context.Context, name string, runner *checks.Runner)
 		resolved[i] = e.resolveCheck(c)
 	}
 
-	// Check lifecycle hooks (task 070): no-op in OSS. A Pre-check hook returning
+	// Check lifecycle hooks: no-op in OSS. A Pre-check hook returning
 	// an error aborts verification, letting premium policy gate checks.
 	for _, c := range resolved {
 		if err := e.hooks().PreCheck(ctx, extension.Event{Scenario: name, Check: c.Name}); err != nil {
@@ -468,7 +468,7 @@ type ScenarioStatus struct {
 
 func (e *Engine) scan() {
 	// In-repo scenarios. External content roots (SNOWOPS_CONTENT_PATH) scan
-	// after these and lose name collisions to them — see W2-T09.
+	// after these and lose name collisions to them.
 	scenariosDir := filepath.Join(e.ProjectRoot, "scenarios")
 	if entries, err := os.ReadDir(scenariosDir); err == nil {
 		for _, entry := range entries {

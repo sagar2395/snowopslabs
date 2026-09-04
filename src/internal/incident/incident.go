@@ -35,7 +35,7 @@ type Fault struct {
 	DisplayName string `yaml:"displayName" json:"displayName"`
 	Description string `yaml:"description" json:"description"`
 	// Verified marks the incident confirmed end-to-end on a fresh cluster
-	// (W4-T07). Absent/false is unverified.
+	// Absent or false means unverified.
 	Verified      bool          `yaml:"verified,omitempty" json:"verified"`
 	Category      string        `yaml:"category" json:"category"` // workload | network | resources | storage | config
 	Severity      string        `yaml:"severity" json:"severity"` // low | medium | high
@@ -131,7 +131,7 @@ type Active struct {
 	Silent        bool      `yaml:"silent" json:"silent"`
 	HintsRevealed int       `yaml:"hintsRevealed" json:"hintsRevealed"`
 	// FirstCheckedAt is when `incident status` first ran — the proxy for
-	// time-to-detect in the run record (task 048).
+	// time-to-detect in the run record.
 	FirstCheckedAt time.Time `yaml:"firstCheckedAt,omitempty" json:"firstCheckedAt,omitempty"`
 }
 
@@ -139,7 +139,7 @@ type Active struct {
 type Engine struct {
 	ProjectRoot  string
 	DomainSuffix string
-	// AlertmanagerURL is where Status queries fired alerts (task 049).
+	// AlertmanagerURL is where Status queries fired alerts.
 	// Callers set it from ALERTMANAGER_URL or the ingress default.
 	AlertmanagerURL string
 	faults          map[string]*Fault
@@ -434,7 +434,7 @@ type StatusResult struct {
 // Status runs the active fault's detection check. When it passes, the
 // incident is marked resolved and the active state cleared.
 // user attributes an auto-detected resolution record to the authenticated API
-// user (task 062); pass "" from the CLI to fall back to the OS username.
+// user; pass "" from the CLI to fall back to the OS username.
 func (e *Engine) Status(ctx context.Context, runner *checks.Runner, user string) (*StatusResult, error) {
 	active, err := e.Active()
 	if err != nil {

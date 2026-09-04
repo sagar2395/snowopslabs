@@ -219,6 +219,20 @@ jobs:
           path: src/ui/playwright-report/
           retention-days: 7
 
+  # ── Documentation ──────────────────────────────────────────────────────────
+
+  # Documentation is the source of truth (docs/AGENT-CONTEXT.md), so it is gated
+  # like code. docs-links catches a relative link or cited path that no longer
+  # resolves; docs-manifest catches a doc the website publishes that a rename
+  # here deleted — that one self-skips, since the site is not checked out in CI.
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Links resolve and published paths exist
+        run: make docs-check
+
   # ── Content and packaging ──────────────────────────────────────────────────
 
   build:

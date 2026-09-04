@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package incident
 
-// Progressive hints (task 047): hints.md is plain markdown split on
+// Progressive hints: hints.md is plain markdown split on
 // "## Hint N" headings, revealed one at a time. Reveals are recorded on the
 // active incident's state so scoring can penalize them later.
 

@@ -10,7 +10,7 @@ import (
 // TemplateContext is the typed set of variables content templates may reference.
 // It is deliberately a struct, not a map: text/template rejects a reference to a
 // field that does not exist, so a typo like {{.DomainSufix}} fails loudly at
-// validation time instead of silently resolving to empty (W2-T04).
+// validation time instead of silently resolving to empty.
 type TemplateContext struct {
 	// DomainSuffix is the ingress domain suffix, e.g. "k3d.local".
 	DomainSuffix string

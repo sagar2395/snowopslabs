@@ -5,7 +5,7 @@ import "fmt"
 
 // Problem is a single content defect: a decode failure, a schema violation, a
 // broken cross-reference or a bad template. It names the file (and line, when
-// known) so an author can jump straight to the fault (W2 exit criteria).
+// known) so an author can jump straight to the fault.
 type Problem struct {
 	Kind    Kind   `json:"kind"`
 	Name    string `json:"name"`           // item name, or "" before it is known

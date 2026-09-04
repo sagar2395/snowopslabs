@@ -6,8 +6,8 @@ import "sync/atomic"
 // Store holds the current Catalog snapshot behind an atomic pointer so readers
 // never see a half-built catalog. Reload builds a fresh snapshot from the same
 // roots and swaps it in one store; a reader calling Current before, during or
-// after a Reload always gets a complete, internally consistent snapshot (W2-T02
-// atomic hot-reload). Store is safe for concurrent use.
+// after a Reload always gets a complete, internally consistent snapshot. Store
+// is safe for concurrent use.
 type Store struct {
 	roots []string
 	cur   atomic.Pointer[Catalog]

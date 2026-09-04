@@ -9,7 +9,7 @@ import "strings"
 // challenges, incidents, learn — is part of "running" a lab and is allowed for
 // participants.
 //
-// Rationale (task 062): a participant can run challenges/incidents/learn and
+// Rationale: a participant can run challenges/incidents/learn and
 // read status, but must not uninstall platform, switch runtime, reset the lab,
 // build/deploy apps and shared services, or drive shared load generation.
 var operatorOnlyPrefixes = []string{

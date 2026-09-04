@@ -3,7 +3,7 @@
 // (incidents, challenge submissions, learn module completions).  Records are
 // written as newline-delimited JSON in .labctl/history/results.jsonl.
 //
-// Schema is intentionally flat so future team / leaderboard features (task 063)
+// Schema is intentionally flat so future team / leaderboard features
 // can query the file without a migration.
 package results
 
@@ -22,7 +22,7 @@ const (
 	KindIncident  = "incident"
 	KindChallenge = "challenge"
 	KindModule    = "module"   // a learn path module completion
-	KindScenario  = "scenario" // a scenario verification (W4-T02)
+	KindScenario  = "scenario" // a scenario verification
 )
 
 // CheckOutcome is one check's result as recorded in a scenario verification. It
@@ -37,7 +37,7 @@ type CheckOutcome struct {
 // NewScenarioRecord builds a results Record for a scenario verification. It
 // captures the scenario's objectives and each check's pass/fail so the results
 // view can show what was being verified and how far the user got — the "did I
-// actually solve it?" feedback (W4-T02). Score is the percentage of checks that
+// actually solve it?" feedback. Score is the percentage of checks that
 // passed; Outcome is passed only when every check passed.
 func NewScenarioRecord(name, user string, objectives []string, checks []CheckOutcome, startedAt, endedAt time.Time) Record {
 	passed := 0
@@ -187,7 +187,7 @@ func CurrentUser() string {
 }
 
 // UserOr returns user when it is non-empty, otherwise the OS username from
-// CurrentUser(). Callers pass the authenticated API user (task 062) when known
+// CurrentUser(). Callers pass the authenticated API user when known
 // and "" otherwise, so auth-off / CLI behaviour stays byte-identical.
 func UserOr(user string) string {
 	if user != "" {

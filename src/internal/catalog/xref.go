@@ -118,7 +118,7 @@ func (c *Catalog) refProblem(kind Kind, name, file string, node *yaml.Node, ref,
 // validateTemplates resolves every templated content field against the typed
 // template context. A reference to an unknown key (a typo) or a malformed
 // template is reported with the file and line, so it fails at validation rather
-// than producing a broken URL or namespace at run time (W2-T04).
+// than producing a broken URL or namespace at run time.
 func (c *Catalog) validateTemplates(projectRoot string) {
 	ctx := DefaultTemplateContext(projectRoot)
 	for _, s := range c.scenarios {

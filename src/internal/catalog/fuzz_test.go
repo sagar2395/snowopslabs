@@ -9,7 +9,7 @@ import (
 
 // The fuzz targets feed arbitrary bytes through each content parser and assert
 // only that loading never panics — malformed, truncated or adversarial YAML must
-// always surface as a Problem, never a crash (W2 exit criterion). Running
+// always surface as a Problem, never a crash. Running
 // `go test` executes the seed corpus below as ordinary tests; `go test -fuzz`
 // explores further.
 

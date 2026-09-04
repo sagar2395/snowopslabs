@@ -2,7 +2,7 @@
 
 // Package platform moves platform-component lifecycle — install a provider,
 // uninstall it, probe its status — onto the durable run engine (internal/run),
-// the parallel sibling of internal/service/lab (W3-T03). It follows the same
+// the parallel sibling of internal/service/lab. It follows the same
 // shape: a thin, domain-specific façade over the engine that owns the run Kind,
 // the exclusive LockKey, and how a (category, provider) pair maps to a script;
 // it never executes anything itself.

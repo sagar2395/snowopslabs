@@ -14,7 +14,7 @@ import (
 )
 
 // `labctl scenario up|down` run activation/deactivation through the durable run
-// engine (W4-T01 wiring): the whole multi-component activation is one recorded,
+// engine: the whole multi-component activation is one recorded,
 // cancellable run whose transcript streams to the terminal and `labctl runs`, and
 // each component it installs is written to the store inventory. The scenario
 // engine still owns the declarative install logic and its active-state markers.
@@ -51,7 +51,7 @@ func runScenarioOp(cmd *cobra.Command, verb, name string, submit func(context.Co
 	})
 }
 
-// runScenarioReset is the scenario-retry fast-path (W4-T06): tear the scenario
+// runScenarioReset is the scenario-retry fast-path: tear the scenario
 // down (if active) and re-activate it, both as recorded durable runs, in one
 // command — so retrying after a failed attempt is a single fast step rather than
 // a full lab teardown and rebuild. Re-activation forces (components are

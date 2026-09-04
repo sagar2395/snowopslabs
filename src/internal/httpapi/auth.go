@@ -83,7 +83,7 @@ type authMeResponse struct {
 	Role          string `json:"role,omitempty"`
 }
 
-// GET /api/auth/me — reports whether auth is on and, if so, who is logged in.
+// GET /api/v2/auth/me — reports whether auth is on and, if so, who is logged in.
 // When auth is off it returns authEnabled:false, authenticated:true so the UI
 // renders normally without a login screen.
 func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +109,7 @@ type loginRequest struct {
 	Password string `json:"password"`
 }
 
-// POST /api/auth/login — verify credentials, create a session, set the cookie.
+// POST /api/v2/auth/login — verify credentials, create a session, set the cookie.
 func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.authEnabled {
 		respondError(w, r, http.StatusBadRequest, "auth_disabled", "authentication is not enabled")
@@ -168,7 +168,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// POST /api/auth/logout — delete the session and clear the cookie.
+// POST /api/v2/auth/logout — delete the session and clear the cookie.
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	if !s.authEnabled {
 		respondJSON(w, http.StatusOK, map[string]bool{"ok": true})

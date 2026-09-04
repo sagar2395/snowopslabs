@@ -19,10 +19,10 @@ func repoRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
 }
 
-// TestRepoContentValidates is the guard behind the W2 exit criterion "every file
-// under scenarios/, incidents/, learn/, challenges/ passes validation". If an
-// author adds or edits content that breaks the model, this fails with the exact
-// file, line and reference — the same output `labctl validate` prints.
+// TestRepoContentValidates is the guard behind "every file under scenarios/,
+// incidents/, learn/ and challenges/ passes validation". If an author adds or
+// edits content that breaks the model, this fails with the exact file, line and
+// reference — the same output `labctl validate` prints.
 func TestRepoContentValidates(t *testing.T) {
 	c, err := Load(repoRoot(t))
 	if err != nil {
@@ -41,7 +41,7 @@ func TestRepoContentValidates(t *testing.T) {
 	}
 }
 
-// TestVerifiedContentSet locks the curated verified set (W4-T07): the scenarios
+// TestVerifiedContentSet locks the curated verified set: the scenarios
 // and incidents confirmed end-to-end are marked verified, and the ones that
 // aren't (the disruptive drills; the less-exercised incidents) are explicitly
 // unverified. If someone flips a flag, this fails so the change is deliberate.

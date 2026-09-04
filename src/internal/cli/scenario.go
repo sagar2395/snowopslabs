@@ -267,7 +267,7 @@ With --watch, checks are re-run every --interval until they all pass or
 
 // recordScenarioVerify appends a scenario-verification record to the results
 // history — the scenario's objectives plus each check's pass/fail — so `results`
-// and the UI can show whether the user actually solved the scenario (W4-T02).
+// and the UI can show whether the user actually solved the scenario.
 // Best-effort: a history write must never fail the verify command itself.
 func recordScenarioVerify(name string, results []checks.Result, startedAt time.Time) {
 	var objectives []string

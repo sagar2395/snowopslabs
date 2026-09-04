@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Create a kind (Kubernetes IN Docker) cluster — a headless, CI-friendly local
-# runtime (task 064). Mirrors k3d's host-port exposure: the control-plane node
+# runtime. Mirrors k3d's host-port exposure: the control-plane node
 # maps host 80/443 -> node 80/443 via extraPortMappings, and is labelled
 # `ingress-ready=true` so an ingress controller can bind those ports. This keeps
 # platform scripts runtime-agnostic.

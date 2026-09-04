@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 package incident
 
-// MTTR tracking (task 048): every completed incident run is recorded in the
-// unified results store (.labctl/history/results.jsonl) with kind=incident.
-// task 052 completed the migration from the per-engine incidents.jsonl.
+// MTTR tracking: every completed incident run is recorded in the unified
+// results store (.labctl/history/results.jsonl) with kind=incident, replacing
+// the per-engine incidents.jsonl.
 
 import (
 	"path/filepath"
@@ -47,7 +47,7 @@ func (e *Engine) History() ([]Record, error) {
 }
 
 // finishRun builds and appends the run record when an incident ends. user
-// attributes the record to the authenticated API user (task 062); "" falls back
+// attributes the record to the authenticated API user; "" falls back
 // to the OS username.
 func (e *Engine) finishRun(active *Active, f *Fault, resolvedBy, user string) {
 	now := time.Now().UTC()

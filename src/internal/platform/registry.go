@@ -97,7 +97,7 @@ func NewRegistryWithNamespace(projectRoot, monitoringNS string) *Registry {
 // --- install-intent tracking -------------------------------------------------
 //
 // Successful installs/uninstalls through the registry leave a marker in
-// .labctl/platform/ so lab snapshot/reset (task 043) can know what labctl
+// .labctl/platform/ so lab snapshot/reset can know what labctl
 // put on the cluster without probing it. Installs done outside labctl
 // (raw make targets, manual helm) are not tracked — documented limitation.
 

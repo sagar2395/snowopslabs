@@ -228,8 +228,8 @@ func (e *Engine) RecordHint() error {
 
 // Complete records the result and clears active state.
 // passed/total are the check results. outcome is "passed", "failed", or "aborted".
-// user attributes the unified result record to the authenticated API user
-// (task 062); pass "" from the CLI to fall back to the OS username.
+// user attributes the unified result record to the authenticated API user;
+// pass "" from the CLI to fall back to the OS username.
 func (e *Engine) Complete(passed, total int, outcome, user string) (*RunRecord, error) {
 	run, err := e.Active()
 	if err != nil {

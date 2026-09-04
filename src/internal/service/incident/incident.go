@@ -1,20 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package incident moves the mutating half of the break-it/fix-it loop —
-// injecting a fault and resolving it — onto the durable run engine (W4-T03).
-// Injection and resolution are single scripts (incidents/<name>/{inject,resolve}.sh),
-// so they map onto the engine exactly like lab and platform: a recorded,
-// cancellable run under an exclusive lock.
+// injecting a fault and resolving it — onto the durable run engine. Both are
+// single scripts (incidents/<name>/{inject,resolve}.sh), so they map onto the
+// engine like lab and platform: a recorded, cancellable run under a lock.
 //
-// Only one incident is active at a time, so all injects and resolves share one
-// global "incident" lock — the engine refuses a second inject while one is in
-// flight, and refuses a resolve racing an inject. The "is an incident active?"
-// question is answered from the store, the same way lab and platform answer
-// their state.
+// One incident is active at a time, so every inject and resolve shares one
+// global "incident" lock: a second inject, or a resolve racing an inject, is
+// refused. Whether one is active is answered from the store.
 //
-// Detection (does the fault's check pass?) is not here: it is a read over the
-// live cluster owned by the incident engine's checks runner, not a script the
-// engine executes. This package is the durable script layer beneath that.
+// Detection — does the fault's check pass? — is not here. That is a read over
+// the live cluster, owned by the incident engine's checks runner.
 package incident
 
 import (

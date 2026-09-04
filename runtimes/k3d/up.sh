@@ -10,7 +10,7 @@ CLUSTER_NAME="${1:-${CLUSTER_NAME:-snowops}}"
 HTTP_PORT="${HTTP_PORT:-80}"
 HTTPS_PORT="${HTTPS_PORT:-443}"
 # Number of agent (worker) nodes. Multi-node by default so day-2 drills
-# (node drain, rolling upgrade — task 060) have somewhere to reschedule pods.
+# (node drain, rolling upgrade) have somewhere to reschedule pods.
 AGENTS="${AGENTS:-2}"
 # Optional k3s version pin (e.g. K3S_VERSION=v1.28.8-k3s1). Empty = k3d default.
 # The cluster-upgrade-drill creates a cluster pinned to an older version, then

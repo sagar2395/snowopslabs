@@ -72,6 +72,23 @@ New to the repo? Work through
 [R00 — Environment & Build](docs/runbooks/R00-environment-and-build.md) once; it
 verifies your setup and shows you each gate biting.
 
+## Before you start: the traps
+
+Every one of these was learned by something failing silently on a real cluster,
+and each is an afternoon you do not have to lose:
+
+- **Helm** — `upgrade` and `uninstall` both ignore CRDs; most of a StatefulSet
+  spec is immutable: [R05](docs/runbooks/R05-platform-components.md).
+- **Metrics, logs and traces** — empty-selector fallbacks, Tempo's real port,
+  Promtail relabelling, k6's units:
+  [R13](docs/runbooks/R13-observability-pipeline.md).
+- **Writing a scenario** — values ownership, chart pinning, checks that teach:
+  [scenario schema](docs/reference/scenario-schema.md).
+
+[docs/AGENT-CONTEXT.md](docs/AGENT-CONTEXT.md) is the index: it says which
+single document answers which task, and lists every invariant in one place. It
+is written for AI agents, but it is the fastest orientation for a human too.
+
 ## The golden rules (please read before a code/content PR)
 
 1. **Cross-platform.** Must run on macOS (Apple Silicon + Intel) and modern
@@ -93,6 +110,10 @@ verifies your setup and shows you each gate biting.
    [docs/TESTING.md](docs/TESTING.md).
 7. **Docs and runbook in the same PR.** Update the relevant `docs/`, add or
    update the runbook, and write an ADR if you made a notable decision.
+   Documentation is the source of truth here — the code is expected to match it,
+   and `make docs-check` gates the links and the pages the website publishes.
+8. **Comments say why, briefly.** Three lines is a lot. No task, ticket or wave
+   numbers in code — that history belongs in git and in ADRs.
 
 ## Pull-request workflow
 

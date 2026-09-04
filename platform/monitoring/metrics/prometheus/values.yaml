@@ -132,7 +132,7 @@ prometheus:
 alertmanager:
   enabled: true
 
-  # Route lab-fault alerts (incidents/, task 049) to the pager webhook so
+  # Route lab-fault alerts (incidents/) to the pager webhook so
   # on-call drills get a real page. Everything else keeps the null route.
   # The webhook URL default targets the in-cluster pager service
   # (src/services/pager); install.sh overrides it when ALERT_WEBHOOK_URL is set.

@@ -1,22 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package auth provides optional authentication and per-user RBAC for the
-// labctl API/UI server (task 062). It is OFF by default: when LABCTL_AUTH is
-// not "true", the server behaves exactly as before (no login, no role checks).
+// labctl API/UI server. It is OFF by default: unless LABCTL_AUTH is "true",
+// there is no login and no role check.
 //
-// When enabled, users are defined in a static file (.labctl/users.yaml) with
-// PBKDF2-HMAC-SHA256 password hashes and one of two roles:
+// When enabled, users live in .labctl/users.yaml with one of two roles:
 //
 //	operator    — full control (platform, runtime, lab, apps, services, …)
 //	participant — run challenges/incidents/learn + read status; may NOT mutate
 //	              platform/runtime/lab/apps/services.
 //
-// Password hashing defaults to Argon2id (memory-hard, the modern password-hash
-// recommendation) via golang.org/x/crypto/argon2, which is pure Go and builds on
-// the Go 1.24 toolchain CI pins. Existing PBKDF2-HMAC-SHA256 hashes remain valid
-// — VerifyPassword accepts both schemes — so upgrading is seamless and no stored
-// hash has to be rewritten. (x/crypto/bcrypt is deliberately avoided: it needs
-// Go >= 1.25.)
+// New passwords hash with Argon2id. VerifyPassword also accepts the older
+// PBKDF2-HMAC-SHA256 hashes, so an existing file keeps working and no stored
+// hash has to be rewritten.
 package auth
 
 import (

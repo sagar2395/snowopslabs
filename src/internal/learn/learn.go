@@ -238,7 +238,7 @@ func (e *Engine) MarkComplete(prog *Progress, idx int) error {
 
 // MarkCompleteModule records module at idx as complete and writes a unified
 // result record naming the module as "<pathName>/<moduleName>". user attributes
-// the record to the authenticated API user (task 062); pass "" from the CLI to
+// the record to the authenticated API user; pass "" from the CLI to
 // fall back to the OS username.
 func (e *Engine) MarkCompleteModule(p *Path, prog *Progress, idx int, user string) error {
 	moduleName := ""

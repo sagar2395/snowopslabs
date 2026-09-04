@@ -142,4 +142,4 @@ explore:
     - "The 'orders' topic has 3 partitions, so up to 3 consumers in the group share the load."
     - "Stage 2 ramps producers to 3x; a single consumer falls behind and lag climbs."
     - "Scale orders-consumer to 3 to drain the lag, or install autoscaling/keda and add a Kafka-lag ScaledObject to do it automatically."
-    - "Broker pod name is lab-kafka-dual-role-0 (the KRaft node pool from task 055)."
+    - "Broker pod name is lab-kafka-dual-role-0 — the cluster's KRaft dual-role node pool."

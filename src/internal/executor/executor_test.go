@@ -162,7 +162,7 @@ func TestBuildEnv(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Streaming / job-ID tests (task 017)
+// Streaming / job-ID tests
 // ---------------------------------------------------------------------------
 
 func TestRunScriptStreamed_ReturnsActionID(t *testing.T) {

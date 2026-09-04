@@ -12,7 +12,7 @@ import (
 )
 
 // `labctl incident inject|resolve` run their fault scripts through the durable
-// run engine (W4-T03 wiring): inject.sh / resolve.sh become recorded, cancellable
+// run engine: inject.sh / resolve.sh become recorded, cancellable
 // runs visible in `labctl runs` and the web console. The incident engine still
 // owns the declarative state — active.yaml, hints, and the MTTR/score record —
 // which the CLI updates once the durable run succeeds (MarkInjected /

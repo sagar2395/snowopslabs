@@ -5,7 +5,7 @@
 // (scenarios, incidents, learning paths, challenges) from one or more content
 // roots, and resolves the typed templates content authors use.
 //
-// It is the authority behind `labctl validate` (W2). It reuses the public
+// It is the authority behind `labctl validate`. It reuses the public
 // content data types (pkg/scenario, and the incident/learn/challenge types) and
 // their per-item Validate methods, so validation never drifts from what the
 // runtime engines accept, and layers cross-reference integrity and typed

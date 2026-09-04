@@ -198,7 +198,7 @@ type Result struct {
 	Type string `json:"type"`
 	Pass bool   `json:"pass"`
 	// Got and Want carry the observed and expected values so a failing check
-	// reports *why* it failed, not just FAIL (W2-T06). Explanation is a single
+	// reports *why* it failed, not just FAIL. Explanation is a single
 	// human-readable sentence composed from them for direct display.
 	Got         string `json:"got,omitempty"`
 	Want        string `json:"want,omitempty"`

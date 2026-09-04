@@ -116,7 +116,7 @@ func TestHandleComponentUp_InvalidName(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Structured error response tests (task 022)
+// Structured error response tests
 // ---------------------------------------------------------------------------
 
 func TestRespondError_HasCodeField(t *testing.T) {
@@ -162,7 +162,7 @@ func TestHandleAppDeploy_InvalidName_HasCode(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Job ID in 202 response tests (task 017)
+// Job ID in 202 response tests
 // ---------------------------------------------------------------------------
 
 func TestHandleAppBuild_AcceptedIncludesJobID(t *testing.T) {

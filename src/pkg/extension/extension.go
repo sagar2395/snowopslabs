@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package extension defines two anti-lock-in seams (task 070): where pack
+// Package extension defines two anti-lock-in seams: where pack
 // content comes from (Resolver) and optional lifecycle hooks around scenario
 // stages and checks (Hooks). The OSS core ships open defaults — built-in
 // resolvers for OCI / git / local sources and no-op hooks — so the open engine

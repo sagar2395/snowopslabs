@@ -325,7 +325,7 @@ func TestStatus_FastFromStore(t *testing.T) {
 	if _, err := h.svc.Status(context.Background(), false); err != nil {
 		t.Fatalf("Status: %v", err)
 	}
-	// The store-backed status must be well under the 200ms budget (W3-T01 AC).
+	// The store-backed status must be well under its 200ms budget.
 	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
 		t.Errorf("store-backed Status took %s, want < 200ms", elapsed)
 	}

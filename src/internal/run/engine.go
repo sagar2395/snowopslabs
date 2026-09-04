@@ -161,7 +161,7 @@ type Engine struct {
 
 	// finishHooks receive a run's terminal record once it has finished, so a
 	// caller can react to outcomes without the engine knowing their domain — the
-	// component inventory (W3-T04) is recorded this way.
+	// component inventory is recorded this way.
 	finishHooks []FinishHook
 
 	wg       sync.WaitGroup

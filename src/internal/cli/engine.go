@@ -42,7 +42,7 @@ func newRunEngine(ctx context.Context) (*run.Engine, *store.Store, func(), error
 		return nil, nil, nil, err
 	}
 	// The inventory recorder keeps the store's component inventory in step with
-	// what the engine installs/uninstalls (W3-T04), so teardown knows exactly
+	// what the engine installs/uninstalls, so teardown knows exactly
 	// what to remove. It ignores run kinds it doesn't recognise, so it is safe to
 	// attach for lab runs too.
 	recorder := inventory.NewRecorder(st)
