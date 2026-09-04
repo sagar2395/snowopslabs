@@ -69,6 +69,32 @@ describe('Scenarios view — activation preview', () => {
     // A scenario with no parameters activates with an empty override map.
     await waitFor(() => expect(mockApi.scenarioUp).toHaveBeenCalledWith('gitops-cicd', {}))
   })
+
+  it('previews components declared under stages (v2 scenarios), not just flat components', async () => {
+    const user = userEvent.setup()
+    // env-promotion-shaped: no top-level components, everything under stages.
+    const staged: Scenario = {
+      name: 'env-promotion', displayName: 'Multi-Env Promotion', description: 'promote',
+      category: 'delivery', active: false,
+      prerequisites: { platform: ['ingress'], apps: ['go-api'] },
+      stages: [
+        { name: 'seed-baseline', components: [{ name: 'baseline-image', type: 'script' }] },
+        { name: 'dev-env', components: [{ name: 'dev-environment', type: 'manifest', namespace: 'env-dev' }] },
+      ],
+    }
+    mockApi.listScenarios.mockResolvedValue([{ ...staged }])
+    mockApi.getScenario.mockResolvedValue(staged)
+    mockApi.scenarioUp.mockResolvedValue({ jobId: 'j1', status: 'accepted' })
+
+    const { getConfirm } = renderScenarios()
+    await user.click(await screen.findByRole('button', { name: /^activate$/i }))
+    await waitFor(() => expect(getConfirm()).not.toBeNull())
+    render(<div>{getConfirm()!.message as React.ReactNode}</div>)
+
+    expect(screen.getByText(/This will install/i)).toBeInTheDocument()
+    expect(screen.getByText('baseline-image')).toBeInTheDocument()
+    expect(screen.getByText('dev-environment')).toBeInTheDocument()
+  })
 })
 
 describe('Scenarios view — parameters', () => {

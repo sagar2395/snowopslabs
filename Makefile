@@ -42,8 +42,17 @@ $(SRC_TARGETS):
 
 # ── Aggregate test & lint (Go module + repo-wide shell gates) ─────────────────
 
-## test: Go unit + contract tests (src/) and the shell (bats) suites
-test: test-go test-shell
+## test: Go unit + contract tests (src/ and apps/) and the shell (bats) suites
+test: test-go test-apps test-shell
+
+## test-apps: unit tests for the demo applications (each is its own Go module)
+.PHONY: test-apps
+test-apps:
+	@for mod in $$(find apps -name go.mod -maxdepth 2 | sort); do \
+		dir=$$(dirname $$mod); \
+		echo "==> app unit tests ($$dir)"; \
+		( cd $$dir && go test ./... ) || exit 1; \
+	done
 
 ## lint: every static-analysis gate — gofmt + shell (root) and Go/UI (src/)
 lint: fmt-check lint-shell lint-go lint-ui sec vuln
@@ -89,6 +98,7 @@ help:
 	@echo "  Test & quality (all four layers are mandatory — docs/TESTING.md):"
 	@echo "    make test                Go unit + shell tests, race detector, coverage gate"
 	@echo "    make test-go             Go unit + contract tests (>= $(COVERAGE_MIN)% per package)"
+	@echo "    make test-apps           unit tests for apps/ (separate Go modules)"
 	@echo "    make test-shell          bats suites with kubectl/helm stubbed"
 	@echo "    make test-api            HTTP contract suite only"
 	@echo "    make test-ui             vitest component tests with coverage"

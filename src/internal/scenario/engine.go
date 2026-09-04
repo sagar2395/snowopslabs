@@ -118,14 +118,31 @@ func NewEngine(projectRoot, domainSuffix, profile string, monitoringNamespace ..
 	return e
 }
 
-// List returns all discovered scenarios.
+// List returns all discovered scenarios in catalog order.
 func (e *Engine) List() []*Scenario {
 	var result []*Scenario
 	for _, s := range e.scenarios {
 		s.Active = e.isActive(s.Name)
 		result = append(result, s)
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return catalogLess(result[i].Category, result[i].DisplayName, result[i].Name,
+			result[j].Category, result[j].DisplayName, result[j].Name)
+	})
 	return result
+}
+
+// catalogLess orders scenarios by category, then display name, then name. The
+// engine stores scenarios in a map, so without an explicit order every call
+// returns a different sequence and the UI reshuffles on each refresh.
+func catalogLess(catA, dispA, nameA, catB, dispB, nameB string) bool {
+	if catA != catB {
+		return catA < catB
+	}
+	if dispA != dispB {
+		return dispA < dispB
+	}
+	return nameA < nameB
 }
 
 // Get returns a scenario by name.
@@ -363,6 +380,9 @@ func (e *Engine) resolveCheck(c checks.Check) checks.Check {
 	c.JSONPath = e.resolveTemplate(c.JSONPath)
 	c.Query = e.resolveTemplate(c.Query)
 	c.Value = e.resolveTemplate(c.Value)
+	// Remediation is shown to the user verbatim, so an unresolved
+	// {{.MonitoringNamespace}} in it becomes a command they cannot run.
+	c.Remediation = e.resolveTemplate(c.Remediation)
 	return c
 }
 
@@ -408,6 +428,10 @@ func (e *Engine) Status() []ScenarioStatus {
 			Active:      e.isActive(s.Name),
 		})
 	}
+	sort.Slice(result, func(i, j int) bool {
+		return catalogLess(result[i].Category, result[i].DisplayName, result[i].Name,
+			result[j].Category, result[j].DisplayName, result[j].Name)
+	})
 	return result
 }
 
@@ -537,8 +561,10 @@ func (e *Engine) uninstallComponent(s *Scenario, comp *Component, exec CommandEx
 		// Grafana dashboards are removed when grafana restarts or scenario configmap is deleted
 		return e.uninstallGrafanaDashboard(s, comp, exec)
 	case "script":
-		// Scripts don't have a clean uninstall; skip
-		return nil
+		if comp.UninstallScript == "" {
+			return nil
+		}
+		return e.runScriptPath(s, comp.Name, comp.UninstallScript, exec)
 	default:
 		return nil
 	}
@@ -564,6 +590,15 @@ func (e *Engine) installHelm(s *Scenario, comp *Component, exec CommandExecutor)
 		_, _ = exec.RunCommandStreamed("Helm repo update", "helm", "repo", "update")
 	}
 
+	// A component the platform may already own is adopted rather than upgraded:
+	// re-running `helm upgrade` over someone else's release rewrites its spec,
+	// and for a StatefulSet most of that spec is immutable.
+	if comp.Adopt && helmReleaseExists(comp.Name, ns, exec) {
+		fmt.Fprintf(e.output(),
+			"  %s: release already installed in %s — adopting it instead of re-installing.\n", comp.Name, ns)
+		return nil
+	}
+
 	args := []string{
 		"upgrade", "--install", comp.Name, chart,
 		"--namespace", ns, "--create-namespace",
@@ -572,6 +607,28 @@ func (e *Engine) installHelm(s *Scenario, comp *Component, exec CommandExecutor)
 
 	if version != "" {
 		args = append(args, "--version", version)
+	}
+
+	// Base values from the platform component, then the scenario's overlay. Order
+	// matters: helm applies -f files left to right, so the overlay wins.
+	if comp.PlatformValues != "" {
+		// A component directory ("logging/loki" -> values.yaml inside it) or a
+		// specific file ("logging/loki/promtail-values.yaml") for the components
+		// whose values do not sit at the conventional path.
+		rel := filepath.FromSlash(comp.PlatformValues)
+		if filepath.Ext(rel) == "" {
+			rel = filepath.Join(rel, "values.yaml")
+		}
+		base := filepath.Join(e.ProjectRoot, "platform", rel)
+		if _, err := os.Stat(base); err != nil {
+			return fmt.Errorf("component %q: platformValues %q: %w", comp.Name, comp.PlatformValues, err)
+		}
+		resolved, cleanup, err := e.resolveFileTemplate(base, "labctl-platform-values-*.yaml")
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		args = append(args, "-f", resolved)
 	}
 
 	if comp.ValuesFile != "" {
@@ -591,11 +648,71 @@ func (e *Engine) installHelm(s *Scenario, comp *Component, exec CommandExecutor)
 		args = append(args, "--set", k+"="+resolved)
 	}
 
-	_, err := exec.RunCommandStreamed("Helm install "+comp.Name, "helm", args...)
+	out, err := exec.RunCommandStreamed("Helm install "+comp.Name, "helm", args...)
+	if err == nil {
+		return nil
+	}
+
+	// Recover from the one Helm failure a lab hits routinely: a StatefulSet whose
+	// immutable fields (volumeClaimTemplates, serviceName, selector) differ from
+	// the release already in the cluster. Orphaning the StatefulSet leaves the
+	// pods and PVCs running while the new spec is applied on retry.
+	if target := immutableStatefulSet(out + err.Error()); target != "" {
+		fmt.Fprintf(e.output(),
+			"  %s: StatefulSet %q has immutable fields that differ from the chart. "+
+				"Deleting it with --cascade=orphan (pods and PVCs stay up) and retrying the upgrade.\n",
+			comp.Name, target)
+		_, _ = exec.RunCommandStreamed(
+			"Recreating immutable StatefulSet "+target,
+			"kubectl", "delete", "statefulset", target, "--namespace", ns, "--cascade=orphan", "--ignore-not-found")
+		_, retryErr := exec.RunCommandStreamed("Helm install "+comp.Name+" (retry)", "helm", args...)
+		return retryErr
+	}
+
 	return err
 }
 
+// helmReleaseExists reports whether a release is already installed in ns.
+func helmReleaseExists(name, ns string, exec CommandExecutor) bool {
+	_, err := exec.RunCommandStreamed(
+		"Check for existing release "+name, "helm", "status", name, "--namespace", ns)
+	return err == nil
+}
+
+// statefulSetImmutableRe matches the two shapes Helm reports when a StatefulSet's
+// immutable spec fields differ from the live object — server-side apply and the
+// older three-way-merge patch path.
+var statefulSetImmutableRe = regexp.MustCompile(
+	`(?:object\s+\S+/(\S+)\s+apps/v1,\s*Kind=StatefulSet|cannot patch "([^"]+)" with kind StatefulSet)`)
+
+// immutableStatefulSet returns the StatefulSet name in a Helm "forbidden"
+// upgrade error, or "" when the failure is something else.
+func immutableStatefulSet(helmOutput string) string {
+	if !strings.Contains(helmOutput, "updates to statefulset spec for fields other than") {
+		return ""
+	}
+	m := statefulSetImmutableRe.FindStringSubmatch(helmOutput)
+	if m == nil {
+		return ""
+	}
+	for _, g := range m[1:] {
+		if g != "" {
+			return g
+		}
+	}
+	return ""
+}
+
 func (e *Engine) uninstallHelm(comp *Component, exec CommandExecutor) error {
+	// Adopt means borrow, not own. A scenario that reused a platform release must
+	// not delete it on teardown — that would take Loki and Tempo down with the
+	// scenario and leave every other scenario without them.
+	if comp.Adopt {
+		fmt.Fprintf(e.output(),
+			"  %s: release is owned by the platform (adopted) — leaving it installed.\n", comp.Name)
+		return nil
+	}
+
 	// Resolve the namespace exactly as installHelm does. Using the raw
 	// comp.Namespace here (e.g. the literal "{{.MonitoringNamespace}}") sent the
 	// uninstall to the wrong namespace, so `helm uninstall` reported "release not
@@ -758,13 +875,18 @@ func (e *Engine) uninstallGrafanaDashboard(s *Scenario, comp *Component, exec Co
 }
 
 func (e *Engine) runScript(s *Scenario, comp *Component, exec CommandExecutor) error {
+	return e.runScriptPath(s, comp.Name, comp.Script, exec)
+}
+
+// runScriptPath runs a scenario-relative script, labelled with the component name.
+func (e *Engine) runScriptPath(s *Scenario, name, script string, exec CommandExecutor) error {
 	// Compute the path relative to the project root for RunScriptStreamed
-	relPath, err := filepath.Rel(e.ProjectRoot, filepath.Join(s.Dir, comp.Script))
+	relPath, err := filepath.Rel(e.ProjectRoot, filepath.Join(s.Dir, script))
 	if err != nil {
 		// Fallback to absolute path
-		relPath = filepath.Join(s.Dir, comp.Script)
+		relPath = filepath.Join(s.Dir, script)
 	}
-	_, err = exec.RunScriptStreamed("Run script "+comp.Name, relPath)
+	_, err = exec.RunScriptStreamed("Run script "+name, relPath)
 	return err
 }
 

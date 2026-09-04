@@ -67,9 +67,14 @@ describe('Traffic view', () => {
     await user.click(screen.getByRole('button', { name: /start traffic/i }))
 
     await waitFor(() =>
-      expect(mockApi.startTraffic).toHaveBeenCalledWith({ profile: 'spike', rps: 50, duration: undefined }))
+      expect(mockApi.startTraffic).toHaveBeenCalledWith({
+        profile: 'spike',
+        rps: 50,
+        duration: undefined,
+        target: 'http://go-api.go-api.svc.cluster.local:8080/',
+      }))
     await waitFor(() =>
-      expect(notify).toHaveBeenCalledWith('info', expect.stringMatching(/Traffic \(spike\) started/), expect.anything()))
+      expect(notify).toHaveBeenCalledWith('info', expect.stringMatching(/Traffic \(spike → go-api\) started/), expect.anything()))
   })
 
   it('stops traffic', async () => {

@@ -54,6 +54,7 @@ if [ -n "${KUBECTL_FAIL_PATTERN:-}" ] && [[ "$*" == *"$KUBECTL_FAIL_PATTERN"* ]]
 fi
 case "$*" in
   *--dry-run=client*) echo "kind: Stub" ;;
+  "get svc "*"-o name") echo "${KUBECTL_GET_SVC_OUTPUT:-}" ;;
 esac
 if [ "$1" = "apply" ]; then
   cat >> "$KUBECTL_APPLY" 2>/dev/null || true
@@ -157,14 +158,58 @@ func TestStartScript_PrometheusRemoteWriteOptIn(t *testing.T) {
 	}
 }
 
+// k6's client-side metrics only reach Prometheus when a remote-write receiver
+// exists; start.sh probes for the service rather than making the caller know.
+func TestStartScript_PrometheusRemoteWriteAutoDetect(t *testing.T) {
+	tests := []struct {
+		name       string
+		env        []string
+		wantRemote bool
+	}{
+		{
+			name:       "prometheus service present",
+			env:        []string{"KUBECTL_GET_SVC_OUTPUT=service/prometheus-kube-prometheus-prometheus"},
+			wantRemote: true,
+		},
+		{
+			name:       "no prometheus in the cluster",
+			env:        nil,
+			wantRemote: false,
+		},
+		{
+			name:       "explicitly disabled",
+			env:        []string{"KUBECTL_GET_SVC_OUTPUT=service/prometheus-kube-prometheus-prometheus", "TRAFFIC_METRICS=off"},
+			wantRemote: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			se := newScriptEnv(t, tt.env...)
+			out, err := se.run(t, "start.sh")
+			if err != nil {
+				t.Fatalf("start.sh failed: %v\n%s", err, out)
+			}
+			got := strings.Contains(se.applied(), "experimental-prometheus-rw")
+			if got != tt.wantRemote {
+				t.Errorf("remote-write enabled = %v, want %v:\n%s", got, tt.wantRemote, se.applied())
+			}
+		})
+	}
+}
+
 func TestStartScript_DefaultsTargetGoAPI(t *testing.T) {
 	se := newScriptEnv(t)
 	out, err := se.run(t, "start.sh")
 	if err != nil {
 		t.Fatalf("start.sh failed: %v\n%s", err, out)
 	}
-	if !strings.Contains(se.applied(), "go-api.go-api.svc.cluster.local:8080/health") {
-		t.Errorf("default target should be go-api health endpoint:\n%s", se.applied())
+	// Default target is go-api's access-logged root ("/"), not /health, so
+	// traffic is visible in the app's pod logs.
+	if !strings.Contains(se.applied(), "go-api.go-api.svc.cluster.local:8080/") {
+		t.Errorf("default target should be go-api root endpoint:\n%s", se.applied())
+	}
+	if strings.Contains(se.applied(), "8080/health") {
+		t.Errorf("default target should no longer be /health:\n%s", se.applied())
 	}
 }
 
