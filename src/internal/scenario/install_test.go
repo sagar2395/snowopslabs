@@ -3,6 +3,7 @@ package scenario
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -221,5 +222,270 @@ func TestInstallManifest_RendersLabctlVarsOnly(t *testing.T) {
 	}
 	if !strings.Contains(out, `{{ $value }}`) {
 		t.Errorf("foreign template was mangled (should be left intact):\n%s", out)
+	}
+}
+
+// scriptedExec fails a configured number of times with a fixed output before
+// succeeding, so the retry paths can be exercised without a cluster.
+type scriptedExec struct {
+	recordingExec
+	failures map[string]int    // command signature -> remaining failures
+	output   map[string]string // command signature -> combined output to return
+}
+
+func (s *scriptedExec) RunCommandStreamed(label, name string, args ...string) (string, error) {
+	out, _ := s.recordingExec.RunCommandStreamed(label, name, args...)
+	sig := name
+	if len(args) > 0 {
+		sig = name + " " + args[0]
+	}
+	if n := s.failures[sig]; n > 0 {
+		s.failures[sig] = n - 1
+		return s.output[sig], fmt.Errorf("exit status 1")
+	}
+	return out, nil
+}
+
+// A scenario must never rewrite a release the platform owns: helm upgrade over
+// an existing StatefulSet release fails on immutable spec fields.
+func TestHelm_AdoptSkipsInstallWhenReleaseExists(t *testing.T) {
+	tests := []struct {
+		name         string
+		adopt        bool
+		releaseFound bool
+		wantInstall  bool
+	}{
+		{"adopt with existing release is skipped", true, true, false},
+		{"adopt with no release installs", true, false, true},
+		{"without adopt always installs", false, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eng := newTestEngine(t)
+			eng.SetOutput(io.Discard)
+			rec := &scriptedExec{failures: map[string]int{}, output: map[string]string{}}
+			if !tt.releaseFound {
+				rec.failures["helm status"] = 1
+			}
+			comp := &Component{Name: "loki", Type: "helm", Chart: "grafana/loki", Adopt: tt.adopt}
+
+			if err := eng.installHelm(&Scenario{Dir: t.TempDir()}, comp, rec); err != nil {
+				t.Fatalf("installHelm: %v", err)
+			}
+			gotInstall := rec.find("helm", "upgrade") != nil
+			if gotInstall != tt.wantInstall {
+				t.Errorf("helm upgrade ran = %v, want %v (calls: %v)", gotInstall, tt.wantInstall, rec.calls)
+			}
+		})
+	}
+}
+
+// The platform's values are the base; a scenario overlay is layered on top.
+// Helm applies -f files left to right, so order decides which one wins.
+func TestHelm_PlatformValuesAreLayeredUnderScenarioOverlay(t *testing.T) {
+	eng := newTestEngine(t)
+	base := filepath.Join(eng.ProjectRoot, "platform", "logging", "loki")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "values.yaml"), []byte("platform: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scenarioDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(scenarioDir, "overlay.yaml"), []byte("overlay: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := &recordingExec{}
+	comp := &Component{
+		Name: "loki", Type: "helm", Chart: "grafana/loki",
+		PlatformValues: "logging/loki", ValuesFile: "overlay.yaml",
+	}
+	if err := eng.installHelm(&Scenario{Dir: scenarioDir}, comp, rec); err != nil {
+		t.Fatalf("installHelm: %v", err)
+	}
+
+	call := rec.find("helm", "upgrade")
+	var seen []string
+	for i, a := range call {
+		if a == "-f" && i+1 < len(call) {
+			seen = append(seen, rec.files[call[i+1]])
+		}
+	}
+	if len(seen) != 2 {
+		t.Fatalf("expected 2 values files, got %d (%v)", len(seen), call)
+	}
+	if !strings.Contains(seen[0], "platform: true") {
+		t.Errorf("first -f should be the platform base, got %q", seen[0])
+	}
+	if !strings.Contains(seen[1], "overlay: true") {
+		t.Errorf("second -f should be the scenario overlay, got %q", seen[1])
+	}
+}
+
+func TestHelm_MissingPlatformValuesIsAnError(t *testing.T) {
+	eng := newTestEngine(t)
+	rec := &recordingExec{}
+	comp := &Component{Name: "loki", Type: "helm", Chart: "grafana/loki", PlatformValues: "logging/nope"}
+
+	err := eng.installHelm(&Scenario{Dir: t.TempDir()}, comp, rec)
+	if err == nil {
+		t.Fatal("expected an error naming the missing platform values file")
+	}
+	if !strings.Contains(err.Error(), "logging/nope") {
+		t.Errorf("error should name the component path, got: %v", err)
+	}
+}
+
+func TestImmutableStatefulSet(t *testing.T) {
+	tests := []struct {
+		name string
+		out  string
+		want string
+	}{
+		{
+			name: "server-side apply failure",
+			out: `Error: UPGRADE FAILED: server-side apply failed for object monitoring/loki apps/v1, ` +
+				`Kind=StatefulSet: StatefulSet.apps "loki" is invalid: spec: Forbidden: ` +
+				`updates to statefulset spec for fields other than 'replicas' are forbidden`,
+			want: "loki",
+		},
+		{
+			name: "three-way merge patch failure",
+			out: `Error: UPGRADE FAILED: cannot patch "tempo" with kind StatefulSet: ` +
+				`StatefulSet.apps "tempo" is invalid: spec: Forbidden: ` +
+				`updates to statefulset spec for fields other than 'replicas' are forbidden`,
+			want: "tempo",
+		},
+		{"an unrelated failure is left alone", "Error: UPGRADE FAILED: timed out waiting for the condition", ""},
+		{"empty output", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := immutableStatefulSet(tt.out); got != tt.want {
+				t.Errorf("immutableStatefulSet() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// Re-running a scenario over an existing Loki/Tempo release used to dead-end on
+// the immutable-StatefulSet error. Orphaning the StatefulSet and retrying keeps
+// the scenario idempotent.
+func TestHelm_RecoversFromImmutableStatefulSet(t *testing.T) {
+	eng := newTestEngine(t)
+	eng.SetOutput(io.Discard)
+	rec := &scriptedExec{
+		failures: map[string]int{"helm upgrade": 1},
+		output: map[string]string{"helm upgrade": `Error: UPGRADE FAILED: server-side apply failed for ` +
+			`object monitoring/loki apps/v1, Kind=StatefulSet: StatefulSet.apps "loki" is invalid: ` +
+			`spec: Forbidden: updates to statefulset spec for fields other than 'replicas' are forbidden`},
+	}
+	comp := &Component{Name: "loki", Type: "helm", Chart: "grafana/loki", Namespace: "monitoring"}
+
+	if err := eng.installHelm(&Scenario{Dir: t.TempDir()}, comp, rec); err != nil {
+		t.Fatalf("installHelm should recover from the immutable-field error: %v", err)
+	}
+
+	del := rec.find("kubectl", "statefulset")
+	if del == nil {
+		t.Fatal("expected the StatefulSet to be deleted before the retry")
+	}
+	if !strings.Contains(strings.Join(del, " "), "--cascade=orphan") {
+		t.Errorf("delete must orphan the pods, got: %v", del)
+	}
+	var upgrades int
+	for _, c := range rec.calls {
+		if c[0] == "helm" && len(c) > 1 && c[1] == "upgrade" {
+			upgrades++
+		}
+	}
+	if upgrades != 2 {
+		t.Errorf("expected the upgrade to be retried once, got %d attempts", upgrades)
+	}
+}
+
+// A failure that is not the immutable-StatefulSet case must surface, not retry.
+func TestHelm_UnrelatedFailureIsNotRetried(t *testing.T) {
+	eng := newTestEngine(t)
+	eng.SetOutput(io.Discard)
+	rec := &scriptedExec{
+		failures: map[string]int{"helm upgrade": 1},
+		output:   map[string]string{"helm upgrade": "Error: UPGRADE FAILED: timed out waiting for the condition"},
+	}
+	comp := &Component{Name: "loki", Type: "helm", Chart: "grafana/loki", Namespace: "monitoring"}
+
+	if err := eng.installHelm(&Scenario{Dir: t.TempDir()}, comp, rec); err == nil {
+		t.Fatal("expected the original failure to surface")
+	}
+	if rec.find("kubectl", "statefulset") != nil {
+		t.Error("must not delete a StatefulSet for an unrelated failure")
+	}
+}
+
+// A script component's side effects must be reversible: `scenario down` runs
+// its uninstallScript, so wiring an app to a collector is undone when the
+// collector is removed.
+func TestScript_UninstallScriptRunsOnTeardown(t *testing.T) {
+	tests := []struct {
+		name            string
+		uninstallScript string
+		wantScript      string
+	}{
+		{"reverses via the uninstall script", "scripts/disable-tracing.sh", "scripts/disable-tracing.sh"},
+		{"no uninstall script is a no-op", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eng := newTestEngine(t)
+			s := &Scenario{Dir: filepath.Join(eng.ProjectRoot, "scenarios", "obs")}
+			comp := &Component{
+				Name: "wire", Type: "script",
+				Script: "scripts/enable-tracing.sh", UninstallScript: tt.uninstallScript,
+			}
+
+			rec := &recordingExec{}
+			if err := eng.uninstallComponent(s, comp, rec); err != nil {
+				t.Fatalf("uninstallComponent: %v", err)
+			}
+			if tt.wantScript == "" {
+				if len(rec.calls) != 0 {
+					t.Errorf("expected no commands, got %v", rec.calls)
+				}
+				return
+			}
+			if len(rec.calls) != 1 || !strings.HasSuffix(rec.calls[0][0], tt.wantScript) {
+				t.Errorf("expected %q to run, got %v", tt.wantScript, rec.calls)
+			}
+		})
+	}
+}
+
+// adopt is "borrow, not own": a scenario that reused a platform release must
+// leave it alone on teardown, or `scenario down` takes Loki and Tempo with it.
+func TestHelm_AdoptedReleaseIsNotUninstalled(t *testing.T) {
+	tests := []struct {
+		name          string
+		adopt         bool
+		wantUninstall bool
+	}{
+		{"adopted release survives teardown", true, false},
+		{"scenario-owned release is removed", false, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eng := newTestEngine(t)
+			eng.SetOutput(io.Discard)
+			rec := &recordingExec{}
+			comp := &Component{Name: "loki", Type: "helm", Chart: "grafana/loki", Adopt: tt.adopt}
+
+			if err := eng.uninstallHelm(comp, rec); err != nil {
+				t.Fatalf("uninstallHelm: %v", err)
+			}
+			got := rec.find("helm", "uninstall") != nil
+			if got != tt.wantUninstall {
+				t.Errorf("helm uninstall ran = %v, want %v", got, tt.wantUninstall)
+			}
+		})
 	}
 }

@@ -123,6 +123,23 @@ type Component struct {
 	Path       string            `yaml:"path,omitempty" json:"path,omitempty"`
 	Set        map[string]string `yaml:"set,omitempty" json:"set,omitempty"`
 	Script     string            `yaml:"script,omitempty" json:"script,omitempty"`
+
+	// UninstallScript reverses a script component on `scenario down`. Without it
+	// a script's side effects (an env var set on a Deployment, say) outlive the
+	// scenario that created them.
+	UninstallScript string `yaml:"uninstallScript,omitempty" json:"uninstallScript,omitempty"`
+
+	// PlatformValues names a platform component ("logging/loki") whose
+	// platform/<path>/values.yaml — or a specific file
+	// ("logging/loki/promtail-values.yaml") — is used as the base values,
+	// with ValuesFile layered on top as an overlay. A scenario that re-installs a
+	// platform component with its own full copy of the values drifts from it, and
+	// Helm turns that drift into an immutable-field error on upgrade.
+	PlatformValues string `yaml:"platformValues,omitempty" json:"platformValues,omitempty"`
+
+	// Adopt reuses an already-installed Helm release instead of upgrading it, so
+	// a scenario never clobbers a release the platform owns.
+	Adopt bool `yaml:"adopt,omitempty" json:"adopt,omitempty"`
 }
 
 // Explore contains hints for the user on how to explore the scenario.
@@ -402,10 +419,13 @@ func (s *Scenario) Validate() error {
 		// Asset paths must stay inside the scenario directory — external
 		// packs (task 044) are untrusted, and in-repo scenarios have no
 		// business escaping their dir either.
-		for field, p := range map[string]string{"valuesFile": c.ValuesFile, "path": c.Path, "script": c.Script} {
+		for field, p := range map[string]string{"valuesFile": c.ValuesFile, "path": c.Path, "script": c.Script, "uninstallScript": c.UninstallScript} {
 			if unsafePath(p) {
 				add("%s: %s %q must be a relative path inside the scenario directory", where, field, p)
 			}
+		}
+		if unsafePath(c.PlatformValues) {
+			add("%s: platformValues %q must be a relative path under platform/ (e.g. \"logging/loki\")", where, c.PlatformValues)
 		}
 	}
 

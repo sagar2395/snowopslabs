@@ -8,6 +8,8 @@ trap 'rm -f "$VALUES_FILE"' EXIT
 
 # DOMAIN_SUFFIX is provided by the executor environment (from .env + runtime.env).
 DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-k3d.local}"
+GRAFANA_CHARTS_REPO="${GRAFANA_CHARTS_REPO:-https://grafana-community.github.io/helm-charts}"
+GRAFANA_CHART_VERSION="${GRAFANA_CHART_VERSION:-13.2.0}"
 
 echo "Installing Grafana..."
 sed "s/\\.monitoring\\.svc/.$NAMESPACE.svc/g" "$SCRIPT_DIR/values.yaml" >"$VALUES_FILE"
@@ -25,18 +27,20 @@ kubectl create configmap grafana-dashboards \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Add Helm repo and update
+# The grafana/grafana chart is deprecated; it is maintained in grafana-community.
 echo "Adding Grafana Helm repository..."
-helm repo add grafana https://grafana.github.io/helm-charts --force-update
-helm repo update
+helm repo add grafana-community "$GRAFANA_CHARTS_REPO" --force-update
+helm repo update grafana-community
 
 # Get admin password from env or use default
 GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-admin}"
 
 # Install or upgrade Grafana with dynamic ingress host
 echo "Installing Grafana chart..."
-helm upgrade --install grafana grafana/grafana \
+helm upgrade --install grafana grafana-community/grafana \
   --namespace "$NAMESPACE" \
   --create-namespace \
+  --version "$GRAFANA_CHART_VERSION" \
   -f "$VALUES_FILE" \
   --set adminPassword="$GRAFANA_ADMIN_PASSWORD" \
   --set "ingress.hosts[0]=grafana.${DOMAIN_SUFFIX}" \

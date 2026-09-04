@@ -17,6 +17,16 @@ const PROFILE_BLURB: Record<string, string> = {
   steady: 'Constant request rate for the duration — a stable baseline to watch autoscaling and latency settle.',
   spike:  'Baseline, then a sharp ~10× spike and recovery (~6 min) — see how the stack absorbs and sheds a burst.',
   soak:   'Sustained moderate load over a long window (default 2h) — surface slow leaks and gradual degradation.',
+  browse: 'Weighted read-mix across /, /version, /health — the shape of everyday traffic, spread over routes.',
+  write:  'POSTs a JSON body (best against echo-server /echo) — exercises a write path, not just reads.',
+  errors: 'Toggles go-api into simulated failure under load — watch error rate, readiness, and alerts react.',
+}
+
+// Known in-cluster targets. Multi-endpoint profiles (browse/write/errors) treat
+// the chosen target as a BASE origin and append their own paths.
+const TARGETS: Record<string, string> = {
+  'go-api':      'http://go-api.go-api.svc.cluster.local:8080/',
+  'echo-server': 'http://echo-server.echo-server.svc.cluster.local:8080/',
 }
 
 export function Traffic({ notify }: TrafficProps) {
@@ -25,17 +35,24 @@ export function Traffic({ notify }: TrafficProps) {
   const [profile, setProfile] = useState('')
   const [rps, setRps] = useState(50)
   const [duration, setDuration] = useState('')
+  const [targetApp, setTargetApp] = useState('go-api')
+  const [customUrl, setCustomUrl] = useState('')
   const { busy, run } = useJobRunner(notify)
 
   useEffect(() => {
     if (!profile && profiles.length > 0) setProfile(profiles[0])
   }, [profile, profiles])
 
+  // Resolve the target URL from the picker; 'custom' uses the typed URL.
+  const resolvedTarget = targetApp === 'custom' ? customUrl.trim() : TARGETS[targetApp]
+  const targetInvalid = targetApp === 'custom' && !/^https?:\/\//.test(customUrl.trim())
+
   function start() {
-    run('traffic', `Traffic (${profile})`, () => api.startTraffic({
+    run('traffic', `Traffic (${profile} → ${targetApp})`, () => api.startTraffic({
       profile,
       rps,
       duration: duration.trim() || undefined,
+      target: resolvedTarget || undefined,
     }))
   }
   function stop() {
@@ -94,6 +111,40 @@ export function Traffic({ notify }: TrafficProps) {
             </label>
 
             <label className="field">
+              <span className="field-label">Target</span>
+              <select
+                className="select"
+                value={targetApp}
+                aria-label="Traffic target"
+                onChange={e => setTargetApp(e.target.value)}
+              >
+                <option value="go-api">go-api (in-cluster)</option>
+                <option value="echo-server">echo-server (in-cluster)</option>
+                <option value="custom">Custom URL…</option>
+              </select>
+              <span className="field-help">
+                {targetApp === 'custom'
+                  ? 'Any http(s) URL reachable from the cluster.'
+                  : <>Requests go to <code>{TARGETS[targetApp]}</code></>}
+              </span>
+            </label>
+
+            {targetApp === 'custom' && (
+              <label className="field">
+                <span className="field-label">Custom target URL</span>
+                <input
+                  type="text"
+                  className="input maxw-input"
+                  placeholder="http://my-svc.my-ns.svc.cluster.local:8080/"
+                  value={customUrl}
+                  aria-label="Custom target URL"
+                  onChange={e => setCustomUrl(e.target.value)}
+                />
+                {targetInvalid && <span className="field-help field-error">Enter an http(s) URL.</span>}
+              </label>
+            )}
+
+            <label className="field">
               <span className="field-label">Requests / second</span>
               <input
                 type="number"
@@ -121,7 +172,7 @@ export function Traffic({ notify }: TrafficProps) {
             <div className="row-flex mt-1">
               <button
                 className="btn btn-primary"
-                disabled={!profile || running}
+                disabled={!profile || running || targetInvalid}
                 onClick={start}
               >
                 {running ? 'Working…' : (<><Icon name="play" size={15} />Start traffic</>)}

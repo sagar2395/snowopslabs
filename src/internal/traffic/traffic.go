@@ -21,6 +21,7 @@ type Options struct {
 	Target   string // URL to load; empty keeps the script default (go-api in-cluster)
 	RPS      int    // requests per second (baseline for spike)
 	Duration string // k6/Go duration syntax (e.g. 10m, 1h30m); empty keeps profile default
+	Method   string // HTTP method for profiles that honor it (write/errors); empty keeps profile default
 }
 
 // ScriptDir is the location of the traffic scripts relative to the project
@@ -75,6 +76,14 @@ func (o Options) Validate(projectRoot string) error {
 		errs = append(errs, fmt.Sprintf("target must be an http(s) URL, got %q", o.Target))
 	}
 
+	if o.Method != "" {
+		switch strings.ToUpper(o.Method) {
+		case "GET", "POST", "PUT", "PATCH", "DELETE":
+		default:
+			errs = append(errs, fmt.Sprintf("method must be one of GET/POST/PUT/PATCH/DELETE, got %q", o.Method))
+		}
+	}
+
 	if len(errs) > 0 {
 		return fmt.Errorf("invalid traffic options: %s", strings.Join(errs, "; "))
 	}
@@ -93,6 +102,9 @@ func (o Options) Env() map[string]string {
 	}
 	if o.Duration != "" {
 		env["TRAFFIC_DURATION"] = o.Duration
+	}
+	if o.Method != "" {
+		env["TRAFFIC_METHOD"] = o.Method
 	}
 	return env
 }

@@ -14,21 +14,70 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NAMESPACE="${KAFKA_NAMESPACE:-kafka}"
 CLUSTER="${KAFKA_CLUSTER:-lab-kafka}"
-# 0.47.0+ ships a fabric8 kubernetes-client that understands Kubernetes 1.33's
-# version payload (the new emulationMajor/Minor fields). Strimzi 0.45.0 fails on
-# 1.33 with "Unrecognized field emulationMajor ... Failed to gather environment
-# facts", crash-looping the operator. Keep the CRs (already KRaft + KafkaNodePool)
-# unchanged.
-STRIMZI_VERSION="${STRIMZI_VERSION:-0.47.0}"
-KAFKA_VERSION="${KAFKA_VERSION:-3.9.0}"
+# Strimzi 1.x is KRaft-only (ZooKeeper support is gone), which suits the CRs
+# below — they already use KRaft + KafkaNodePool. The broker version MUST be one
+# the operator ships an image for: 1.2.0 supports Kafka 4.2.0-4.3.1 only, so a
+# 3.x KAFKA_VERSION is rejected. Verify before bumping either:
+#   helm template strimzi/strimzi-kafka-operator --version "$STRIMZI_VERSION" \
+#     | grep -A6 STRIMZI_KAFKA_IMAGES
+STRIMZI_VERSION="${STRIMZI_VERSION:-1.2.0}"
+KAFKA_VERSION="${KAFKA_VERSION:-4.3.1}"
 
 echo "Installing Strimzi Kafka operator ${STRIMZI_VERSION} (Kafka ${KAFKA_VERSION}, namespace=${NAMESPACE})..."
 
 helm repo add strimzi https://strimzi.io/charts/ --force-update
 helm repo update strimzi
 
-# Operator (installs CRDs). Watches its own namespace by default, which is where
-# we create the Kafka CR below. Idempotent via upgrade --install.
+# Helm installs a chart's CRDs on FIRST install only — `helm upgrade` never
+# touches them. Strimzi 1.x serves StrimziPodSet at core.strimzi.io/v1 while
+# 0.x served v1beta2, so upgrading the operator without this leaves it querying
+# an API version the cluster does not have, and it crash-loops with
+# "GET .../apis/core.strimzi.io/v1/... Not Found" while the Kafka CR sits
+# unreconciled. Server-side apply is required: these CRDs exceed the annotation
+# size limit that client-side apply uses.
+# On a FIRST install Helm installs the crds/ directory itself and owns those
+# fields, so leave them alone — applying them here first makes Helm's own install
+# fail with a field-manager conflict on .spec.versions. Only an upgrade needs
+# this, because `helm upgrade` never touches CRDs.
+CRD_ERR="$(mktemp "${TMPDIR:-/tmp}/strimzi-crds.XXXXXX")"
+if helm status strimzi-kafka-operator -n "$NAMESPACE" >/dev/null 2>&1; then
+  echo "Applying Strimzi ${STRIMZI_VERSION} CRDs (helm upgrade does not update CRDs)..."
+  helm show crds strimzi/strimzi-kafka-operator --version "$STRIMZI_VERSION" \
+    | kubectl apply --server-side --force-conflicts -f - 2>&1 | tee "$CRD_ERR" || true
+fi
+
+# Strimzi 1.x serves its CRDs at v1 only; 0.x stored objects as v1beta2.
+# Kubernetes refuses to drop a version that is still in status.storedVersions
+# until a storage migration has rewritten every existing object. There is no
+# in-place path across that boundary, so say what to do instead of leaving ten
+# CRD errors on screen.
+if grep -q "must remain in spec.versions until a storage migration" "$CRD_ERR"; then
+  rm -f "$CRD_ERR"
+  cat >&2 <<'MSG'
+
+Strimzi cannot be upgraded in place across the 0.x -> 1.x boundary.
+
+  The installed CRDs still record v1beta2 as a stored version, and Strimzi 1.x
+  ships v1 only. Kubernetes will not remove a stored version until every stored
+  object has been migrated, and Strimzi provides no migration for this jump.
+
+  This lab's Kafka uses ephemeral storage (the Kafka CR warns that a restart
+  loses topic data), so the supported path is to recreate it:
+
+    labctl platform down data/kafka
+    labctl platform up data/kafka
+
+  Any scenario using Kafka must be re-activated afterwards:
+
+    labctl scenario up event-driven-arch --force
+
+MSG
+  exit 1
+fi
+rm -f "$CRD_ERR"
+
+# Operator. Watches its own namespace by default, which is where we create the
+# Kafka CR below. Idempotent via upgrade --install.
 helm upgrade --install strimzi-kafka-operator strimzi/strimzi-kafka-operator \
   --namespace "$NAMESPACE" \
   --create-namespace \
@@ -39,10 +88,17 @@ helm upgrade --install strimzi-kafka-operator strimzi/strimzi-kafka-operator \
 echo "Waiting for the Strimzi operator to be ready..."
 kubectl rollout status deployment/strimzi-cluster-operator -n "$NAMESPACE" --timeout=180s
 
+# Broker metrics. A Kafka CR without spec.kafka.metricsConfig exposes NOTHING to
+# Prometheus — the kafka-exporter only covers consumer-group lag and topic
+# offsets, not broker health, throughput or under-replicated partitions.
+echo "Applying the JMX Prometheus exporter rules for the broker..."
+kubectl apply -n "$NAMESPACE" -f "$SCRIPT_DIR/jmx-exporter-config.yaml"
+
 # Kafka cluster: KRaft mode, one dual-role node, ephemeral storage (fits k3d).
+# apiVersion is kafka.strimzi.io/v1 — Strimzi 1.x dropped v1beta2 entirely.
 echo "Applying Kafka cluster '$CLUSTER' (KRaft, 1 node, ephemeral)..."
 cat <<EOF | kubectl apply -f -
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: KafkaNodePool
 metadata:
   name: dual-role
@@ -56,8 +112,17 @@ spec:
     - broker
   storage:
     type: ephemeral
+  # Strimzi 1.x moved resources off spec.kafka and onto the node pool: the pool
+  # is what owns the pods, so it owns their sizing.
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: "1"
 ---
-apiVersion: kafka.strimzi.io/v1beta2
+apiVersion: kafka.strimzi.io/v1
 kind: Kafka
 metadata:
   name: ${CLUSTER}
@@ -79,16 +144,18 @@ spec:
       transaction.state.log.min.isr: 1
       default.replication.factor: 1
       min.insync.replicas: 1
-    resources:
-      requests:
-        memory: 512Mi
-        cpu: 250m
-      limits:
-        memory: 1Gi
-        cpu: "1"
+    metricsConfig:
+      type: jmxPrometheusExporter
+      valueFrom:
+        configMapKeyRef:
+          name: kafka-metrics
+          key: kafka-metrics-config.yml
   entityOperator:
     topicOperator: {}
     userOperator: {}
+  kafkaExporter:
+    topicRegex: ".*"
+    groupRegex: ".*"
 EOF
 
 echo "Waiting for Kafka cluster to become Ready (this provisions the broker)..."

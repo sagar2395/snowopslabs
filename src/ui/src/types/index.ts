@@ -215,6 +215,12 @@ export interface ScenarioSnippet {
   path?: string
 }
 
+export interface ScenarioStage {
+  name: string
+  description?: string
+  components?: ScenarioComponent[]
+}
+
 export interface Scenario {
   name: string
   displayName: string
@@ -224,6 +230,7 @@ export interface Scenario {
   runtimes?: string[]
   prerequisites?: ScenarioPrerequisites
   components?: ScenarioComponent[]
+  stages?: ScenarioStage[]
   explore?: Explore
   parameters?: ScenarioParameter[]
   objectives?: string[]

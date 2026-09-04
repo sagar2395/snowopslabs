@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CHAOS_MESH_CHART_VERSION="${CHAOS_MESH_CHART_VERSION:-2.8.4}"
+
 NAMESPACE="chaos-mesh"
 SCRIPT_DIR="$(dirname "$0")"
 
@@ -23,6 +25,7 @@ helm repo update
 # Install or upgrade Chaos Mesh with the runtime-appropriate socket path.
 echo "Installing Chaos Mesh chart..."
 helm upgrade --install chaos-mesh chaos-mesh/chaos-mesh \
+  --version "$CHAOS_MESH_CHART_VERSION" \
   --namespace $NAMESPACE \
   --create-namespace \
   --set "chaosDaemon.socketPath=${CONTAINERD_SOCKET}" \

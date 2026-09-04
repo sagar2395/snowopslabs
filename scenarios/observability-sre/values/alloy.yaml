@@ -1,0 +1,67 @@
+# Grafana Alloy as an OTLP trace collector (gateway pattern).
+#
+# Applications export to Alloy, never straight to Tempo. The collector owns
+# batching, retry and sampling, so the trace backend can be replaced without
+# redeploying a single application.
+#
+# Alloy also replaces Promtail for logs eventually; this lab still ships logs
+# with Promtail (see docs/adr) and uses Alloy only for traces.
+
+controller:
+  # One collector, not a per-node agent: it receives OTLP over the network
+  # rather than reading node-local files.
+  type: deployment
+  replicas: 1
+
+alloy:
+  # No Alloy UI/clustering needed for a single-replica trace gateway.
+  extraPorts:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318
+      protocol: TCP
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
+  configMap:
+    content: |
+      // Accept OTLP from applications over gRPC and HTTP.
+      otelcol.receiver.otlp "default" {
+        grpc { endpoint = "0.0.0.0:4317" }
+        http { endpoint = "0.0.0.0:4318" }
+
+        output {
+          traces = [otelcol.processor.batch.default.input]
+        }
+      }
+
+      // Batching is why the collector exists: it turns many small exports from
+      // many pods into a few efficient writes to the backend.
+      otelcol.processor.batch "default" {
+        timeout             = "2s"
+        send_batch_size     = 512
+        send_batch_max_size = 1024
+
+        output {
+          traces = [otelcol.exporter.otlp.tempo.input]
+        }
+      }
+
+      // Ship to Tempo's OTLP gRPC receiver. Swapping trace backends is a change
+      // to this block alone — no application redeploy.
+      otelcol.exporter.otlp "tempo" {
+        client {
+          endpoint = "tempo.{{.MonitoringNamespace}}.svc.cluster.local:4317"
+          tls { insecure = true }
+        }
+      }

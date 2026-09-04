@@ -2,7 +2,7 @@ apiVersion: scenario.snowops.net/v2
 name: env-promotion
 verified: true
 displayName: "Multi-Env Promotion (Dev → Staging → Prod)"
-description: "Simulate a real release pipeline: three environments (dev, staging, prod) each running go-api in dedicated namespaces with separate declared image tags. Promote between environments with 'labctl env promote' — no ArgoCD required in the default namespace mode."
+description: "Run a real release pipeline by hand: build versioned go-api images, deploy one to dev, and promote it forward to staging then prod with plain kubectl. Promotion here is a genuine image rollout (new ReplicaSet), not a ConfigMap edit — you build vNEXT, roll it out per environment, and watch each env's /version change as the release moves down the pipeline."
 category: delivery
 prerequisites:
   platform:
@@ -14,28 +14,37 @@ runtimes:
   - kind
 
 objectives:
-  - "Understand environment separation as Kubernetes namespace isolation"
-  - "Promote go-api from dev to staging using 'labctl env promote'"
-  - "Promote go-api from staging to prod and verify the full release pipeline"
-  - "Observe how a ConfigMap-backed promotion gate models GitOps manifest changes"
+  - "Understand environment separation as Kubernetes namespace isolation (env-dev / env-staging / env-prod)"
+  - "Build multiple immutable, versioned images (go-api:v1.0.0, v1.1.0, …) and load them into the cluster"
+  - "Deploy a new version to dev only, and prove the other environments are unchanged"
+  - "Promote a version dev → staging → prod with 'kubectl set image' + 'kubectl rollout status' — a real rollout"
+  - "Roll back a bad promotion with 'kubectl rollout undo'"
+  - "Verify the pipeline: every environment's running image matches its declared tag"
 
 stages:
+  - name: seed-baseline
+    description: Build the go-api:v1.0.0 baseline image and load it into the cluster
+    components:
+      - name: baseline-image
+        type: script
+        script: scripts/seed-baseline-image.sh
+
   - name: dev-env
-    description: Deploy go-api into the dev environment (namespace env-dev, tag v1.2.0)
+    description: Deploy go-api:v1.0.0 into the dev environment (namespace env-dev)
     components:
       - name: dev-environment
         type: manifest
         path: manifests/dev-env.yaml
 
   - name: staging-env
-    description: Deploy go-api into the staging environment (namespace env-staging, tag v1.1.0)
+    description: Deploy go-api:v1.0.0 into the staging environment (namespace env-staging)
     components:
       - name: staging-environment
         type: manifest
         path: manifests/staging-env.yaml
 
   - name: prod-env
-    description: Deploy go-api into the prod environment (namespace env-prod, tag v1.0.0)
+    description: Deploy go-api:v1.0.0 into the prod environment (namespace env-prod)
     components:
       - name: prod-environment
         type: manifest
@@ -78,54 +87,73 @@ checks:
     operator: ">="
     value: "1"
 
-  - name: env-metadata-present-dev
-    type: kubectl
-    resource: configmap/env-metadata
-    namespace: env-dev
+  - name: declared-tag-matches-running-image
+    type: script
+    script: scripts/check-images-consistent.sh
+    remediation: "Every env's release record must match live state at three levels: the Deployment's full image ref, a converged rollout (observedGeneration == generation, updatedReplicas == readyReplicas == replicas), and the image the kubelet reports each pod is running. Re-run the failing env's 'kubectl set image' + 'kubectl rollout status', then patch env-metadata's declared_tag to the same tag."
 
-  - name: env-metadata-present-staging
-    type: kubectl
-    resource: configmap/env-metadata
-    namespace: env-staging
-
-  - name: env-metadata-present-prod
+  - name: newer-release-reached-prod
     type: kubectl
     resource: configmap/env-metadata
     namespace: env-prod
+    jsonpath: "{.data.declared_tag}"
+    operator: "!="
+    value: "v1.0.0"
+    pending: true
+    remediation: "Build a newer image and promote it through to prod: bash scenarios/env-promotion/scripts/build-image.sh v1.1.0 && kubectl -n env-dev set image deployment/go-api go-api=go-api:v1.1.0 && kubectl -n env-dev rollout status deployment/go-api (then repeat for env-staging and env-prod, updating each env-metadata declared_tag to v1.1.0)."
 
 snippets:
-  - label: "The dev environment (namespace, deployment, service, ingress)"
-    description: "One environment's full stack in its own namespace, tagged with the image version. Staging and prod are the same shape — promotion carries the image tag forward from one to the next."
+  - label: "One environment's full stack (namespace, deployment, service, ingress)"
+    description: "Each env is the same shape in its own namespace, pinned to an EXPLICIT image tag (go-api:v1.0.0) — never :latest. Promotion changes spec.template.spec.containers[].image, which rolls out a new ReplicaSet. Read this to see there is no magic: promotion is a plain image change on a Deployment."
     path: manifests/dev-env.yaml
+  - label: "build-image.sh — how a new version enters the cluster"
+    description: "Build go-api at an explicit tag and load it into k3d/kind. This is the 'docker build + push' of a real pipeline, minus a registry. The tag is baked into the binary, so /version reports exactly what you built."
+    path: scripts/build-image.sh
+  - label: "check-images-consistent.sh — what 'verify' actually grades"
+    description: "The invariant that declared_tag == live state for every env. It compares the FULL image ref (not just the tag), then proves the rollout converged (spec vs status, generation vs observedGeneration), then checks what the kubelet reports each pod is actually running. Read it to see why editing a ConfigMap — or starting a rollout that never finishes — does NOT count as a promotion."
+    path: scripts/check-images-consistent.sh
 
 explore:
   urls:
-    - label: "go-api — dev environment"
-      url: "http://go-api-dev.{{.DomainSuffix}}/health"
-    - label: "go-api — staging environment"
-      url: "http://go-api-staging.{{.DomainSuffix}}/health"
-    - label: "go-api — prod environment"
-      url: "http://go-api-prod.{{.DomainSuffix}}/health"
+    - label: "go-api /version — dev environment"
+      url: "http://go-api-dev.{{.DomainSuffix}}/version"
+    - label: "go-api /version — staging environment"
+      url: "http://go-api-staging.{{.DomainSuffix}}/version"
+    - label: "go-api /version — prod environment"
+      url: "http://go-api-prod.{{.DomainSuffix}}/version"
   commands:
     - label: "0. Add env hostnames to /etc/hosts (once, needs sudo)"
-      command: "labctl hosts add"
-    - label: "1. List environments and current tags"
-      command: "labctl env list"
-    - label: "2. Promote go-api from dev to staging"
-      command: "labctl env promote dev staging"
-    - label: "3. Promote go-api from staging to prod"
-      command: "labctl env promote staging prod"
-    - label: "4. Verify all environments are healthy"
+      command: "sudo labctl hosts add"
+    - label: "1. Baseline check — all three envs serve the SAME version (v1.0.0)"
+      command: "for e in dev staging prod; do echo -n \"$e: \"; curl -s go-api-$e.{{.DomainSuffix}}/version; echo; done"
+    - label: "2. Make a code change you can SEE: edit `releaseNote` in apps/go-api/main.go"
+      command: "grep -n 'releaseNote =' apps/go-api/main.go   # change the string, then build a new version"
+    - label: "3. Build the new version and load it into the cluster (this is 'docker build + push')"
+      command: "bash scenarios/env-promotion/scripts/build-image.sh v1.1.0"
+    - label: "4. Deploy to DEV ONLY — a real rollout (new ReplicaSet), then record the declared tag"
+      command: "kubectl -n env-dev set image deployment/go-api go-api=go-api:v1.1.0 && kubectl -n env-dev rollout status deployment/go-api && kubectl -n env-dev patch cm env-metadata --type=merge -p '{\"data\":{\"declared_tag\":\"v1.1.0\"}}'"
+    - label: "5. Prove dev changed and staging/prod did NOT — this is what the promote command actually moves"
+      command: "for e in dev staging prod; do echo -n \"$e: \"; curl -s go-api-$e.{{.DomainSuffix}}/version; echo; done"
+    - label: "6. Promote dev → STAGING (same image, forward one environment)"
+      command: "kubectl -n env-staging set image deployment/go-api go-api=go-api:v1.1.0 && kubectl -n env-staging rollout status deployment/go-api && kubectl -n env-staging patch cm env-metadata --type=merge -p '{\"data\":{\"declared_tag\":\"v1.1.0\",\"promoted_from\":\"dev\"}}'"
+    - label: "7. Promote staging → PROD (release to production)"
+      command: "kubectl -n env-prod set image deployment/go-api go-api=go-api:v1.1.0 && kubectl -n env-prod rollout status deployment/go-api && kubectl -n env-prod patch cm env-metadata --type=merge -p '{\"data\":{\"declared_tag\":\"v1.1.0\",\"promoted_from\":\"staging\"}}'"
+    - label: "8. Verify the whole pipeline (declared == running everywhere; newer release reached prod)"
       command: "labctl scenario verify env-promotion"
-    - label: "Watch staging deployment"
-      command: "kubectl -n env-staging get deploy go-api -w"
-    - label: "Inspect dev metadata ConfigMap"
-      command: "kubectl -n env-dev get cm env-metadata -o yaml"
-    - label: "Inspect staging metadata ConfigMap"
-      command: "kubectl -n env-staging get cm env-metadata -o yaml"
+    - label: "ROLLBACK drill — undo prod's last rollout and see it revert"
+      command: "kubectl -n env-prod rollout undo deployment/go-api && kubectl -n env-prod rollout status deployment/go-api && kubectl -n env-prod rollout history deployment/go-api"
+    - label: "Watch a rollout happen live (run in a second terminal before promoting)"
+      command: "kubectl -n env-staging get pods -w"
+    - label: "Diff what's running between two environments"
+      command: "diff <(kubectl -n env-dev get deploy go-api -o jsonpath='{.spec.template.spec.containers[0].image}') <(kubectl -n env-prod get deploy go-api -o jsonpath='{.spec.template.spec.containers[0].image}') && echo 'same image' || echo 'environments differ'"
   tips:
-    - "Default mode: one cluster, three namespaces (env-dev/staging/prod). Laptop-friendly — no extra clusters needed."
-    - "The 'declared tag' in env-metadata is the promotion unit. In a real GitOps pipeline this would be a values.yaml commit."
-    - "Promotion is idempotent: re-running 'env promote dev staging' is always safe."
-    - "After promoting dev→staging, run 'labctl env list' to confirm the staging tag matches dev's."
+    - "Default mode: one cluster, three namespaces (env-dev/staging/prod). Laptop-friendly — no extra clusters."
+    - "Promotion moves an IMAGE, not a config value. 'kubectl set image' changes spec.template, which creates a new ReplicaSet — that rollout IS the promotion. Editing env-metadata alone would fail 'labctl scenario verify'."
+    - "Versions are immutable: build go-api:v1.1.0 once, then promote that SAME image dev→staging→prod. You never rebuild per environment — that is the point of promoting a tested artifact forward."
+    - "The version is baked into the image (main.version). Edit `releaseNote` in apps/go-api/main.go before building so you can SEE the new build in /version as it moves through the pipeline."
+    - "'labctl scenario verify' grades the real outcome: declared_tag must equal the running image in every env, and a newer-than-baseline release must have reached prod."
+    - "spec vs status is the core Kubernetes lesson here. 'kubectl set image' only writes .spec — your intent. The Deployment controller writes .status once reality catches up. Compare them yourself: kubectl -n env-prod get deploy go-api -o jsonpath='{.metadata.generation} {.status.observedGeneration} {.status.updatedReplicas}/{.spec.replicas}'"
+    - "Drift detection is the real-world skill: a release record that claims v1.1.0 while the cluster serves v1.0.0 is exactly what ArgoCD reports as OutOfSync. Break it deliberately — 'kubectl -n env-prod set image deployment/go-api go-api=go-api:v9.9.9' (an image that does not exist) — then verify. Spec says v9.9.9, the rollout never converges, pods still run the old tag, and the check tells you all three."
+    - "Break it on purpose: patch env-metadata's declared_tag WITHOUT running 'kubectl set image', then verify — the consistency check catches the drift. That is why the ConfigMap alone is not a promotion."
+    - "This scenario teaches IMPERATIVE promotion — you run the rollout yourself with kubectl. For the DECLARATIVE version, where you commit an image tag to Git and ArgoCD reconciles it (with automated prune + self-heal), run the 'gitops-cicd' scenario. Same goal, two philosophies."
     - "Tear down with 'labctl scenario down env-promotion' — removes all three namespaces cleanly."

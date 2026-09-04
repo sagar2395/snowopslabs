@@ -58,6 +58,7 @@ Runbooks are written as their wave is implemented.
 | R10 | Learning & assessment | W7 | planned |
 | R11 | Team server | W8 | planned |
 | R12 | Release verification | W8 | planned |
+| R13 | [Observability pipeline](R13-observability-pipeline.md) | W4 | **ready** |
 
 ## What each runbook will ask you to prove
 
@@ -105,6 +106,11 @@ Run a challenge, confirm the score matches the stated rubric.
 
 **R11 — Team server.** Helm install on kind, two browsers as two users, confirm
 isolation of runs and consistency of the leaderboard.
+
+**R13 — Observability pipeline.** Prove metrics, logs and traces flow end to end
+for `go-api`, that log lines link to their traces, that alert rules are actually
+loaded, and that the scenario is idempotent over an existing platform install.
+Each step names the silent failure it is guarding against.
 
 **R12 — Release verification.** Download the release artifacts, verify
 checksums and the cosign signature, inspect the SBOM, run the binary on a

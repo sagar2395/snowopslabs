@@ -28,7 +28,14 @@ run is active replaces it with the new settings.
 Profiles (services/traffic/profiles/):
   steady  constant rate for the duration (default 10m)
   spike   baseline, sharp 10x spike, recovery (~6m fixed shape)
-  soak    sustained moderate load (default 2h)`,
+  soak    sustained moderate load (default 2h)
+  browse  weighted read-mix across /, /version, /health
+  write   POST a JSON body (best against echo-server /echo)
+  errors  toggle go-api into simulated failure under load
+
+The target defaults to go-api's root (/), which is access-logged, so traffic
+shows up in 'kubectl logs deploy/go-api'. Point elsewhere with --target, e.g.
+--target http://echo-server.echo-server.svc.cluster.local:8080/`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := trafficOpts.Validate(cfg.ProjectRoot); err != nil {
 			return err
@@ -80,6 +87,7 @@ func init() {
 	trafficStartCmd.Flags().StringVar(&trafficOpts.Target, "target", "", "URL to load (default: go-api health endpoint, in-cluster)")
 	trafficStartCmd.Flags().IntVar(&trafficOpts.RPS, "rps", 10, "requests per second (baseline for the spike profile)")
 	trafficStartCmd.Flags().StringVar(&trafficOpts.Duration, "duration", "", "run length, e.g. 10m or 1h30m (default: profile-specific)")
+	trafficStartCmd.Flags().StringVar(&trafficOpts.Method, "method", "", "HTTP method for write/errors profiles (GET/POST/PUT/PATCH/DELETE; default: profile-specific)")
 
 	trafficCmd.AddCommand(trafficStartCmd)
 	trafficCmd.AddCommand(trafficStopCmd)

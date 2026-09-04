@@ -1,0 +1,52 @@
+# Tell Prometheus what to scrape for Kafka. Two sources, and both are needed:
+#
+#   kafka-exporter  — consumer-group lag and topic offsets (the "is the consumer
+#                     keeping up?" question this scenario is about)
+#   the brokers     — throughput, replication health and request latency, via
+#                     the JMX Prometheus exporter that platform/data/kafka
+#                     enables on the Kafka CR
+#
+# The `release: prometheus` label matters: kube-prometheus-stack restricts
+# selection to that label unless podMonitorSelectorNilUsesHelmValues is false.
+# Carrying it makes these work under either configuration.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-exporter
+  namespace: kafka
+  labels:
+    app: kafka-exporter
+    release: prometheus
+    snowops.net/scenario: event-driven-arch
+spec:
+  selector:
+    matchLabels:
+      strimzi.io/name: lab-kafka-kafka-exporter
+  podMetricsEndpoints:
+    - path: /metrics
+      port: tcp-prometheus
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: kafka-broker
+  namespace: kafka
+  labels:
+    app: kafka-broker
+    release: prometheus
+    snowops.net/scenario: event-driven-arch
+spec:
+  selector:
+    matchLabels:
+      # component-type, not kind: every Strimzi pod in the cluster carries
+      # strimzi.io/kind=Kafka, so selecting on it would scrape the exporter here
+      # too and duplicate its series under a second job.
+      strimzi.io/component-type: kafka
+  podMetricsEndpoints:
+    - path: /metrics
+      port: tcp-prometheus
+      relabelings:
+        # Keep the broker's pod name as a label so per-broker panels work.
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: kafka_broker

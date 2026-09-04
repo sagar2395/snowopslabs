@@ -41,8 +41,7 @@ SnowOps Labs").
 
 ## Questions / permission requests
 
-Contact **trademark@snowops.net** _(maintainer: set this alias and have counsel
-review this policy before launch — manual actions B4/E)._
+Contact **admin@snowops.net**
 
 ---
 

@@ -1,0 +1,195 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [
+    {
+      "title": "Kafka Overview (cluster health & throughput)",
+      "type": "dashboards",
+      "tags": [
+        "kafka"
+      ],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 100,
+      "type": "text",
+      "title": "Draining the lag",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Lag grows because producers are writing faster than the single consumer can read. A consumer group can run at most **one consumer per partition**, and `orders` has 3 \u2014 so scaling past 3 adds nothing.\n\n`kubectl -n kafka scale deployment/orders-consumer --replicas=3` \u2014 then watch the per-partition lines below split across consumers and drain. `kubectl -n kafka get pods -l app=orders-consumer -w` shows the rebalance happen."
+      }
+    },
+    {
+      "title": "Consumer-group lag by partition (order-processors / orders)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 18,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (partition) (kafka_consumergroup_lag{consumergroup=\"order-processors\", topic=\"orders\"})",
+          "legendFormat": "partition {{partition}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Total lag now",
+      "type": "stat",
+      "gridPos": {
+        "h": 9,
+        "w": 6,
+        "x": 18,
+        "y": 4
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(kafka_consumergroup_lag{consumergroup=\"order-processors\", topic=\"orders\"})",
+          "legendFormat": "lag"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 5000
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Produce vs Consume rate (orders)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 18,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(kafka_topic_partition_current_offset{topic=\"orders\"}[1m]))",
+          "legendFormat": "produced/s"
+        },
+        {
+          "expr": "sum(rate(kafka_consumergroup_current_offset{consumergroup=\"order-processors\", topic=\"orders\"}[1m]))",
+          "legendFormat": "consumed/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "cps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Partitions in 'orders'",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "count(kafka_consumergroup_current_offset{consumergroup=\"order-processors\", topic=\"orders\"})",
+          "legendFormat": "partitions"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": [
+    "kafka",
+    "strimzi",
+    "event-driven",
+    "lag"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "title": "Event-Driven \u2014 Kafka Consumer Lag",
+  "uid": "event-driven-arch",
+  "refresh": "10s"
+}

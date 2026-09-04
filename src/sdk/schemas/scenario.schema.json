@@ -93,9 +93,21 @@
         "repo": { "type": "string" },
         "version": { "type": "string" },
         "valuesFile": { "type": "string" },
+        "platformValues": {
+          "type": "string",
+          "description": "Platform component whose values are the base for this release, e.g. \"logging/loki\" (its values.yaml) or \"logging/loki/promtail-values.yaml\". valuesFile is layered on top as an overlay. Use this instead of copying a platform component's values into the scenario."
+        },
+        "adopt": {
+          "type": "boolean",
+          "description": "Reuse an already-installed Helm release instead of upgrading it, so a scenario never rewrites a release the platform owns."
+        },
         "path": { "type": "string" },
         "set": { "type": "object", "additionalProperties": { "type": "string" } },
-        "script": { "type": "string" }
+        "script": { "type": "string" },
+        "uninstallScript": {
+          "type": "string",
+          "description": "Script run on `scenario down` to reverse a script component's side effects."
+        }
       },
       "allOf": [
         { "if": { "properties": { "type": { "const": "helm" } } }, "then": { "required": ["chart"] } },

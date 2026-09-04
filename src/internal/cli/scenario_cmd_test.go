@@ -63,35 +63,6 @@ func TestPlatformCmd_Help(t *testing.T) {
 	}
 }
 
-func TestEnvCmd_Help(t *testing.T) {
-	out := executeHelp(t, "env", "--help")
-	if out == "" {
-		t.Error("expected non-empty --help output for 'env'")
-	}
-	if !strings.Contains(strings.ToLower(out), "env") {
-		t.Errorf("help output should mention 'env': %q", out)
-	}
-}
-
-func TestEnvPromoteCmd_Help(t *testing.T) {
-	out := executeHelp(t, "env", "promote", "--help")
-	if out == "" {
-		t.Error("expected non-empty --help output for 'env promote'")
-	}
-	for _, want := range []string{"promote", "from-env", "to-env"} {
-		if !strings.Contains(strings.ToLower(out), want) {
-			t.Errorf("help output should mention %q: %q", want, out)
-		}
-	}
-}
-
-func TestEnvListCmd_Help(t *testing.T) {
-	out := executeHelp(t, "env", "list", "--help")
-	if out == "" {
-		t.Error("expected non-empty --help output for 'env list'")
-	}
-}
-
 func TestUsersCmd_Help(t *testing.T) {
 	out := executeHelp(t, "users", "--help")
 	if out == "" {

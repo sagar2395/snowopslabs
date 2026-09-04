@@ -22,6 +22,16 @@ function repoPath(scenarioName: string, path: string): string {
   return path.startsWith('scenarios/') ? path : `scenarios/${scenarioName}/${path}`
 }
 
+/** Components in install order regardless of format: v1 scenarios declare a flat
+ *  `components` list; v2 scenarios group them under ordered `stages`. Mirrors the
+ *  server's AllComponents() so the "This will install" preview and the detail
+ *  table work for both. */
+function allComponents(s: Pick<Scenario, 'components' | 'stages'> | null | undefined) {
+  if (!s) return []
+  if (s.components && s.components.length > 0) return s.components
+  return (s.stages ?? []).flatMap(st => st.components ?? [])
+}
+
 export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
   const { data: scenarios = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.scenarios, api.listScenarios)
   const [filter, setFilter] = useState('')
@@ -75,7 +85,7 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
     try { s = await api.getScenario(name) } catch { /* fall back to a plain confirm */ }
     const plat = s?.prerequisites?.platform ?? []
     const apps = s?.prerequisites?.apps ?? []
-    const comps = s?.components ?? []
+    const comps = allComponents(s)
     const paramDefs = s?.parameters ?? []
     // Seed the shared ref with each parameter's default; the form mutates it in
     // place, and doRun submits whatever it holds at confirm time.
@@ -322,7 +332,7 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                   </div>
                 )}
 
-                {detail.components && detail.components.length > 0 && (
+                {allComponents(detail).length > 0 && (
                   <div className="modal-section">
                     <h3>Components</h3>
                     <div className="table-scroll">
@@ -331,7 +341,7 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                           <tr><th>Name</th><th>Type</th><th>Namespace</th><th>Details</th></tr>
                         </thead>
                         <tbody>
-                          {detail.components.map(c => (
+                          {allComponents(detail).map(c => (
                             <tr key={c.name}>
                               <td>{c.name}</td>
                               <td><Badge variant="category">{c.type}</Badge></td>

@@ -1,5 +1,11 @@
-# Promtail Helm Chart Values
-# Collects logs from all pods and ships to Loki
+# Promtail values — the single source of truth for log shipping.
+#
+# Scenarios reference this file via `platformValues: logging/loki/promtail-values.yaml`
+# rather than keeping their own copy.
+#
+# Promtail is deprecated and end-of-life upstream. It is pinned in
+# config/versions.env and stays until the Grafana Alloy log migration lands;
+# Alloy already handles traces. See docs/adr/ADR-0012.
 
 config:
   clients:
@@ -7,13 +13,27 @@ config:
 
   snippets:
     pipelineStages:
+      # Container runtime wrapper: strips the CRI timestamp/stream prefix so the
+      # stored line is the application's own output (JSON, for go-api).
       - cri: {}
+      # Keep stack traces attached to the line that started them.
+      - multiline:
+          firstline: '^\d{4}-\d{2}-\d{2}|\[|{"|level='
+          max_wait_time: 3s
 
-# Resources for homelab
+    # Without these, logs carry only Promtail's default labels and a query like
+    # {app="go-api"} matches nothing — the dashboards look broken when in fact
+    # the label was never attached.
+    extraRelabelConfigs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        target_label: app
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+
 resources:
-  limits:
-    cpu: 200m
-    memory: 128Mi
   requests:
     cpu: 50m
     memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

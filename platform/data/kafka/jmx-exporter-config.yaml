@@ -1,0 +1,60 @@
+# JMX Prometheus exporter rules for the Kafka broker. Strimzi mounts this into
+# every broker pod (spec.kafka.metricsConfig) and exposes the result on the
+# "tcp-prometheus" port.
+#
+# The rules translate Kafka's JMX MBean names into Prometheus metric names.
+# Only the beans the lab dashboards actually query are kept — the upstream
+# ruleset produces thousands of series and is too heavy for a laptop cluster.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kafka-metrics
+  labels:
+    app: strimzi
+data:
+  kafka-metrics-config.yml: |
+    lowercaseOutputName: true
+    rules:
+      # Broker/topic throughput: messages in, bytes in/out.
+      - pattern: kafka.server<type=BrokerTopicMetrics, name=(MessagesInPerSec|BytesInPerSec|BytesOutPerSec), topic=(.+)><>Count
+        name: kafka_server_brokertopicmetrics_$1_total
+        type: COUNTER
+        labels:
+          topic: "$2"
+      - pattern: kafka.server<type=BrokerTopicMetrics, name=(MessagesInPerSec|BytesInPerSec|BytesOutPerSec)><>Count
+        name: kafka_server_brokertopicmetrics_$1_total
+        type: COUNTER
+
+      # Replication health: the single most important broker alarm.
+      - pattern: kafka.server<type=ReplicaManager, name=(UnderReplicatedPartitions|PartitionCount|LeaderCount)><>Value
+        name: kafka_server_replicamanager_$1
+        type: GAUGE
+      - pattern: kafka.controller<type=KafkaController, name=(OfflinePartitionsCount|ActiveControllerCount|GlobalTopicCount|GlobalPartitionCount)><>Value
+        name: kafka_controller_kafkacontroller_$1
+        type: GAUGE
+
+      # Request latency by API (Produce, Fetch, ...), in milliseconds.
+      - pattern: kafka.network<type=RequestMetrics, name=TotalTimeMs, request=(Produce|FetchConsumer|FetchFollower)><>(\d+)thPercentile
+        name: kafka_network_requestmetrics_totaltimems
+        type: GAUGE
+        labels:
+          request: "$1"
+          quantile: "0.$2"
+      - pattern: kafka.network<type=RequestMetrics, name=RequestsPerSec, request=(.+), version=(.+)><>Count
+        name: kafka_network_requestmetrics_requests_total
+        type: COUNTER
+        labels:
+          request: "$1"
+
+      # Log size per topic partition — how much disk the lab is using.
+      - pattern: kafka.log<type=Log, name=Size, topic=(.+), partition=(.+)><>Value
+        name: kafka_log_log_size
+        type: GAUGE
+        labels:
+          topic: "$1"
+          partition: "$2"
+
+      # JVM basics, so a broker OOM is visible.
+      - pattern: java.lang<type=Memory><HeapMemoryUsage>used
+        name: kafka_jvm_memory_heap_used_bytes
+        type: GAUGE

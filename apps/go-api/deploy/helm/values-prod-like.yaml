@@ -12,7 +12,7 @@ deployment:
 
 image:
   repository: go-api
-  tag: latest
+  tag: v1.2.0
   pullPolicy: IfNotPresent
 
 resources:

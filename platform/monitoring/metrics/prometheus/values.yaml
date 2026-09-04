@@ -42,15 +42,23 @@ prometheus:
         cpu: 500m
         memory: 1Gi
     
-    # Service Monitor Selector - scrape all ServiceMonitor resources in cluster
+    # Select every ServiceMonitor/PodMonitor/PrometheusRule in the cluster.
+    #
+    # An empty selector alone does NOT do that: the chart treats `{}` as unset
+    # and falls back to *SelectorNilUsesHelmValues, which restricts selection to
+    # objects labelled release=<this release>. That default silently dropped the
+    # Kafka PodMonitor and the SRE alerting rules — they existed, Prometheus just
+    # never looked at them. The three flags below are what make `{}` literal.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
     serviceMonitorSelector: {}
     serviceMonitorNamespaceSelector: {}
-    
-    # Pod Monitor Selector - scrape all PodMonitor resources
+
     podMonitorSelector: {}
     podMonitorNamespaceSelector: {}
-    
-    # Rule Selector for PrometheusRules
+
     ruleSelector: {}
     ruleNamespaceSelector: {}
     
@@ -60,6 +68,10 @@ prometheus:
     
     # Enable admin API
     enableAdminAPI: true
+
+    # Accept remote-write pushes. The k6 traffic generator ships its client-side
+    # metrics here, so a load run can be compared against what the app recorded.
+    enableRemoteWriteReceiver: true
     
     # Storage configuration
     storageSpec:

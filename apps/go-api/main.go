@@ -33,11 +33,16 @@ var (
 	buildDate = "unknown"
 )
 
+var releaseNote = "New release"
+
 var (
 	port            = getEnv("PORT", "8080")
 	shutdownTimeout = getDurationEnv("SHUTDOWN_TIMEOUT", 30*time.Second)
-	serviceName     = getEnv("SERVICE_NAME", "go-api")
-	otelEndpoint    = getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+	// OTEL_SERVICE_NAME is the OpenTelemetry-standard name; SERVICE_NAME is the
+	// pre-existing knob. Honour both so the same value labels metrics, logs and
+	// traces — otherwise the three signals cannot be correlated in Grafana.
+	serviceName  = getEnv("OTEL_SERVICE_NAME", getEnv("SERVICE_NAME", "go-api"))
+	otelEndpoint = getEnv("OTEL_EXPORTER_OTLP_ENDPOINT", "")
 
 	simulateFailure atomic.Bool
 	logger          *slog.Logger
@@ -108,12 +113,21 @@ func main() {
 	mux.Handle("/metrics", promhttp.Handler())
 	mux.HandleFunc("/", handleRoot)
 
-	// Wrap with OTel HTTP instrumentation if tracing is configured
-	var handler http.Handler = mux
+	// Middleware order matters: otelhttp is outermost so the access log and the
+	// metrics middleware both run inside a live span (the log line can carry the
+	// trace ID). Previously otelhttp replaced the access-log wrapper entirely,
+	// so turning tracing on silently deleted every request log.
+	var handler http.Handler = accessLog(mux)
+	handler = instrument(handler)
 	if otelEndpoint != "" {
-		handler = otelhttp.NewHandler(mux, "http",
+		handler = otelhttp.NewHandler(handler, "http",
 			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
-				return r.Method + " " + r.URL.Path
+				return r.Method + " " + routeLabel(r.URL.Path)
+			}),
+			// Don't trace scrapes and probes. They run on a fixed interval
+			// forever, so tracing them buries real request traces in noise.
+			otelhttp.WithFilter(func(r *http.Request) bool {
+				return !isInfraPath(r.URL.Path)
 			}),
 		)
 	}
@@ -165,7 +179,7 @@ func initTracer() (*sdktrace.TracerProvider, error) {
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceName(serviceName),
-			semconv.ServiceVersion("0.1.0"),
+			semconv.ServiceVersion(version),
 		),
 	)
 	if err != nil {
@@ -191,9 +205,14 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	_, span := tracer.Start(r.Context(), "build-service-index")
+	defer span.End()
+
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"service":         serviceName,
 		"version":         version,
+		"releaseNote":     releaseNote,
+		"env":             getEnv("ENV_NAME", "unknown"),
 		"simulateFailure": simulateFailure.Load(),
 		"endpoints": []string{
 			"/health          - Health check (always 200)",
@@ -205,19 +224,65 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// statusRecorder captures the response status so the access log can report it.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+// isInfraPath reports whether a path is kubelet/Prometheus traffic rather than a
+// real request: scraped or probed on a timer, and noise in logs and traces.
+func isInfraPath(path string) bool {
+	switch path {
+	case "/health", "/ready", "/metrics":
+		return true
+	}
+	return false
+}
+
+// accessLog logs one structured line per non-probe request at Info level, so
+// load from the traffic generator (or any client) shows up in `kubectl logs`.
+func accessLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isInfraPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		attrs := []any{
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"durationMs", time.Since(start).Milliseconds(),
+			"remote", r.RemoteAddr,
+		}
+		// Grafana's Loki datasource turns these into a link straight to the trace.
+		if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+			attrs = append(attrs, "trace_id", sc.TraceID().String(), "span_id", sc.SpanID().String())
+		}
+		logger.Info("request", attrs...)
+	})
+}
+
 func handleVersion(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{
-		"app":       serviceName,
-		"version":   version,
-		"commit":    commit,
-		"buildDate": buildDate,
+		"app":         serviceName,
+		"version":     version,
+		"commit":      commit,
+		"buildDate":   buildDate,
+		"releaseNote": releaseNote,
+		"env":         getEnv("ENV_NAME", "unknown"),
 	})
 }
 
 func handleHealth(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-	defer recordMetrics(r, http.StatusOK, start)
-
 	_, span := tracer.Start(r.Context(), "health-check")
 	defer span.End()
 
@@ -226,15 +291,12 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleReady(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
-
 	_, span := tracer.Start(r.Context(), "readiness-check")
 	defer span.End()
 
 	if simulateFailure.Load() {
 		span.SetAttributes(attribute.Bool("ready", false))
 		logger.Warn("readiness check failed (simulated)", "remote", r.RemoteAddr)
-		recordMetrics(r, http.StatusServiceUnavailable, start)
 		respondJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"status": "not_ready",
 			"reason": "simulated failure",
@@ -244,27 +306,53 @@ func handleReady(w http.ResponseWriter, r *http.Request) {
 
 	span.SetAttributes(attribute.Bool("ready", true))
 	logger.Debug("readiness check passed", "remote", r.RemoteAddr)
-	recordMetrics(r, http.StatusOK, start)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func handleToggleFailure(w http.ResponseWriter, r *http.Request) {
-	start := time.Now()
 	prev := simulateFailure.Load()
 	simulateFailure.Store(!prev)
 	current := simulateFailure.Load()
 
 	logger.Info("failure simulation toggled", "previous", prev, "current", current)
-	recordMetrics(r, http.StatusOK, start)
 	respondJSON(w, http.StatusOK, map[string]string{
 		"simulateFailure": strconv.FormatBool(current),
 		"message":         "Readiness failure simulation toggled. Hit /ready to test.",
 	})
 }
 
-func recordMetrics(r *http.Request, code int, start time.Time) {
-	httpRequestsTotal.WithLabelValues(r.Method, r.URL.Path, strconv.Itoa(code), serviceName).Inc()
-	httpRequestDuration.WithLabelValues(r.Method, r.URL.Path, serviceName).Observe(time.Since(start).Seconds())
+// knownRoutes bounds the "path" label. An unbounded label (raw r.URL.Path) lets
+// any client create a new time series per URL and blow up Prometheus cardinality.
+var knownRoutes = map[string]bool{
+	"/": true, "/health": true, "/ready": true, "/version": true,
+	"/toggle-failure": true, "/metrics": true,
+}
+
+func routeLabel(path string) string {
+	if knownRoutes[path] {
+		return path
+	}
+	return "other"
+}
+
+// instrument meters EVERY request. Metrics used to be recorded per handler,
+// which meant a route added without its own recordMetrics call — as "/" was —
+// generated traffic that no dashboard could see.
+func instrument(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/metrics" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+
+		route := routeLabel(r.URL.Path)
+		elapsed := time.Since(start).Seconds()
+		httpRequestsTotal.WithLabelValues(r.Method, route, strconv.Itoa(rec.status), serviceName).Inc()
+		httpRequestDuration.WithLabelValues(r.Method, route, serviceName).Observe(elapsed)
+	})
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {

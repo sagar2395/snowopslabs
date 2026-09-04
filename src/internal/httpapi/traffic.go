@@ -17,6 +17,7 @@ type trafficStartRequest struct {
 	RPS      int    `json:"rps"`
 	Duration string `json:"duration,omitempty"`
 	Target   string `json:"target,omitempty"`
+	Method   string `json:"method,omitempty"`
 }
 
 // handleTrafficInfo lists the available k6 profiles so the UI can offer them.
@@ -49,6 +50,7 @@ func (s *Server) handleTrafficStart(w http.ResponseWriter, r *http.Request) {
 		Target:   req.Target,
 		RPS:      req.RPS,
 		Duration: req.Duration,
+		Method:   req.Method,
 	}
 	if err := opts.Validate(s.cfg.ProjectRoot); err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid_input", err.Error())

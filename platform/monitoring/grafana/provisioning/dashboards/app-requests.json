@@ -12,71 +12,40 @@
       }
     ]
   },
-  "description": "Application request metrics and performance indicators",
+  "description": "Server-side application request metrics alongside the k6 load generator's client-side view.",
   "editable": true,
-  "gnetId": null,
-  "graphTooltip": 0,
-  "id": 3,
+  "graphTooltip": 1,
   "links": [],
   "panels": [
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
+      "id": 1,
+      "type": "text",
+      "title": "How to read this dashboard",
       "gridPos": {
-        "h": 9,
-        "w": 12,
+        "h": 4,
+        "w": 24,
         "x": 0,
         "y": 0
       },
+      "options": {
+        "mode": "markdown",
+        "content": "**Server-side** panels (`http_requests_total`) count what the app actually handled. **Client-side** panels (`k6_*`) count what the load generator sent. A gap between them is the interesting signal: requests dropped at the ingress, rejected by a full queue, or lost to pod restarts never reach the app's counters.\n\nGenerate load with `labctl traffic start --profile steady --rps 25`, then compare the two rows. The `k6_*` series only appear while a run is in flight."
+      }
+    },
+    {
       "id": 2,
+      "type": "timeseries",
+      "title": "Request rate by app (server-side)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
       "options": {
         "legend": {
           "calcs": [],
@@ -84,25 +53,9 @@
           "placement": "bottom"
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "multi",
+          "sort": "desc"
         }
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(http_requests_total[5m])) by (job)",
-          "format": "time_series",
-          "hide": false,
-          "legendFormat": "{{ job }}",
-          "refId": "A"
-        }
-      ],
-      "title": "HTTP Request Rate (req/s)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -110,31 +63,14 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
             "drawStyle": "line",
+            "lineWidth": 2,
             "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
               "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
             }
           },
           "mappings": [],
@@ -146,17 +82,35 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "reqps"
         },
         "overrides": []
       },
+      "targets": [
+        {
+          "expr": "sum by (app) (rate(http_requests_total[1m]))",
+          "legendFormat": "{{app}}",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "description": "Every route is metered by one middleware, so this moves for any traffic the app serves."
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Request rate by route",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
       "gridPos": {
-        "h": 9,
+        "h": 8,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 4
       },
-      "id": 3,
       "options": {
         "legend": {
           "calcs": [],
@@ -164,32 +118,9 @@
           "placement": "bottom"
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "multi",
+          "sort": "desc"
         }
-      },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))",
-          "format": "time_series",
-          "hide": false,
-          "legendFormat": "p95 - {{ job }}",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))",
-          "format": "time_series",
-          "hide": false,
-          "legendFormat": "p99 - {{ job }}",
-          "refId": "B"
-        }
-      ],
-      "title": "HTTP Request Latency Percentiles (p95, p99)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -197,31 +128,155 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (path) (rate(http_requests_total{app=~\"$app\"}[1m]))",
+          "legendFormat": "{{path}}",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "description": "The path label is normalised to known routes plus 'other', so cardinality stays bounded."
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Latency percentiles (server-side)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, app) (rate(http_request_duration_seconds_bucket{app=~\"$app\"}[5m])))",
+          "legendFormat": "p50 {{app}}",
+          "refId": "A",
+          "format": "time_series"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, app) (rate(http_request_duration_seconds_bucket{app=~\"$app\"}[5m])))",
+          "legendFormat": "p95 {{app}}",
+          "refId": "B",
+          "format": "time_series"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, app) (rate(http_request_duration_seconds_bucket{app=~\"$app\"}[5m])))",
+          "legendFormat": "p99 {{app}}",
+          "refId": "C",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Responses by status code",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
             "drawStyle": "bars",
-            "fillOpacity": 100,
-            "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
+            "lineWidth": 2,
+            "fillOpacity": 10,
             "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
               "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
             }
           },
           "mappings": [],
@@ -233,17 +288,35 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "reqps"
         },
         "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (code) (rate(http_requests_total{app=~\"$app\"}[1m]))",
+          "legendFormat": "{{code}}",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "description": "Filtered on the app label. The scrape job for annotation-discovered pods is 'kubernetes-pods', not the app name, so filtering on job here would always be empty."
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Error rate (5xx)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 9
+        "y": 20
       },
-      "id": 4,
       "options": {
         "legend": {
           "calcs": [],
@@ -251,25 +324,9 @@
           "placement": "bottom"
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "multi",
+          "sort": "desc"
         }
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(http_requests_total{job=\"go-api\"}[5m])) by (code)",
-          "format": "time_series",
-          "hide": false,
-          "legendFormat": "Status {{ code }}",
-          "refId": "A"
-        }
-      ],
-      "title": "HTTP Responses by Status Code",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -277,31 +334,14 @@
             "mode": "palette-classic"
           },
           "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
             "drawStyle": "line",
+            "lineWidth": 2,
             "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "tooltip": false,
-              "viz": false,
-              "legend": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
+            "showPoints": "never",
             "spanNulls": false,
             "stacking": {
               "group": "A",
               "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
             }
           },
           "mappings": [],
@@ -311,23 +351,36 @@
               {
                 "color": "green",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
-          }
+          },
+          "unit": "reqps"
         },
         "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (app) (rate(http_requests_total{app=~\"$app\", code=~\"5..\"}[5m]))",
+          "legendFormat": "5xx {{app}}",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Offered vs served: k6 sent vs app handled",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 9
+        "y": 20
       },
-      "id": 5,
       "options": {
         "legend": {
           "calcs": [],
@@ -335,35 +388,233 @@
           "placement": "bottom"
         },
         "tooltip": {
-          "mode": "single"
+          "mode": "multi",
+          "sort": "desc"
         }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{code=~\"5..\"}[5m])) by (job)",
-          "format": "time_series",
-          "hide": false,
-          "legendFormat": "5xx Errors - {{ job }}",
-          "refId": "A"
+          "expr": "sum(rate(k6_http_reqs_total[1m]))",
+          "legendFormat": "k6 sent (client)",
+          "refId": "A",
+          "format": "time_series"
+        },
+        {
+          "expr": "sum(rate(http_requests_total{app=~\"$app\"}[1m]))",
+          "legendFormat": "app handled (server)",
+          "refId": "B",
+          "format": "time_series"
         }
       ],
-      "title": "HTTP Error Rate (5xx)",
-      "type": "timeseries"
+      "description": "Two lines that should overlap. A persistent gap means requests are being lost before they reach the app."
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "k6 client-observed latency",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "k6_http_req_duration_p95",
+          "legendFormat": "p95 (client)",
+          "refId": "A",
+          "format": "time_series"
+        },
+        {
+          "expr": "k6_http_req_duration_p99",
+          "legendFormat": "p99 (client)",
+          "refId": "B",
+          "format": "time_series"
+        }
+      ],
+      "description": "Includes ingress and network time, so it is always >= the server-side histogram. k6's remote-write output reports durations in SECONDS."
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "k6 failed request rate",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "k6_http_req_failed_rate",
+          "legendFormat": "failed fraction",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "description": "k6's own view of failures: connection refused and timeouts included, which the app can never count."
     }
   ],
-  "refresh": "30s",
-  "schemaVersion": 27,
-  "style": "dark",
+  "refresh": "10s",
+  "schemaVersion": 39,
   "tags": [
     "application",
     "http",
-    "metrics"
+    "metrics",
+    "traffic"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "app",
+        "label": "App",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": {
+          "query": "label_values(http_requests_total, app)",
+          "refId": "app"
+        },
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        }
+      }
+    ]
   },
   "time": {
-    "from": "now-6h",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},

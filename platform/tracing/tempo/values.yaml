@@ -24,8 +24,12 @@ tempo:
           endpoint: "0.0.0.0:14268"
         grpc:
           endpoint: "0.0.0.0:14250"
+  # Derive RED metrics (rate, errors, duration) from spans and remote-write them
+  # to Prometheus, so traces feed the same dashboards as the app's own metrics.
+  # The service name follows the kube-prometheus-stack release ("prometheus").
   metricsGenerator:
-    enabled: false
+    enabled: true
+    remoteWriteUrl: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
 
 persistence:
   enabled: true

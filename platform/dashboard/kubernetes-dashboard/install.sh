@@ -16,7 +16,7 @@ kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -
 
 # The project moved to kubernetes-retired; both the Helm repo (404) and
 # OCI registry (403) are broken. Install directly from the release tarball.
-CHART_VERSION="7.14.0"
+CHART_VERSION="${KUBERNETES_DASHBOARD_CHART_VERSION:-7.14.0}"
 CHART_URL="https://github.com/kubernetes-retired/dashboard/releases/download/kubernetes-dashboard-${CHART_VERSION}/kubernetes-dashboard-${CHART_VERSION}.tgz"
 
 helm upgrade --install kubernetes-dashboard "$CHART_URL" \

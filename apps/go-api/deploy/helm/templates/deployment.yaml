@@ -67,6 +67,13 @@ spec:
         - name: {{ $key }}
           value: "{{ $value }}"
         {{- end }}
+        {{- if .Values.tracing.enabled }}
+        # The app exports OTLP to a collector, never straight to a trace backend.
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "{{ .Values.tracing.endpoint }}"
+        - name: OTEL_SERVICE_NAME
+          value: {{ .Values.tracing.serviceName | default (include "go-api.fullname" .) | quote }}
+        {{- end }}
         {{- if .Values.configMap.enabled }}
         envFrom:
         - configMapRef:

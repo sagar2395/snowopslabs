@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ARGOCD_CHART_VERSION="${ARGOCD_CHART_VERSION:-10.7.1}"
+
 NAMESPACE="argocd"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-k3d.local}"
@@ -18,6 +20,7 @@ helm repo update
 # Install or upgrade ArgoCD
 echo "Installing ArgoCD chart..."
 helm upgrade --install argocd argo/argo-cd \
+  --version "$ARGOCD_CHART_VERSION" \
   --namespace $NAMESPACE \
   --create-namespace \
   -f "$SCRIPT_DIR/values.yaml" \

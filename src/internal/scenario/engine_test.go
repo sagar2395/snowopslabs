@@ -497,3 +497,42 @@ func TestUp_NotActive_RunsNormally(t *testing.T) {
 		t.Error("scenario should be active after Up")
 	}
 }
+
+// TestCatalogOrder_Deterministic guards the fix for the UI reshuffling on every
+// refresh: the engine keeps scenarios in a map, so List/Status must impose an
+// explicit order (category, then display name, then name).
+func TestCatalogOrder_Deterministic(t *testing.T) {
+	root := t.TempDir()
+
+	mk := func(name, display, category string) {
+		y := strings.Replace(testScenarioYAML, "name: test-scenario", "name: "+name, 1)
+		y = strings.Replace(y, "displayName: Test Scenario", "displayName: "+display, 1)
+		y = strings.Replace(y, "category: testing", "category: "+category, 1)
+		createTestScenario(t, root, name, y)
+	}
+	mk("zeta", "Zeta", "delivery")
+	mk("alpha", "Alpha", "observability")
+	mk("beta", "Beta", "delivery")
+
+	wantNames := []string{"beta", "zeta", "alpha"}
+
+	engine := NewEngine(root, "k3d.local", "k3d")
+	for i := 0; i < 20; i++ {
+		list := engine.List()
+		if len(list) != len(wantNames) {
+			t.Fatalf("List: got %d scenarios, want %d", len(list), len(wantNames))
+		}
+		for j, want := range wantNames {
+			if list[j].Name != want {
+				t.Fatalf("List[%d] on iteration %d: got %q, want %q", j, i, list[j].Name, want)
+			}
+		}
+
+		status := engine.Status()
+		for j, want := range wantNames {
+			if status[j].Name != want {
+				t.Fatalf("Status[%d] on iteration %d: got %q, want %q", j, i, status[j].Name, want)
+			}
+		}
+	}
+}

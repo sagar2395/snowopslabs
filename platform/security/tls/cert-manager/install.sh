@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+CERT_MANAGER_CHART_VERSION="${CERT_MANAGER_CHART_VERSION:-v1.21.1}"
+
 NAMESPACE="cert-manager"
 SCRIPT_DIR="$(dirname "$0")"
 
@@ -17,6 +19,7 @@ helm repo update
 # Install or upgrade cert-manager (CRDs included via Helm)
 echo "Installing cert-manager chart..."
 helm upgrade --install cert-manager jetstack/cert-manager \
+  --version "$CERT_MANAGER_CHART_VERSION" \
   --namespace $NAMESPACE \
   --create-namespace \
   -f "$SCRIPT_DIR/values.yaml"
