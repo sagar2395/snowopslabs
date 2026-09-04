@@ -18,7 +18,7 @@ deployment:
 # Container image configuration
 image:
   repository: go-api
-  tag: latest
+  tag: v1.2.0
   pullPolicy: IfNotPresent
 
 # Container port
@@ -119,6 +119,17 @@ autoscaling:
   maxReplicas: 5
   targetCPUUtilizationPercentage: 80
   targetMemoryUtilizationPercentage: 80
+
+# Distributed tracing (OpenTelemetry).
+# Off by default: with no collector listening, the OTLP exporter retries every
+# batch and fills the log with export errors. The observability-sre scenario
+# turns it on once Grafana Alloy is running, pointing the app at the collector
+# rather than at Tempo directly — batching, retry and sampling belong in the
+# collector, and the trace backend can then be swapped without redeploying.
+tracing:
+  enabled: false
+  endpoint: http://alloy.monitoring.svc.cluster.local:4318
+  serviceName: go-api
 
 # Monitoring/Prometheus configuration
 prometheus:

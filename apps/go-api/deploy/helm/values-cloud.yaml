@@ -17,7 +17,7 @@ image:
   #   AKS: <acr-name>.azurecr.io/go-api
   #   EKS: <account-id>.dkr.ecr.<region>.amazonaws.com/sagars-lab/go-api
   repository: go-api
-  tag: latest
+  tag: v1.2.0
   pullPolicy: Always
 
 resources:
