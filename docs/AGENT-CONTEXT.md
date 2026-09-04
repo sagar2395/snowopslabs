@@ -44,6 +44,15 @@ contradict themselves, or you are editing the code in question.
 
 Everything else: [docs/README index in the root README](../README.md#documentation).
 
+## Skills
+
+`.claude/skills/` holds packaged versions of the routes above, for harnesses
+that support them — `scenario-author`, `incident-author`, `learning-author`,
+`platform-component`, `api-change` and `docs-sync`. Each one names the documents
+to read, the rules that are easy to break, and a checklist to finish against.
+They are a shortcut to the docs, never a replacement: when a skill and a document
+disagree, the document wins and the skill is the bug.
+
 ---
 
 ## Invariants

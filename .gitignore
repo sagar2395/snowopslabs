@@ -48,12 +48,12 @@ Thumbs.db
 .labctl/
 .snowops/
 
-## AI-assisted development scaffolding — kept locally, never part of the
-## public repository (planning state, session instructions, scratch logs).
+## Local session scaffolding — planning state, session instructions, scratch
+## logs. The authoring skills under .claude/skills/ are deliberately NOT here:
+## they route contributors to the public docs and are part of the open core.
 .ai/
 CLAUDE.md
 AGENTS.md
-.claude/skills/
 
 ## Internal migration planning — local only, never committed
 .roadmap/
