@@ -372,6 +372,12 @@ func (e *Engine) hooks() extension.Hooks {
 }
 
 // resolveCheck resolves template variables in a check's templatable fields.
+// ResolveCheck expands template variables in a check's fields, so a caller
+// outside this package grades against the same resolved check the engine runs.
+func (e *Engine) ResolveCheck(c checks.Check) checks.Check {
+	return e.resolveCheck(c)
+}
+
 func (e *Engine) resolveCheck(c checks.Check) checks.Check {
 	c.URL = e.resolveTemplate(c.URL)
 	c.BodyContains = e.resolveTemplate(c.BodyContains)

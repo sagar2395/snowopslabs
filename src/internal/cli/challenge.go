@@ -250,13 +250,13 @@ func challengeSubmitCmd() *cobra.Command {
 				return err
 			}
 
-			gradingChecks, err := resolveGradingChecks(cmd.Context(), c)
+			gradingChecks, scriptDir, err := resolveGradingChecks(cmd.Context(), c, cfg.ProjectRoot)
 			if err != nil {
 				return err
 			}
 
 			runner := checks.NewRunner()
-			runner.ScriptDir = cfg.ProjectRoot
+			runner.ScriptDir = scriptDir
 			results := runner.RunAll(cmd.Context(), gradingChecks)
 
 			passed := 0
@@ -374,19 +374,22 @@ func runChallengeCleanup(_ context.Context, c *challenge.Challenge, ex *executor
 	}
 }
 
-// resolveGradingChecks returns the checks to run for grading.
-func resolveGradingChecks(_ context.Context, c *challenge.Challenge) ([]checks.Check, error) {
+// resolveGradingChecks returns the checks to run for grading, and the directory
+// their scripts are relative to. A detection check's script lives in the fault's
+// own directory, not the project root — grading it from anywhere else looks for
+// a file that is not there and scores every submission zero.
+func resolveGradingChecks(_ context.Context, c *challenge.Challenge, projectRoot string) ([]checks.Check, string, error) {
 	if c.Grading.UseDetectionCheck && c.Setup.Type == "incident" {
 		f, err := incEng.Get(c.Setup.Ref)
 		if err != nil {
-			return nil, fmt.Errorf("loading detection check for %s: %w", c.Setup.Ref, err)
+			return nil, "", fmt.Errorf("loading detection check for %s: %w", c.Setup.Ref, err)
 		}
-		return []checks.Check{f.Detection}, nil
+		return []checks.Check{incEng.ResolveCheck(f.Detection)}, f.Dir, nil
 	}
 	// Convert challenge GChecks to checks.Check.
 	var cs []checks.Check
 	for _, g := range c.Grading.Checks {
-		cs = append(cs, checks.Check{
+		cs = append(cs, resolveGradingCheck(c, checks.Check{
 			Name:           g.Name,
 			Type:           g.Type,
 			URL:            g.URL,
@@ -396,9 +399,18 @@ func resolveGradingChecks(_ context.Context, c *challenge.Challenge) ([]checks.C
 			Operator:       g.Operator,
 			Value:          g.Value,
 			TimeoutSeconds: g.TimeoutSeconds,
-		})
+		}))
 	}
-	return cs, nil
+	return cs, projectRoot, nil
+}
+
+// resolveGradingCheck expands template variables using the engine that owns the
+// challenge's setup, so a grading check reads the same as the content it wraps.
+func resolveGradingCheck(c *challenge.Challenge, k checks.Check) checks.Check {
+	if c.Setup.Type == "scenario" {
+		return scenes.ResolveCheck(k)
+	}
+	return incEng.ResolveCheck(k)
 }
 
 func printGradingResults(out io.Writer, c *challenge.Challenge, rec *challenge.RunRecord, results []checks.Result) {
