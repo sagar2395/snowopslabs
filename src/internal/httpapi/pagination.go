@@ -98,16 +98,11 @@ func encodeCursor(offset int) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(cursorPrefix + strconv.Itoa(offset)))
 }
 
-// respondCatalog writes a catalog collection in the shape appropriate to the
-// API version: the paginated {items, nextCursor} envelope under /api/v2, or the
-// bare legacy slice under /api. Both carry an ETag for conditional revalidation.
+// respondCatalog writes a catalog collection as the paginated
+// {items, nextCursor} envelope, with an ETag for conditional revalidation.
 func respondCatalog[T any](w http.ResponseWriter, r *http.Request, items []T) {
 	if items == nil {
 		items = []T{}
-	}
-	if apiVersionFrom(r.Context()) != apiV2 {
-		writeJSONCached(w, r, http.StatusOK, items)
-		return
 	}
 	page, err := paginate(items, r)
 	if err != nil {

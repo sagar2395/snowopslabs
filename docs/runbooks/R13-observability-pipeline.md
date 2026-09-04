@@ -22,6 +22,53 @@ read.
 
 ---
 
+## The gotchas, in one place
+
+Every item here failed silently once. When a panel is empty, walk the pipeline
+before you touch the query: **scrape target → label → export**.
+
+**kube-prometheus-stack selectors.** `serviceMonitorSelector: {}` does *not*
+mean "select everything". The chart treats an empty value as unset and falls
+back to `*SelectorNilUsesHelmValues`, which restricts selection to
+`release=<release>`. Set all three `*SelectorNilUsesHelmValues: false` flags,
+and label every ServiceMonitor, PodMonitor and PrometheusRule
+`release: prometheus` anyway.
+
+**Tempo's HTTP API is port 3200**, not 3100. A datasource pointed at 3100 fails
+every query and looks exactly like "nothing was traced".
+
+**Kafka needs two metric sources.** `spec.kafka.metricsConfig` (JMX) gives
+broker throughput and replication health; the separate kafka-exporter gives
+consumer-group lag. Without `metricsConfig` there are no broker metrics at all.
+
+**Every Strimzi pod carries `strimzi.io/kind=Kafka`, the exporter included.**
+Select brokers on `strimzi.io/component-type: kafka` or you scrape the exporter
+twice.
+
+**Kafka's `messagesin` and `bytesin` exist as both per-topic and cluster-total
+series.** Summing without `topic!=""` double-counts.
+
+**Promtail labels come from relabelling.** `{app="go-api"}` only matches because
+`promtail-values.yaml` relabels the pod's `app` label. No relabel, no label,
+empty dashboard.
+
+**The annotation scrape job is `kubernetes-pods` for every pod.** Dashboard
+queries must filter on `app`, never on `job="<app name>"`.
+
+**k6's remote-write metrics are in seconds**, not milliseconds, despite k6's own
+CLI output being in ms. A panel labelled `ms` is wrong by 1000×.
+
+**Exclude `/metrics`, `/health` and `/ready` from tracing** with
+`otelhttp.WithFilter`. They run on a timer forever and bury the real traces.
+
+**Apps export OTLP to Grafana Alloy, never straight to the backend.** Alloy
+forwards to Tempo — see [ADR-0012](../adr/0012-alloy-as-trace-collector.md).
+
+**Scenario checks should assert the metric exists**, so an empty dashboard fails
+`labctl scenario verify` instead of quietly confusing a learner.
+
+---
+
 ## §1 — Server-side metrics cover every route
 
 The bug this catches: metrics recorded per handler, so a route added later is

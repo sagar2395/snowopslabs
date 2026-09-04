@@ -16,7 +16,7 @@ func TestChallengeRoutes_LiteralsNotShadowedByWildcard(t *testing.T) {
 	s := newChallengeServer(t)
 	s.setupRoutes()
 
-	for _, path := range []string{"/api/challenges/status", "/api/challenges/history"} {
+	for _, path := range []string{"/api/v2/challenges/status", "/api/v2/challenges/history"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		s.router.ServeHTTP(w, req)

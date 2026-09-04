@@ -61,5 +61,6 @@ maintainer, via a PR that the community may comment on.
 
 SnowOps Labs's core (engine, CLI, SDK, community content) is and will remain fully
 open source under [Apache-2.0](LICENSE). Premium/enterprise content and hosted
-services live **outside** this repository and never gate the open core. See
-[docs/strategy/OSS-COMMERCIAL-STRATEGY.md](docs/strategy/OSS-COMMERCIAL-STRATEGY.md).
+services live **outside** this repository and never gate the open core. What was
+deliberately cut from the open scope, and why, is
+[ADR-0001](docs/adr/0001-cut-cloud-and-commercial-scope.md).

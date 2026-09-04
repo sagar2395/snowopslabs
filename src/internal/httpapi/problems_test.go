@@ -57,31 +57,22 @@ func TestErrorEnvelope_V2IsProblemJSON(t *testing.T) {
 	}
 }
 
-// The unversioned /api alias must keep the legacy {error,code} envelope so
-// existing clients are unaffected by the v2 rollout.
-func TestErrorEnvelope_V1StaysLegacy(t *testing.T) {
+// The unversioned /api prefix is gone: /api/v2 is the only API surface. A path
+// under /api that is not /api/v2 falls through to the SPA handler, which serves
+// the shell rather than JSON — so an old client gets HTML, never a stale
+// envelope it might parse as success.
+func TestUnversionedAPI_IsNotServed(t *testing.T) {
 	s := newChallengeServer(t)
 	s.setupRoutes()
 
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader("{}"))
-	w := httptest.NewRecorder()
-	s.router.ServeHTTP(w, req)
+	for _, path := range []string{"/api/auth/login", "/api/status", "/api/scenarios"} {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
+		w := httptest.NewRecorder()
+		s.router.ServeHTTP(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("status: got %d, want 400", w.Code)
-	}
-	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("content-type: got %q, want application/json (legacy)", ct)
-	}
-	var body ErrorResponse
-	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
-		t.Fatalf("decode legacy error: %v", err)
-	}
-	if body.Code != "auth_disabled" {
-		t.Errorf("code: got %q, want auth_disabled", body.Code)
-	}
-	if body.Error == "" {
-		t.Error("error message should be present")
+		if ct := w.Header().Get("Content-Type"); strings.Contains(ct, "json") {
+			t.Errorf("%s: served a JSON response (%q) — the unversioned API should be gone", path, ct)
+		}
 	}
 }
 

@@ -84,7 +84,7 @@ var trafficProfilesCmd = &cobra.Command{
 
 func init() {
 	trafficStartCmd.Flags().StringVar(&trafficOpts.Profile, "profile", "steady", "load profile (see 'labctl traffic profiles')")
-	trafficStartCmd.Flags().StringVar(&trafficOpts.Target, "target", "", "URL to load (default: go-api health endpoint, in-cluster)")
+	trafficStartCmd.Flags().StringVar(&trafficOpts.Target, "target", "", "URL to load (default: go-api's root /, in-cluster)")
 	trafficStartCmd.Flags().IntVar(&trafficOpts.RPS, "rps", 10, "requests per second (baseline for the spike profile)")
 	trafficStartCmd.Flags().StringVar(&trafficOpts.Duration, "duration", "", "run length, e.g. 10m or 1h30m (default: profile-specific)")
 	trafficStartCmd.Flags().StringVar(&trafficOpts.Method, "method", "", "HTTP method for write/errors profiles (GET/POST/PUT/PATCH/DELETE; default: profile-specific)")

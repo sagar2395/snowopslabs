@@ -91,10 +91,10 @@ func TestHandleLabReset_RequiresConfirmation(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("reset without confirm: got %d, want 400", w.Code)
 	}
-	var resp ErrorResponse
+	var resp problemDetail
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.Code != "confirmation_required" {
-		t.Errorf("error code: got %q, want confirmation_required", resp.Code)
+	if resp.Type != problemType("confirmation_required") {
+		t.Errorf("problem type: got %q, want %q", resp.Type, problemType("confirmation_required"))
 	}
 }
 

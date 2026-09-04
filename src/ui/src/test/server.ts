@@ -11,7 +11,7 @@ import { setupServer } from 'msw/node'
 import { http, HttpResponse } from 'msw'
 
 /** Base path the UI client uses. Kept here so handlers and client stay aligned. */
-export const API = '/api'
+export const API = '/api/v2'
 
 export const handlers = [
   http.get(`${API}/auth/me`, () =>
@@ -27,17 +27,24 @@ export const handlers = [
   http.get(`${API}/runtimes`, () =>
     HttpResponse.json([{ name: 'k3d', active: true, current: true }]),
   ),
-  http.get(`${API}/scenarios`, () => HttpResponse.json([])),
+  http.get(`${API}/scenarios`, () => page([])),
   http.get(`${API}/jobs`, () => HttpResponse.json([])),
 ]
+
+/** List collections answer with the {items, nextCursor} envelope. */
+export function page<T>(items: T[], nextCursor?: string) {
+  return HttpResponse.json({ items, ...(nextCursor ? { nextCursor } : {}) })
+}
 
 export const server = setupServer(...handlers)
 
 /**
- * jsonError builds the error shape the API returns, so tests assert against the
- * real envelope rather than an invented one. Becomes RFC 7807 problem+json in
- * W5-T02 — this helper is the single place that changes.
+ * jsonError builds the RFC 7807 problem+json shape the API returns, so tests
+ * assert against the real envelope rather than an invented one.
  */
 export function jsonError(status: number, message: string) {
-  return HttpResponse.json({ error: message }, { status })
+  return HttpResponse.json(
+    { type: 'about:blank', title: 'Error', status, detail: message },
+    { status, headers: { 'Content-Type': 'application/problem+json' } },
+  )
 }

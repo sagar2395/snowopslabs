@@ -3,7 +3,8 @@
 Realistic, **reversible** production faults for game days, on-call practice,
 and (later) graded challenges. Inject one, watch the lab break, practice
 diagnosing it, fix it — and let the detection check confirm you actually
-fixed it. See `docs/runbooks/08-incident-engine.md` for the full workflow.
+fixed it. The commands are in the
+[CLI reference](../docs/reference/cli/incidents.md).
 
 ## The contract
 
@@ -38,7 +39,7 @@ detection:                        # same schema as scenario checks
   type: script                    # http | kubectl | promql | script
   script: checks/resolved.sh
   timeoutSeconds: 30
-expectAlert: LabFaultCrashLoop    # optional: this alert should page (049)
+expectAlert: LabFaultCrashLoop    # optional: this alert should page
 
 references:                       # optional: upstream docs for the fix
   - label: "Kubernetes — Debug a CrashLooping pod"
@@ -57,7 +58,7 @@ snippets:                         # optional: applyable diagnose/remediate manif
 ```
 
 `references` and `snippets` use the same shape as scenarios (see
-[scenarios.md → References and snippets](../docs/scenarios.md#references-and-snippets)):
+[scenario schema → References and snippets](../docs/reference/scenario-schema.md#references-and-snippets)):
 a reference is `{label, url, note?}`; a snippet is `{label, description?, yaml |
 path}` with exactly one of `yaml`/`path` (a `path` is relative to the incident
 directory). Both are template-resolved and shown by `labctl incident info
@@ -104,10 +105,10 @@ Pages land in the in-cluster **pager** (`labctl service up pager`) unless
 | `service-selector-broken` | config | medium | go-api's Service selector stops matching its pods — endpoints empty, pods perfectly healthy (sneaky) |
 | `noisy-neighbor` | resources | low | a CPU-burning deployment lands on the cluster with big requests and no limits |
 
-Note: the original plan (task 045) listed `dns-blackhole` and `pvc-full`;
-they were swapped for `network-blackhole` and `service-selector-broken`,
-whose detection works reliably on a default k3d cluster (DNS exec probes
-and PVC behavior vary too much with the local storage/CNI setup).
+`dns-blackhole` and `pvc-full` were considered and dropped: DNS exec probes
+and PVC behaviour vary too much with the local storage and CNI setup for
+detection to be reliable on a default k3d cluster. `network-blackhole` and
+`service-selector-broken` cover the same ground dependably.
 
 ## Using faults
 

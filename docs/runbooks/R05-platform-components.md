@@ -18,6 +18,49 @@ components never race and a component's state is answerable from history.
 
 ---
 
+## Adding a component
+
+A component lives at `platform/<category>/<component>/` and owns exactly one
+`values.yaml`. Adding one means, in the same change:
+
+1. The component directory, with its single values file.
+2. A chart version pin in `config/versions.env`. No `helm upgrade --install`
+   ever runs without `--version` ([ADR-0011](../adr/0011-chart-pinning-and-repo-migration.md)).
+3. Install and uninstall through `helm_upgrade_install` in
+   `platform/_lib/helm.sh`, not a raw `helm` call.
+4. Documentation: this runbook, and the component in the relevant reference.
+
+Scenarios that need the component point at its values with `platformValues:` and
+supply only their differences ([ADR-0010](../adr/0010-platform-values-single-source.md)).
+A second copy of the values drifts, and Helm reports the drift as a forbidden
+update to an immutable field.
+
+## Helm truths this repo has been bitten by
+
+**`helm upgrade` never updates CRDs.** The `crds/` directory is install-only, so
+an operator chart's major bump leaves stale CRDs and a crash-looping operator.
+Apply the pinned chart's CRDs with `kubectl apply --server-side` first — but
+only when the release already exists, or Helm's own CRD install conflicts on
+`.spec.versions`.
+
+**`helm uninstall` never deletes CRDs either.** A component whose uninstall
+leaves cluster-scoped CRDs behind is not uninstalled, and the next install
+inherits a CRD whose `status.storedVersions` can block it outright.
+
+**Most of a StatefulSet spec is immutable.** Use `helm_upgrade_install` from
+`platform/_lib/helm.sh` for any StatefulSet-backed chart. It recovers by
+deleting the controller with `--cascade=orphan` — pods and PVCs survive — and
+retrying.
+
+**A scenario that adopts a platform release must not uninstall it on teardown.**
+
+**A pod's `.status.containerStatuses[].image` reports whichever tag the kubelet
+resolved**, so it names `:latest` for a pod that requested `:v1.1.0` when both
+tags share a digest. Compare `.spec.containers[].image` when asserting on a
+version.
+
+---
+
 ## Preconditions
 
 - Docker/Colima running with ≥4 CPU / 8 GB.

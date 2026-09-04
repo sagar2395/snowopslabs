@@ -13,7 +13,7 @@ interface UseWebSocketOptions {
 
 const MAX_BACKOFF_MS = 15_000
 
-/** Opens and manages a persistent WebSocket connection to /api/ws.
+/** Opens and manages a persistent WebSocket connection to /api/v2/ws.
  *  Reconnects automatically with exponential backoff + jitter. */
 export function useWebSocket({ onActionEvent, onStatusChange, onClusterStatus }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null)
@@ -26,7 +26,7 @@ export function useWebSocket({ onActionEvent, onStatusChange, onClusterStatus }:
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     let ws: WebSocket
     try {
-      ws = new WebSocket(`${proto}//${location.host}/api/ws`)
+      ws = new WebSocket(`${proto}//${location.host}/api/v2/ws`)
     } catch {
       scheduleRetry()
       return

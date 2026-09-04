@@ -18,7 +18,6 @@ type ctxKey int
 
 const (
 	requestIDKey ctxKey = iota
-	apiVersionKey
 )
 
 // requestIDHeader is both read (to honour a caller-supplied correlation ID) and
@@ -58,29 +57,6 @@ func sanitizeRequestID(v string) string {
 		}
 	}
 	return v
-}
-
-// apiVersionMiddleware tags every request with the API version of the subrouter
-// it entered ("v1" or "v2"), so error responders can pick the right envelope
-// (legacy {error,code} for /api, RFC 7807 problem+json for /api/v2) without
-// each handler knowing which prefix it was reached through.
-func apiVersionMiddleware(version string) mux.MiddlewareFunc {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := context.WithValue(r.Context(), apiVersionKey, version)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-// apiVersionFrom returns the API version tagged onto the context, defaulting to
-// "v1" — the conservative, backward-compatible envelope — when unset (e.g. a
-// unit test calling a handler directly).
-func apiVersionFrom(ctx context.Context) string {
-	if v, ok := ctx.Value(apiVersionKey).(string); ok && v != "" {
-		return v
-	}
-	return apiV1
 }
 
 // requestIDFrom returns the correlation ID stored on the context, or "" if the

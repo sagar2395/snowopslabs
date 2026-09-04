@@ -11,22 +11,25 @@ import (
 	"testing"
 )
 
-// Both the versioned (/api/v2) and unversioned (/api) prefixes must serve the
-// same route table, so the current UI keeps working while third parties can pin
-// /api/v2. This exercises the real router so the registration-order guard
-// (v2 registered before /api) is actually covered.
-func TestAPIVersions_BothPrefixesServeSameRoute(t *testing.T) {
+// /api/v2 is the only API prefix. The unversioned /api is not a route at all:
+// it falls through to the SPA handler, so it never answers with JSON that an
+// old client could mistake for a valid response.
+func TestAPIVersion_OnlyV2IsServed(t *testing.T) {
 	s := newChallengeServer(t)
 	s.setupRoutes()
 
-	for _, prefix := range []string{"/api", "/api/v2"} {
-		path := prefix + "/challenges/status"
-		req := httptest.NewRequest(http.MethodGet, path, nil)
-		w := httptest.NewRecorder()
-		s.router.ServeHTTP(w, req)
-		if w.Code != http.StatusOK {
-			t.Errorf("GET %s: got %d, want 200", path, w.Code)
-		}
+	req := httptest.NewRequest(http.MethodGet, "/api/v2/challenges/status", nil)
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Errorf("GET /api/v2/challenges/status: got %d, want 200", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/challenges/status", nil)
+	w = httptest.NewRecorder()
+	s.router.ServeHTTP(w, req)
+	if ct := w.Header().Get("Content-Type"); strings.Contains(ct, "json") {
+		t.Errorf("GET /api/challenges/status served JSON (%q) — the unversioned API should be gone", ct)
 	}
 }
 

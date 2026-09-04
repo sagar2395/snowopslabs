@@ -53,6 +53,7 @@ Thumbs.db
 .ai/
 CLAUDE.md
 AGENTS.md
+.claude/skills/
 
 ## Internal migration planning — local only, never committed
 .roadmap/

@@ -2,7 +2,7 @@
 
 export type AuthRole = 'operator' | 'participant'
 
-/** GET /api/auth/me (and login) response. When authEnabled is false the UI
+/** GET /api/v2/auth/me (and login) response. When authEnabled is false the UI
  *  renders normally with no login screen (authenticated is always true). */
 export interface AuthStatus {
   authEnabled: boolean
@@ -38,7 +38,7 @@ export interface PlatformStatus {
   [key: string]: PlatformComponent | undefined
 }
 
-/** One provider entry from GET /api/platform — the full registry view
+/** One provider entry from GET /api/v2/platform — the full registry view
  *  (every provider per category, e.g. ingress → traefik AND nginx). */
 export interface PlatformProviderEntry {
   name: string
@@ -50,7 +50,7 @@ export interface PlatformProviderEntry {
   exclusive?: boolean
 }
 
-/** GET /api/platform response: category key → providers.
+/** GET /api/v2/platform response: category key → providers.
  *  Category keys may be nested ("monitoring/metrics"). */
 export type PlatformProvidersMap = Record<string, PlatformProviderEntry[]>
 
@@ -60,7 +60,7 @@ export interface ScenarioRef {
   displayName: string
 }
 
-/** GET /api/platform/component/:cat/:name — the per-tool details page. */
+/** GET /api/v2/platform/component/:cat/:name — the per-tool details page. */
 export interface PlatformComponentDetail {
   category: string
   name: string
@@ -93,7 +93,7 @@ export interface AppFileRef {
   truncated?: boolean
 }
 
-/** GET /api/apps/:name/detail — how an app is built and deployed. */
+/** GET /api/v2/apps/:name/detail — how an app is built and deployed. */
 export interface AppDetail {
   name: string
   description: string
@@ -238,7 +238,7 @@ export interface Scenario {
   snippets?: ScenarioSnippet[]
 }
 
-/** One check outcome from POST /api/scenarios/{name}/verify (pkg/checks.Result).
+/** One check outcome from POST /api/v2/scenarios/{name}/verify (pkg/checks.Result).
  *  Pass ⇔ the asserted post-state holds. */
 export interface ScenarioCheckResult {
   name: string
@@ -251,7 +251,7 @@ export interface ScenarioCheckResult {
   durationMs?: number
 }
 
-/** POST /api/scenarios/{name}/verify response. */
+/** POST /api/v2/scenarios/{name}/verify response. */
 export interface ScenarioVerifyResult {
   scenario: string
   passed: boolean
@@ -283,7 +283,7 @@ export interface ActionAccepted {
   status: string
 }
 
-/** One entry from GET /api/jobs — recorded action history, newest first. */
+/** One entry from GET /api/v2/jobs — recorded action history, newest first. */
 export interface JobInfo {
   id: string
   action: string
@@ -297,7 +297,7 @@ export interface JobInfo {
 
 export type RunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'timed_out'
 
-/** One recorded run from GET /api/runs (the durable run engine's history). */
+/** One recorded run from GET /api/v2/runs (the durable run engine's history). */
 export interface RunSummary {
   id: string
   kind: string
@@ -320,7 +320,7 @@ export interface RunStep {
   endedAt?: string
 }
 
-/** GET /api/runs/{id} — a run plus its step timeline. */
+/** GET /api/v2/runs/{id} — a run plus its step timeline. */
 export interface RunDetail extends RunSummary {
   steps: RunStep[]
 }
@@ -332,7 +332,7 @@ export interface RunLogLine {
   text: string
 }
 
-/** GET /api/runs/{id}/logs?after= — a cursor-forward slice of the transcript. */
+/** GET /api/v2/runs/{id}/logs?after= — a cursor-forward slice of the transcript. */
 export interface RunLogs {
   runId: string
   status: RunStatus
@@ -481,7 +481,7 @@ export interface ResultRecord {
 export interface ContentReference { label: string; url: string; note?: string }
 export interface ContentSnippet { label: string; description?: string; yaml?: string; path?: string }
 
-/** One fault from the incident catalog (GET /api/incidents → faults[]). */
+/** One fault from the incident catalog (GET /api/v2/incidents → faults[]). */
 export interface Fault {
   name: string
   displayName: string
@@ -515,13 +515,13 @@ export interface IncidentCheck {
   error?: string
 }
 
-/** GET /api/incidents — catalog plus the current active state. */
+/** GET /api/v2/incidents — catalog plus the current active state. */
 export interface IncidentList {
   faults: Fault[]
   active: IncidentActive | null
 }
 
-/** GET /api/incidents/status — active incident + live detection check.
+/** GET /api/v2/incidents/status — active incident + live detection check.
  *  `active` is null when nothing is injected. */
 export interface IncidentStatus {
   active: IncidentActive | null
@@ -530,10 +530,10 @@ export interface IncidentStatus {
   resolved?: boolean
 }
 
-/** One progressively-revealed hint (POST /api/incidents/hint). */
+/** One progressively-revealed hint (POST /api/v2/incidents/hint). */
 export interface IncidentHint { index: number; total: number; text: string }
 
-/** One past incident run (GET /api/incidents/history). */
+/** One past incident run (GET /api/v2/incidents/history). */
 export interface IncidentHistoryRecord {
   fault: string
   injectedAt: string

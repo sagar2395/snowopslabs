@@ -199,8 +199,7 @@ func IsLoopbackHost(host string) bool {
 func (s *Server) setupRoutes() {
 	s.router = mux.NewRouter()
 
-	s.registerAPI(s.router.PathPrefix("/api/v2").Subrouter(), apiV2)
-	s.registerAPI(s.router.PathPrefix("/api").Subrouter(), apiV1)
+	s.registerAPI(s.router.PathPrefix("/api/v2").Subrouter())
 
 	if s.metrics != nil {
 		s.router.Handle("/metrics", s.metrics.Handler())
@@ -289,16 +288,14 @@ func spaHandler(fsys http.FileSystem) http.Handler {
 }
 
 // registerAPI wires the shared middleware chain and the full route table onto
-// one API subrouter. It is called once per version prefix so /api and /api/v2
-// serve identical behaviour today; future versions can diverge by branching
-// inside handlers on apiVersion(r) without duplicating the table.
-func (s *Server) registerAPI(api *mux.Router, version string) {
-	// Middleware, outermost first. Request ID and API version are context tags
-	// set before anything can reject the request, so even CORS/auth failures get
-	// a correlation ID and the right error envelope. Access logging wraps the
-	// rest so every request — served or rejected — produces one log line.
+// the /api/v2 subrouter, the only API surface. A future version would mount a
+// second prefix here rather than branching inside handlers.
+func (s *Server) registerAPI(api *mux.Router) {
+	// Middleware, outermost first. The request ID is set before anything can
+	// reject the request, so even CORS/auth failures carry a correlation ID.
+	// Access logging wraps the rest so every request — served or rejected —
+	// produces one log line.
 	api.Use(s.requestIDMiddleware)
-	api.Use(apiVersionMiddleware(version))
 	api.Use(s.accessLogMiddleware)
 	api.Use(corsMiddleware)
 	api.Use(jsonMiddleware)
@@ -430,20 +427,13 @@ func jsonMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-type ErrorResponse struct {
-	Error string `json:"error"`
-	Code  string `json:"code,omitempty"`
-}
-
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }
 
+// respondError writes an RFC 7807 problem+json body. code becomes the stable
+// machine-readable `type` slug clients branch on.
 func respondError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
-	if apiVersionFrom(r.Context()) == apiV2 {
-		respondProblem(w, r, status, code, msg)
-		return
-	}
-	respondJSON(w, status, ErrorResponse{Error: msg, Code: code})
+	respondProblem(w, r, status, code, msg)
 }

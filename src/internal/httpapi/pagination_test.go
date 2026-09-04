@@ -122,37 +122,28 @@ func TestPaginate_OffsetPastEnd(t *testing.T) {
 	}
 }
 
-// The v2 catalog envelope must be {items, nextCursor}; the v1 alias must stay a
-// bare array. This exercises the real router so the version tag is applied.
-func TestRespondCatalog_VersionShapes(t *testing.T) {
+// Every catalog collection answers with the {items, nextCursor} envelope, never
+// a bare array. This exercises the real router rather than the responder alone.
+func TestRespondCatalog_AlwaysPaginatedEnvelope(t *testing.T) {
 	s := newChallengeServer(t) // one challenge in the catalog
 	s.setupRoutes()
 
-	// v2 → envelope
-	r2 := httptest.NewRequest(http.MethodGet, "/api/v2/challenges", nil)
-	w2 := httptest.NewRecorder()
-	s.router.ServeHTTP(w2, r2)
+	r := httptest.NewRequest(http.MethodGet, "/api/v2/challenges", nil)
+	w := httptest.NewRecorder()
+	s.router.ServeHTTP(w, r)
+
 	var env struct {
 		Items      []map[string]any `json:"items"`
 		NextCursor string           `json:"nextCursor"`
 	}
-	if err := json.NewDecoder(w2.Body).Decode(&env); err != nil {
-		t.Fatalf("v2 body is not the paginated envelope: %v", err)
+	if err := json.NewDecoder(w.Body).Decode(&env); err != nil {
+		t.Fatalf("body is not the paginated envelope: %v", err)
 	}
 	if len(env.Items) != 1 {
-		t.Errorf("v2 items: got %d, want 1", len(env.Items))
+		t.Errorf("items: got %d, want 1", len(env.Items))
 	}
-
-	// v1 → bare array
-	r1 := httptest.NewRequest(http.MethodGet, "/api/challenges", nil)
-	w1 := httptest.NewRecorder()
-	s.router.ServeHTTP(w1, r1)
-	var arr []map[string]any
-	if err := json.NewDecoder(w1.Body).Decode(&arr); err != nil {
-		t.Fatalf("v1 body is not a bare array: %v", err)
-	}
-	if len(arr) != 1 {
-		t.Errorf("v1 array: got %d, want 1", len(arr))
+	if env.NextCursor != "" {
+		t.Errorf("nextCursor: got %q, want empty on the last page", env.NextCursor)
 	}
 }
 

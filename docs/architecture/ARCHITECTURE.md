@@ -1,9 +1,9 @@
 # SnowOps Labs Architecture (v2)
 
-> The target design. Decisions with alternatives considered live in
-> `docs/adr/`. Product rationale: `docs/PRODUCT.md`. Delivery order:
-> `docs/ROADMAP.md`.
-> Last updated: 2026-07-26
+> The target design. Anything not yet built is marked **Planned** — treat an
+> unmarked statement as describing the system as it ships. Decisions with
+> alternatives considered live in `docs/adr/`. Product rationale:
+> `docs/PRODUCT.md`. Delivery order: `docs/ROADMAP.md`.
 
 ---
 
@@ -229,7 +229,7 @@ Checks stay the grading primitive. v2 adds what real assertions need:
 
 ## 7. API
 
-Versioned under `/api/v2`. Conventions applied uniformly:
+Served under **`/api/v2`**, the only version. Conventions applied uniformly:
 
 - **Errors are `application/problem+json`** (RFC 7807) with a stable `type`
   slug, so clients branch on a constant, not a message string.
@@ -246,12 +246,22 @@ Server mode is opt-in but hardened by default:
 
 - Binds `127.0.0.1` unless explicitly told otherwise; binding `0.0.0.0` without
   auth enabled is refused, not warned about.
-- Sessions in SQLite (not an in-memory map that forgets everyone on restart),
-  cookies `HttpOnly`/`SameSite=Strict`/`Secure` when served over TLS.
-- CSRF tokens on mutating requests; rate limiting and constant-time comparison
-  on the auth path.
-- Argon2id password hashing (replacing v1's PBKDF2).
-- Full audit trail of mutating operations.
+- Argon2id password hashing. Existing PBKDF2-HMAC-SHA256 hashes still verify, so
+  an older `users.yaml` keeps working.
+- Session cookies are `HttpOnly` and `SameSite=Strict`, and `Secure` when the
+  request arrived over TLS.
+- Rate limiting and constant-time comparison on the auth path.
+- Role separation: `participant` is refused every mutation an `operator` may
+  make.
+
+**Planned, not built.** Do not rely on these:
+
+- Sessions are held in an in-memory table, so every session is dropped on
+  restart. Persisting them in SQLite is planned.
+- There are no CSRF tokens. The `SameSite=Strict` cookie is the only
+  cross-site mitigation today.
+- There is no audit trail of mutating operations beyond the run store, which
+  records the operation but not the actor.
 
 ## 8. Web UI
 
@@ -301,3 +311,21 @@ achievable with git and a content path, without 2,000 lines of code.
   duration, queue depth, lock contention, check pass rate.
 - `labctl runs list` / `labctl runs logs <id>` for post-hoc debugging — the
   durable store makes support questions answerable.
+- Metrics and access logs are installed as middleware wrapping the whole mux,
+  never per handler, so a new route cannot ship unmeasured.
+
+### The lab's own observability stack
+
+What the labs themselves emit, as distinct from labctl's instrumentation:
+
+- **Metrics** — apps expose `/metrics`; Prometheus scrapes them. `labctl traffic`
+  also remote-writes k6's client-side metrics, so a dashboard can show what the
+  generator sent next to what the app received. A gap between the two means
+  requests are being lost before the app sees them.
+- **Logs** — Promtail ships pod logs to Loki, relabelling the pod's `app` label
+  so `{app="go-api"}` resolves.
+- **Traces** — apps export OTLP to **Grafana Alloy**, which forwards to Tempo.
+  Never straight to the backend ([ADR-0012](../adr/0012-alloy-as-trace-collector.md)).
+
+The pipeline's failure modes, all of which are silent, are in
+[R13](../runbooks/R13-observability-pipeline.md).
