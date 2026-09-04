@@ -46,12 +46,9 @@ an individual is officially representing the community in public spaces.
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
 reported to the community leaders responsible for enforcement at
-**conduct@snowops.net**. All complaints will be reviewed and investigated
+**admin@snowops.net**. All complaints will be reviewed and investigated
 promptly and fairly. Community leaders are obligated to respect the privacy and
 security of the reporter of any incident.
-
-> Maintainer note: set `conduct@snowops.net` to a real, monitored alias before
-> public launch (manual action E1).
 
 ## Enforcement Guidelines
 

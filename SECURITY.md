@@ -9,8 +9,7 @@ Instead, use one of:
 - **GitHub Private Vulnerability Reporting** — the "Report a vulnerability" button
   under this repository's **Security** tab (preferred). _Maintainer: enable this
   in repo settings — manual action E2._
-- Email **security@snowops.net** with details. _Maintainer: set this to a real,
-  monitored alias before launch — manual action E2._
+- Email **admin@snowops.net** with details.
 
 Please include: a description, reproduction steps, affected version/commit, and
 impact. If you have a suggested fix, include it.

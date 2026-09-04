@@ -65,11 +65,16 @@ You can also use the web UI (`labctl ui`) to activate/deactivate scenarios with 
 **Category:** observability
 
 **What it deploys:**
-- Loki (log aggregation via `grafana/loki` Helm chart)
-- Promtail (log shipping agent via `grafana/promtail`)
-- Tempo (distributed tracing via `grafana/tempo`)
+- Loki (log aggregation, `grafana-community/loki`) — adopted when the platform already installed it
+- Promtail (log shipping agent, `grafana/promtail`; deprecated upstream, see ADR-0012)
+- Tempo (trace backend, `grafana-community/tempo`)
+- Grafana Alloy (OTLP trace **collector** — the app exports here, Alloy forwards to Tempo)
 - Alerting rules (PrometheusRule CRDs for high error rate, latency, pod restarts)
 - SLO dashboards (Grafana JSON dashboards for availability, latency, error budget)
+
+Load is generated with k6 (`labctl traffic start`), not a curl loop, so latency
+changes show as queueing at a constant arrival rate. See runbook
+[R13](runbooks/R13-observability-pipeline.md) for the end-to-end validation.
 
 **Prerequisites:**
 - Platform: ingress, monitoring/metrics, monitoring/grafana
@@ -538,7 +543,11 @@ stages:                              # ordered groups of components
     components:                      # same component schema as v1
       - name: loki
         type: helm
-        chart: grafana/loki
+        chart: grafana-community/loki
+        version: "18.12.0"           # always pinned — see config/versions.env
+        platformValues: logging/loki # base values; never a second copy
+        valuesFile: values/loki.yaml # optional overlay, applied on top
+        adopt: true                  # reuse an existing release, do not upgrade it
         ...
   - name: inject-failure
     components: [...]

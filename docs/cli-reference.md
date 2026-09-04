@@ -336,11 +336,23 @@ labctl traffic start --target http://echo-server.k3d.local/ --rps 50
 | `--profile` | `steady` | `steady` (constant), `spike` (10x burst, fixed ~6m shape), `soak` (long sustained) |
 | `--rps` | `10` | requests/sec (baseline for spike) |
 | `--duration` | profile default | run length (`30s`, `10m`, `1h30m`); steady 10m, soak 2h, spike fixed |
-| `--target` | go-api `/health` (in-cluster) | URL to load |
+| `--target` | go-api `/` (in-cluster) | URL to load. Multi-endpoint profiles treat it as a base origin |
 
-Set `K6_PROMETHEUS_RW_SERVER_URL` to also push k6's own metrics into
-Prometheus via remote write (requires the receiver enabled); by default,
-watch the load through the target app's request metrics in Grafana.
+Profiles: `steady`, `spike`, `soak` (single endpoint) and `browse`, `write`,
+`errors` (multi-endpoint; the target is a base origin they append paths to).
+
+The default target is the app root `/`, not `/health`: the root is access-logged
+and metered, so a run is visible in `kubectl logs` and in Grafana. Probe
+endpoints are deliberately excluded from the access log.
+
+**k6's own metrics.** `start.sh` looks for the Prometheus service and, when it
+finds one, remote-writes k6's client-side metrics (`k6_http_reqs_total`,
+`k6_http_req_duration_p95`, `k6_http_req_failed_rate`) into it. Those are the
+other half of evaluating load: the app's `/metrics` only counts requests that
+*arrived*, so a gap between "k6 sent" and "app handled" on the **Application
+Request Metrics** dashboard means requests are being lost before the app sees
+them. Override with `K6_PROMETHEUS_RW_SERVER_URL`, or set `TRAFFIC_METRICS=off`
+to skip the probe entirely.
 
 #### `labctl traffic stop`
 
@@ -583,48 +595,26 @@ REST: `GET /api/challenges`, `GET /api/challenges/{name}`,
 
 ---
 
-### `labctl env` — Multi-environment release pipeline
+### Multi-environment promotion (no dedicated command)
 
-Manage the three simulated environments (`dev`, `staging`, `prod`) deployed by
-the `env-promotion` scenario. Each environment runs in its own namespace with a
-declared image tag tracked in a ConfigMap.
-
-Activate the environments first: `labctl scenario up env-promotion`
-
-#### `labctl env list`
-
-Print a table of environments, their declared image tags, and readiness.
+There is intentionally **no `labctl env promote`**. Promotion between the three
+environments (`env-dev` → `env-staging` → `env-prod`) deployed by the
+`env-promotion` scenario is done with the **real Kubernetes commands** a
+platform engineer uses on the job — the goal is to learn `kubectl`/rollouts,
+not a labctl verb. `labctl` only sets the scenario up and **grades** the result.
 
 ```bash
-labctl env list
+labctl scenario up env-promotion                 # deploy the 3 namespaces at the v1.0.0 baseline
+bash scenarios/env-promotion/scripts/build-image.sh v1.1.0   # build + load a new version
+kubectl -n env-dev set image deployment/go-api go-api=go-api:v1.1.0   # deploy to dev
+kubectl -n env-dev rollout status deployment/go-api                  # a real rollout
+# ...promote the SAME image forward to env-staging, then env-prod...
+labctl scenario verify env-promotion             # grade: declared tag == running image, everywhere
 ```
 
-Example output:
-
-```
-ENV        APP          TAG          STATUS     PROMOTED_AT
-dev        go-api       v1.2.0       running    never
-staging    go-api       v1.1.0       running    never
-prod       go-api       v1.0.0       running    never
-```
-
-#### `labctl env promote <from-env> <to-env>`
-
-Promote an app's declared image tag from one environment to the next.
-
-```bash
-labctl env promote dev staging      # advance staging to dev's tag
-labctl env promote staging prod     # release to prod
-```
-
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `--app` | string | `go-api` | App to promote |
-
-Promotion is idempotent: if the destination already has the source's tag,
-the command reports "nothing to promote" and exits cleanly.
-
-**Runbook:** `docs/runbooks/11-multi-env-day2.md`
+The scenario's `explore.commands` lists the full step-by-step flow (including a
+`kubectl rollout undo` rollback drill). **Runbook:**
+`docs/runbooks/R06-multi-env-promotion.md`.
 
 ---
 

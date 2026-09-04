@@ -31,6 +31,18 @@ Open `scenario.yaml` and make it real:
 - **`stages[].components`** — what to deploy, in order. Component types are
   `helm`, `manifest`, `grafana-dashboard` and `script`. Full reference:
   [scenarios.md](../scenarios.md).
+
+  If a `helm` component is something the platform already provides (Loki, Tempo,
+  Prometheus, …), do **not** copy its values into your scenario. Set
+  `platformValues: <category>/<component>` to use the platform's file as the
+  base, put only your differences in `valuesFile`, and add `adopt: true` so the
+  scenario reuses an existing release rather than upgrading someone else's. Two
+  copies of the same values drift, and Helm reports that drift as a forbidden
+  update to an immutable StatefulSet field (ADR-0010). Pin the chart `version`,
+  and record the pin in `config/versions.env` (ADR-0011).
+
+  A `script` component that changes cluster state should declare
+  `uninstallScript:` so `scenario down` reverses it.
 - **`checks`** — machine-verifiable assertions. This is the important part.
   Replace the scaffolded `script` check with real `http`, `kubectl`, `promql`
   or `script` checks. A scenario without meaningful checks cannot be graded,
@@ -38,6 +50,10 @@ Open `scenario.yaml` and make it real:
 
 Good checks assert the *outcome the objective describes*, not that a pod exists.
 "p99 latency below 300ms" is a check; "deployment is present" is a tautology.
+
+If the scenario ships a dashboard, add a `promql` check that the metric it plots
+actually exists. Without one, a broken scrape shows up as an empty panel the
+learner has to debug alone, while `verify` reports success.
 
 ## 3. Validate
 

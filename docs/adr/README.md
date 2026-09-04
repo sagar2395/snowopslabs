@@ -18,5 +18,8 @@ otherwise have to reverse-engineer from the code.
 | [0007](0007-ui-stack.md) | React Router + TanStack Query + Tailwind + Radix | Accepted |
 | [0008](0008-content-extensibility-seam.md) | Content paths and extension seam instead of a marketplace | Accepted |
 | [0009](0009-content-validation-strategy.md) | JSON Schemas for authoring, Go loaders for validation | Accepted |
+| [0010](0010-platform-values-single-source.md) | Platform values are the single source of truth; scenarios overlay or adopt | Accepted |
+| [0011](0011-chart-pinning-and-repo-migration.md) | Pin every chart; migrate off the deprecated Grafana charts | Accepted |
+| [0012](0012-alloy-as-trace-collector.md) | Grafana Alloy as the trace collector; Promtail retained for logs | Accepted |
 
 Template: `0000-template.md`.
