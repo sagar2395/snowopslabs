@@ -32,8 +32,11 @@ contradict themselves, or you are editing the code in question.
 | Your task | Read this | Don't read |
 |---|---|---|
 | Write or edit a scenario | [scenario schema](reference/scenario-schema.md), [first scenario](authoring/first-scenario.md) | `src/internal/scenario/` |
+| Review, grade or improve a scenario end to end | [scenario review](authoring/scenario-review.md) | `src/internal/scenario/` |
 | Write or edit an incident | [incidents/README.md](../incidents/README.md), [R03](runbooks/R03-content-authoring-and-validation.md) | `src/internal/incident/` |
+| Review, grade or improve an incident end to end | [incident review](authoring/incident-review.md) | `src/internal/incident/` |
 | Write a learning path or challenge | [learn/README.md](../learn/README.md), [challenges/README.md](../challenges/README.md) | `src/internal/learn/` |
+| Review, grade or improve a path or challenge end to end | [learning review](authoring/learning-review.md) | `src/internal/learn/` |
 | Add a platform component | [R05](runbooks/R05-platform-components.md), [ADR-0010](adr/0010-platform-values-single-source.md), [ADR-0011](adr/0011-chart-pinning-and-repo-migration.md) | `platform/*/` beyond your component |
 | Add or change an API route | [ADR-0006](adr/0006-api-conventions.md), [architecture §7](architecture/ARCHITECTURE.md) | the whole `httpapi` package |
 | Change the CLI surface | [CLI reference](reference/cli/index.md) | — |
@@ -47,9 +50,11 @@ Everything else: [docs/README index in the root README](../README.md#documentati
 ## Skills
 
 `.claude/skills/` holds packaged versions of the routes above, for harnesses
-that support them — `scenario-author`, `incident-author`, `learning-author`,
-`platform-component`, `api-change` and `docs-sync`. Each one names the documents
-to read, the rules that are easy to break, and a checklist to finish against.
+that support them — `scenario-author`, `scenario-review`, `incident-author`,
+`incident-review`, `learning-author`, `learning-review`, `platform-component`,
+`api-change` and `docs-sync`. Each one
+names the documents to read, the rules that are easy to break, and a checklist
+to finish against.
 They are a shortcut to the docs, never a replacement: when a skill and a document
 disagree, the document wins and the skill is the bug.
 

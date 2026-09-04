@@ -80,7 +80,15 @@ labctl scenario down my-first-scenario     # clean up
 `verify` is green immediately on the scaffold. Keep it green as you add real
 components and checks — that discipline is what makes the scenario trustworthy.
 
-## 5. Share it
+## 5. Review it
+
+Green checks prove the scenario works; they do not prove it is worth an
+afternoon. [Scenario review](scenario-review.md) is the gate that does: it walks
+the scenario as a platform engineer would, breaks the subject of every check to
+confirm `verify` notices, and scores the result out of 5. Below 4.8, the
+scenario is still a draft.
+
+## 6. Share it
 
 Scenarios are directories, so sharing is git. Two options:
 

@@ -28,6 +28,37 @@ labctl scenario new my-scenario     # valid and verify-green immediately
 Never hand-write the directory. The scaffold gives you a passing readiness
 check, which is the shape every other check should follow.
 
+## What makes a scenario worth doing
+
+Before any YAML, decide these four. A scenario that fails them is well-formed
+and worthless, and the review in
+[docs/authoring/scenario-review.md](../../../docs/authoring/scenario-review.md)
+scores exactly this.
+
+**The learner does the platform work; labctl stages it and grades it.** Every
+objective should be something they perform with `kubectl`, `helm`, `istioctl`,
+`kubectl rollout` — the commands that transfer to a real cluster. labctl's job
+is to build the environment and grade the result. `env-promotion` is the shape
+to copy: there is deliberately no `labctl env promote`, because the skill being
+taught is `kubectl set image` and `kubectl rollout status`. If your objectives
+are satisfied by typing `scenario up`, there is no scenario yet.
+
+**Every claim is observable, on a graph.** If the description says "watch the
+split in mesh telemetry", a linked Grafana dashboard must plot that split and be
+populated under the scenario's own traffic. Ship the dashboard with the scenario
+(`type: grafana-dashboard`), tell the learner to start `labctl traffic`, and add
+a `promql` check that the metric exists — otherwise a broken scrape reads as an
+empty panel the learner debugs alone.
+
+**Every check grades an outcome, so breaking the outcome turns it red.** Write
+the check, then sabotage the thing it claims to grade and confirm `verify`
+fails. A check that survives that is asserting a stage installed something,
+which was never in doubt.
+
+**The scenario is self-sufficient.** `labctl scenario info`, `explore`,
+`references` and the failing checks' `remediation` must be enough to finish it
+with this repository closed.
+
 ## The rules that bite
 
 **One values file per component.** A component's Helm values live once, at
@@ -68,7 +99,10 @@ scenario is healthy", not "what did I just install".
   resolved, so it says `:latest` for a pod that asked for `:v1.1.0` when the
   tags share a digest.
 - Avoid tautologies. A check that asserts a file you just applied exists proves
-  nothing about the pipeline.
+  nothing about the pipeline. The test is mechanical: break the thing the check
+  claims to grade — flip the weights to 100/0, delete the fault, set mTLS to
+  `PERMISSIVE` — and re-run `verify`. If it stays green, replace the check with
+  a `promql` or `script` check on the observable outcome.
 
 ## Verify your work
 
@@ -84,6 +118,21 @@ A scenario is not done until `up → verify → down` is clean on a fresh cluste
 Only then is `verified: true` honest — and that flag is curation metadata for
 the nightly e2e job, not a user-facing badge.
 
+## Then review it
+
+A clean lifecycle proves the scenario works. It does not prove it is worth
+doing. Hand every new or materially changed scenario to the
+[scenario-review](../scenario-review/SKILL.md) skill, which activates it on a
+live lab, walks it as a platform engineer, tamper-tests every check, scores it
+out of 5 and improves it until it reaches 4.8.
+
+```
+/scenario-review my-scenario
+```
+
+Treat the score as part of the definition of done: below 4.8 the scenario is a
+draft, whatever `validate` says.
+
 ## Before you finish
 
 - [ ] `labctl validate` is clean.
@@ -94,4 +143,10 @@ the nightly e2e job, not a user-facing badge.
 - [ ] Added to the catalog in [docs/scenarios.md](../../../docs/scenarios.md).
 - [ ] New or changed schema fields documented in
       [the schema reference](../../../docs/reference/scenario-schema.md).
+- [ ] Every objective is work the learner performs, not something a stage
+      installed for them.
+- [ ] Every metric the description promises is plotted on a dashboard the
+      scenario links, and a `promql` check asserts it exists.
+- [ ] Every check was sabotage-tested and went red.
+- [ ] `scenario-review` scores it 4.8 or better.
 - [ ] `make docs-check` passes.

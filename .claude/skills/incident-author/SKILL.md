@@ -21,6 +21,35 @@ lab break, diagnose it, fix it — and the detection check confirms the fix.
 Checks, references and snippets share the scenario shapes — see
 [the scenario schema](../../../docs/reference/scenario-schema.md).
 
+## What makes an incident worth doing
+
+Decide these before writing `inject.sh`. An incident that fails them is
+reversible and worthless, and the review in
+[docs/authoring/incident-review.md](../../../docs/authoring/incident-review.md)
+scores exactly this.
+
+**The learner diagnoses; labctl breaks the lab and grades the fix.** The skill
+that transfers is the search, not the patch. The fix is usually one
+`kubectl patch`; the value is the twenty minutes before it, spent reading
+endpoints, events, dashboards and logs. Design the *symptom* first and the
+injection second.
+
+**The symptom must be discoverable through observability.** A dashboard, an
+alert, an event, a log line — something the lab already collects must point at
+the fault. If the only route to the answer is reading `inject.sh`, you have
+written a puzzle, not a drill. `service-selector-broken` is the shape to copy:
+the ingress 503s, every pod is Ready, and `kubectl get endpoints` tells the
+story.
+
+**The detection check must be honest in both directions.** Green on a healthy
+lab, red the moment the fault lands, and green again only for a genuine fix.
+Test all three; the first is the one everyone skips.
+
+**A fix you did not imagine is still a fix.** If the learner restarts the
+deployment or re-applies the chart instead of patching the field you expected,
+the check must go green. A check that recognises only one spelling of the fix
+teaches learners to distrust the grader.
+
 ## The five rules
 
 1. **Target only the demo apps** (`go-api`, `echo-server`) or a dedicated fault
@@ -35,7 +64,11 @@ Checks, references and snippets share the scenario shapes — see
 5. **Write the detection check as "what must be true when healthy."** It is both
    the resolution detector and the challenge grader, so it has to be honest in
    both directions: it must fail while the fault is live and pass once — and
-   only once — the user has really fixed it.
+   only once — the user has really fixed it. Test that claim two ways. *False
+   green:* satisfy the check without repairing the cause — scale a decoy in to
+   answer the probe, patch the field the check reads — and confirm it stays red.
+   *False red:* fix the fault by a route you did not plan for — a rollout
+   restart, a chart re-apply — and confirm it goes green.
 
 Hints go from gentle nudge to near-answer. The last hint may name the resource;
 the solution names the command.
@@ -61,16 +94,42 @@ labctl incident status              # must PASS once genuinely fixed
 labctl incident resolve             # must restore the lab from any state
 ```
 
-Then prove the escape hatch independently: inject, fix nothing, `resolve`, and
-confirm the lab is clean. Also inject, fix it *partly* by hand, then `resolve`
-— that is the path that breaks naive resolve scripts.
+Then prove the escape hatch independently from all four states a learner can
+leave behind: freshly injected, half fixed by hand, fully fixed by hand, and
+with the active state lost (`labctl incident resolve <name>`). The half-fixed
+path is the one that breaks naive resolve scripts.
+
+## Then review it
+
+A reversible fault that resolves cleanly is not yet a good drill. Hand every new
+or materially changed incident to the
+[incident-review](../incident-review/SKILL.md) skill, which injects it on a live
+lab, diagnoses it blind, walks the hint ladder, false-fix tests the detection
+check in both directions, exercises the escape hatch from every state, scores it
+out of 5 and improves it until it reaches 4.8.
+
+```
+/incident-review my-fault
+```
+
+Treat the score as part of the definition of done: below 4.8 the incident is a
+draft, whatever `validate` says. Note that the reviewer gets **one** blind
+diagnosis per fault — once they have read `inject.sh`, diagnosability can no
+longer be scored honestly.
 
 ## Before you finish
 
 - [ ] `fault.yaml`, `inject.sh`, `resolve.sh`, `hints.md`, `solution.md` all present.
 - [ ] `inject.sh` is idempotent; `resolve.sh` survives a partial manual fix.
-- [ ] Detection check fails while broken and passes when fixed.
+- [ ] Detection check passes on a healthy lab, fails while broken, and passes
+      when fixed.
+- [ ] False-green and false-red tested: the check cannot be satisfied without a
+      real fix, and an unexpected-but-real fix still turns it green.
+- [ ] The symptom is findable through the lab's observability, without reading
+      `inject.sh`.
+- [ ] `resolve` works from all four states, leaving no `labfault-*` residue.
 - [ ] Scripts are POSIX and pass `make lint-shell`.
 - [ ] `alerts/rule.yaml` present if `expectAlert` is set.
 - [ ] Listed in the fault table in [incidents/README.md](../../../incidents/README.md).
+- [ ] `incident-review` scores it 4.8 or better.
 - [ ] `make docs-check` passes.
