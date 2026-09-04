@@ -49,7 +49,25 @@ reportsController:
 features:
   policyExceptions:
     enabled: true
+    # Which namespaces may hold a PolicyException. The chart default is '',
+    # which restricts exceptions to a single unnamed namespace — so the feature
+    # reads as enabled while every exception is silently ignored and the pod it
+    # exempts is still rejected. '*' allows them wherever the workload lives.
+    namespace: "*"
 
 # Webhooks configuration
 webhooksCleanup:
   enabled: true
+
+# CRD storage-version migration, run as a Helm post-upgrade hook.
+#
+# Disabled because it makes every `helm upgrade` of this chart fail: the
+# migration job's ServiceAccount is not authorised for
+# policyexceptions.policies.kyverno.io, so the job exits "Error: Unauthorized",
+# the post-upgrade hook never becomes ready, and Helm rolls the upgrade back
+# with "context deadline exceeded". The lab installs a single pinned version, so
+# there is no older stored version to migrate. Re-enable only when upgrading
+# across a Kyverno release that actually changes a stored CRD version.
+crds:
+  migration:
+    enabled: false

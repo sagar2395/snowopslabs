@@ -1,0 +1,27 @@
+# The certificate the LAB EXERCISE asks you to issue — this file is a snippet,
+# not something `scenario up` applies. Apply it yourself:
+#
+#   paste it from `labctl scenario info security-compliance`, which fills in the domain
+#
+# cert-manager watches the Certificate, asks lab-ca-issuer to sign a leaf, and
+# writes the result into the Secret named by secretName. Nothing else is needed:
+# the Secret is the deliverable, and an Ingress references it under tls[].
+# Watch it happen:  kubectl -n go-api describe certificate go-api-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: go-api-tls
+  namespace: go-api
+spec:
+  secretName: go-api-tls-secret
+  duration: 2160h # 90d — the shape a real leaf certificate has
+  renewBefore: 360h # 15d — cert-manager rotates it before it expires
+  commonName: go-api.{{.DomainSuffix}}
+  dnsNames:
+    - go-api.{{.DomainSuffix}}
+    - go-api.go-api.svc.cluster.local
+  issuerRef:
+    name: lab-ca-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io

@@ -93,27 +93,64 @@ changes show as queueing at a constant arrival rate. See runbook
 **Category:** security
 
 **What it deploys:**
-- Kyverno (policy enforcement engine via Helm)
-- cert-manager (TLS certificate management via Helm)
-- 6 Kyverno ClusterPolicies:
-  - `disallow-privileged-containers` (Enforce)
-  - `require-labels` (Audit)
-  - `disallow-root-user` (Audit)
-  - `disallow-host-path` (Enforce)
-  - `require-resource-limits` (Audit)
-  - `disallow-latest-tag` (Audit)
-- Network Policies (namespace isolation for go-api and echo-server)
-- Security Grafana dashboard (policy violations, certificates, admission latency)
+- Kyverno 3.9.0 (admission controller, via Helm)
+- cert-manager v1.21.1 (via Helm) plus the lab CA chain: `selfsigned-issuer` →
+  `lab-ca` → `lab-ca-issuer`
+- 4 Kyverno ClusterPolicies, all shipped in **Audit** so activation disrupts
+  nothing — promoting them is the drill:
+  - `deny-privilege-escalation`
+  - `require-non-root-user`
+  - `require-resource-limits`
+  - `disallow-latest-tag`
+- Default-deny NetworkPolicies for the `go-api` namespace, plus the allowances a
+  real workload needs: DNS, intra-namespace, mesh control plane, ingress and
+  scraping
+- `legacy-reporter` — a stand-in vendor workload violating three of the four
+  policies, which the learner must exempt rather than fix
+- Security Grafana dashboard (`/d/security-compliance`) — policy violations by
+  mode and by policy, certificate expiry, admission latency
 
 **Prerequisites:**
 - Platform: ingress, monitoring/metrics, monitoring/grafana
 - Apps: go-api
 
+**What you do** (four graded tasks, shown as PENDING until you complete them):
+1. Read the policy report, then remediate the **workload** so it satisfies every
+   policy — `kubectl -n go-api get policyreports -o wide`
+2. Promote the two Pod Security policies Audit → Enforce, and prove the webhook
+   now rejects a root Pod with `kubectl apply --dry-run=server`
+3. Triage the one you cannot fix: exempt `legacy-reporter` with a **label-scoped**
+   `PolicyException`. The grading checks the scope — an exception matching the
+   namespace instead of the label fails it
+4. Issue the `go-api-tls` Certificate from `lab-ca-issuer`, wire it onto the
+   Ingress, and prove the lab-signed leaf is what answers the TLS handshake
+
+Order matters: promoting to Enforce before the workload is compliant rejects
+go-api's own next rollout — which is exactly why Audit mode exists.
+
 **Explore after activation:**
-- Try deploying a non-compliant pod: `kubectl run nginx --image=nginx` (Kyverno blocks it)
-- Check policy violations: `kubectl get policyreports -A`
-- View security dashboard in Grafana
-- Test network isolation between namespaces
+- `labctl scenario info security-compliance` — twelve numbered commands walk the
+  whole drill
+- Security dashboard at `http://grafana.k3d.local/d/security-compliance`
+- Prove isolation: a pod in another namespace gets HTTP 000, while the ingress
+  path still returns 200
+
+**Traps this scenario documents:**
+- A Kyverno `pattern` asserts on the path you wrote. `runAsNonRoot` set at
+  **pod** level does not satisfy a pattern written against the **container**
+  securityContext.
+- Default-deny **egress** starves an injected mesh sidecar of istiod, so every
+  new pod sits at 1/2 Running with the app container healthy — the
+  `allow-mesh-control-plane` rule is what prevents it.
+- Kyverno's CRD storage-version migration hook fails on upgrade
+  (`Error: Unauthorized`), so it is disabled in the platform values; see
+  [R05](runbooks/R05-platform-components.md).
+- `features.policyExceptions` has two switches. `enabled: true` alone leaves
+  `namespace: ''`, which restricts exceptions to a single unnamed namespace — the
+  feature reads as on while every exception is silently ignored. The platform
+  values set it to `'*'`.
+- A `PolicyException`'s `ruleNames` must list the `autogen-` variants too, or the
+  Pod is exempt while the Deployment that creates it is still rejected.
 
 ---
 

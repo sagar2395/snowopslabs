@@ -1,0 +1,43 @@
+# A workload you are NOT allowed to fix.
+#
+# Every real Audit rollout turns up one of these: a vendor image shipped with a
+# fixed manifest the team does not own, so "add securityContext and re-deploy"
+# is not on the table. It violates three of the four policies, which makes the
+# policy report a triage exercise rather than a one-line fix — some violations
+# you remediate, some you exempt, and knowing which is which is the job.
+#
+# It carries a label that says WHY it is exempt. A PolicyException should match
+# an intent, never a pod name: the label is the contract, so the exemption
+# survives a rename and reads as a decision rather than an accident.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legacy-reporter
+  namespace: go-api
+  labels:
+    app: legacy-reporter
+    compliance.snowops.net/exempt: vendor-image
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: legacy-reporter
+  template:
+    metadata:
+      labels:
+        app: legacy-reporter
+        compliance.snowops.net/exempt: vendor-image
+      annotations:
+        # Not scraped: this stands in for a third-party workload, and the
+        # go-api scrape checks must not start grading it.
+        prometheus.io/scrape: "false"
+    spec:
+      containers:
+        # Deliberately declares no securityContext and no resource limits —
+        # this is the violation the drill is about.
+        - name: reporter
+          image: go-api:v1.2.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080

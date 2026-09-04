@@ -1,32 +1,24 @@
-## Kyverno values for security-compliance scenario
-## Minimal overrides — most settings inherited from platform provider
+## Kyverno overlay for security-compliance.
+## Base values come from platformValues: security/policy/kyverno (ADR-0010) —
+## this file adds ONLY what the scenario needs on top: Prometheus scraping, so
+## the security dashboard's policy panels have data instead of "No data".
+##
+## The reports controller emits kyverno_policy_results_total (the violation
+## counts); the admission controller emits kyverno_admission_review_duration_*.
+## The dashboard plots both, so both ServiceMonitors are required.
 
 admissionController:
-  replicas: 1
-  resources:
-    limits:
-      cpu: 500m
-      memory: 384Mi
-    requests:
-      cpu: 100m
-      memory: 128Mi
+  serviceMonitor:
+    enabled: true
 
 backgroundController:
-  replicas: 1
-  resources:
-    limits:
-      cpu: 200m
-      memory: 256Mi
-    requests:
-      cpu: 50m
-      memory: 64Mi
+  serviceMonitor:
+    enabled: true
 
 cleanupController:
-  replicas: 1
+  serviceMonitor:
+    enabled: true
 
 reportsController:
-  replicas: 1
-
-features:
-  policyExceptions:
+  serviceMonitor:
     enabled: true

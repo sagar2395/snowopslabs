@@ -1,0 +1,44 @@
+# The lab's certificate authority chain.
+#
+# Mirrors platform/security/tls/cert-manager/cluster-issuer.yaml so the scenario
+# stands alone: it owns the cert-manager release, so it must also create the
+# issuers rather than assume `labctl platform up security/tls/cert-manager` ran.
+# Both use the same object names, so applying either is idempotent.
+#
+# Two issuers, because a self-signed leaf is not what production looks like:
+# selfsigned-issuer signs the lab-ca root ONCE, and every workload certificate
+# is then issued by lab-ca-issuer off that root — a real chain a browser can be
+# taught to trust.
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lab-ca
+  namespace: cert-manager
+spec:
+  isCA: true
+  commonName: lab-ca
+  secretName: lab-ca-secret
+  duration: 8760h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: lab-ca-issuer
+spec:
+  ca:
+    secretName: lab-ca-secret
