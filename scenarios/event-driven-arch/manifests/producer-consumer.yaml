@@ -21,7 +21,7 @@ spec:
     spec:
       containers:
         - name: producer
-          image: apache/kafka:3.9.0
+          image: apache/kafka:4.3.1
           command: ["/bin/sh", "-c"]
           args:
             - |
@@ -58,7 +58,7 @@ spec:
     spec:
       containers:
         - name: consumer
-          image: apache/kafka:3.9.0
+          image: apache/kafka:4.3.1
           command: ["/bin/sh", "-c"]
           args:
             - |

@@ -1,5 +1,6 @@
 ---
-# Dev environment — namespace, release metadata, go-api deployment + service
+# dev environment — namespace, release metadata, go-api deployment + service + ingress.
+# All three environments start at the SAME baseline image (go-api:v1.0.0).
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -19,7 +20,7 @@ metadata:
 data:
   env_name: "dev"
   app: "go-api"
-  image_tag: "v1.2.0"
+  declared_tag: "v1.0.0"
   promoted_from: ""
   promoted_at: ""
 ---
@@ -31,7 +32,6 @@ metadata:
   labels:
     app: go-api
     snowops.net/env: dev
-    snowops.net/image-tag: v1.2.0
 spec:
   replicas: 1
   selector:
@@ -46,18 +46,13 @@ spec:
     spec:
       containers:
         - name: go-api
-          image: go-api:latest
+          image: go-api:v1.0.0
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           env:
             - name: ENV_NAME
               value: dev
-            - name: IMAGE_TAG
-              valueFrom:
-                configMapKeyRef:
-                  name: env-metadata
-                  key: image_tag
           resources:
             requests:
               cpu: 50m
@@ -81,8 +76,6 @@ spec:
     - port: 80
       targetPort: 8080
 ---
-# Per-environment ingress so each env's go-api is reachable at its own URL:
-#   http://go-api-dev.<DOMAIN_SUFFIX>   (add hosts with `labctl hosts add`)
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

@@ -8,7 +8,9 @@ adminUser: admin
 # Grafana image
 image:
   repository: grafana/grafana
-  tag: latest
+  # Pinned, not "latest": a floating tag means a pod restart can silently change
+  # the Grafana version underneath a running lab.
+  tag: "13.2.1"
   pullPolicy: IfNotPresent
 
 # Service configuration
@@ -45,11 +47,32 @@ datasources:
         type: loki
         url: http://loki-gateway.monitoring.svc.cluster.local
         editable: true
+        jsonData:
+          # go-api logs a trace_id on every request line. derivedFields turns it
+          # into a link that opens the trace in Tempo — the logs-to-traces jump.
+          derivedFields:
+            - name: TraceID
+              datasourceUid: tempo
+              matcherRegex: '"trace_id":"(\w+)"'
+              url: "$${__value.raw}"
+              urlDisplayLabel: "View trace"
       - name: Tempo
         uid: tempo
         type: tempo
-        url: http://tempo.monitoring.svc.cluster.local:3100
+        # Tempo's HTTP API listens on 3200, not 3100. Pointing Grafana at 3100
+        # makes every trace query fail with a connection error.
+        url: http://tempo.monitoring.svc.cluster.local:3200
         editable: true
+        jsonData:
+          # And the jump back: from a trace's span to that pod's logs in Loki.
+          tracesToLogsV2:
+            datasourceUid: loki
+            spanStartTimeShift: "-2m"
+            spanEndTimeShift: "2m"
+            filterByTraceID: true
+            tags:
+              - key: service.name
+                value: app
 
 # Dashboards provisioning
 dashboardProviders:

@@ -3,6 +3,7 @@ set -euo pipefail
 
 NAMESPACE="${MONITORING_NAMESPACE:-monitoring}"
 DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-k3d.local}"
+KUBE_PROMETHEUS_STACK_VERSION="${KUBE_PROMETHEUS_STACK_VERSION:-89.2.0}"
 
 echo "Installing Prometheus Stack (prometheus-operator, kube-prometheus-stack, node-exporter, kube-state-metrics)..."
 
@@ -15,6 +16,7 @@ helm repo update
 echo "Installing kube-prometheus-stack chart..."
 HELM_ARGS=(
   upgrade --install prometheus prometheus-community/kube-prometheus-stack
+  --version "$KUBE_PROMETHEUS_STACK_VERSION"
   --namespace "$NAMESPACE"
   --create-namespace
   -f "$(dirname "$0")/values.yaml"

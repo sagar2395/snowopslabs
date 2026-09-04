@@ -1,5 +1,9 @@
-# Loki Helm Chart Values - Single Binary Mode
-# Lightweight configuration for homelab use
+# Loki Helm Chart Values — single-binary mode, sized for a laptop cluster.
+#
+# This file is the single source of truth for Loki's configuration. Scenarios
+# that need Loki reference it via `platformValues: logging/loki` and layer only
+# their differences on top — a second full copy drifts, and Helm turns drift on
+# a StatefulSet into an immutable-field error on upgrade.
 
 deploymentMode: SingleBinary
 
@@ -9,11 +13,6 @@ loki:
     replication_factor: 1
   storage:
     type: filesystem
-  limits_config:
-    retention_period: 168h
-  compactor:
-    retention_enabled: true
-    delete_request_store: filesystem
   schemaConfig:
     configs:
       - from: "2024-01-01"
@@ -23,8 +22,9 @@ loki:
         index:
           prefix: index_
           period: 24h
-  # Log retention — default 7 days. Override via LOKI_RETENTION_HOURS env var.
-  # Set to 0 to disable retention (logs kept forever, PVC fills up eventually).
+  # Log retention — default 7 days. Override via LOKI_RETENTION_HOURS, which
+  # install.sh turns into a --set on loki.limits_config.retention_period.
+  # Set it to 0 to keep logs forever (the PVC fills up eventually).
   limits_config:
     retention_period: 168h
   compactor:
@@ -34,25 +34,9 @@ loki:
 singleBinary:
   replicas: 1
   persistence:
+    enabled: true
     storageClass: local-path
     size: 5Gi
-
-# Disable components not needed in single-binary mode
-backend:
-  replicas: 0
-read:
-  replicas: 0
-write:
-  replicas: 0
-
-# Gateway for service discovery
-gateway:
-  enabled: true
-  replicas: 1
-
-# Resource limits for homelab
-singleBinary:
-  replicas: 1
   resources:
     limits:
       cpu: 500m
@@ -61,21 +45,38 @@ singleBinary:
       cpu: 100m
       memory: 128Mi
 
-# Disable monitoring (we're the monitoring stack)
+# Components not used in single-binary mode.
+backend:
+  replicas: 0
+read:
+  replicas: 0
+write:
+  replicas: 0
+
+# Gateway fronts the read/write APIs; Grafana's datasource points at it.
+gateway:
+  enabled: true
+  replicas: 1
+
+# The memcached caches are on by default and each requests ~9.6Gi, which leaves
+# the pods permanently Pending on a laptop cluster. A single-binary,
+# filesystem-backed Loki does not need them.
+chunksCache:
+  enabled: false
+resultsCache:
+  enabled: false
+
+# Loki is part of the monitoring stack, so it does not monitor itself here.
+# lokiCanary moved to the top level in the newer chart — leaving it only under
+# `monitoring:` silently left the canary DaemonSet running on every node.
+lokiCanary:
+  enabled: false
+
 monitoring:
   selfMonitoring:
     enabled: false
     grafanaAgent:
       installOperator: false
-  lokiCanary:
-    enabled: false
 
-# Disable test
 test:
-  enabled: false
-
-# Chunk and retention settings
-chunksCache:
-  enabled: false
-resultsCache:
   enabled: false

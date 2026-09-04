@@ -25,5 +25,19 @@ if kubectl get namespace "$NAMESPACE" >/dev/null 2>&1; then
   kubectl delete namespace "$NAMESPACE" --timeout=60s || true
 fi
 
+# 5. CRDs. Neither `helm uninstall` nor namespace deletion removes them, and
+# they are cluster-scoped, so without this the component is not actually
+# uninstalled: the next install inherits CRDs whose status.storedVersions still
+# names an API version the new chart may no longer serve, and Kubernetes then
+# refuses to update them at all. Set KAFKA_KEEP_CRDS=true to keep them.
+if [ "${KAFKA_KEEP_CRDS:-false}" != "true" ]; then
+  echo "Removing Strimzi CRDs (cluster-scoped; Helm never deletes them)..."
+  kubectl delete crd -l app=strimzi --ignore-not-found --timeout=120s || true
+  # Older releases did not label every CRD, so sweep by name as well.
+  for crd in $(kubectl get crd -o name 2>/dev/null | grep -E 'strimzi\.io$' || true); do
+    kubectl delete "$crd" --ignore-not-found --timeout=60s || true
+  done
+fi
+
 echo ""
 echo "Kafka uninstalled."

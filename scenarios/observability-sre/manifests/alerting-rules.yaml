@@ -4,7 +4,9 @@ metadata:
   name: scenario-observability-sre-alerts
   namespace: "{{.MonitoringNamespace}}"
   labels:
-    release: kube-prometheus-stack
+    # Must match the kube-prometheus-stack release name ("prometheus"). A wrong
+    # value here does not error — Prometheus simply never loads the rules.
+    release: prometheus
 spec:
   groups:
     - name: sre.availability

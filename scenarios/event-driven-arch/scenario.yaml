@@ -7,6 +7,10 @@ category: data
 prerequisites:
   platform:
     - data/kafka
+    # The scenario ships PodMonitors and Grafana dashboards; without the
+    # monitoring stack they apply cleanly and then show nothing.
+    - monitoring/metrics
+    - monitoring/grafana
   apps:
     - go-api
 runtimes:
@@ -31,6 +35,15 @@ stages:
         type: manifest
         path: manifests/producer-consumer.yaml
         namespace: kafka
+
+      - name: kafka-metrics
+        type: manifest
+        path: manifests/kafka-metrics.yaml
+        namespace: kafka
+
+      - name: kafka-lag-dashboard
+        type: grafana-dashboard
+        path: dashboards/
 
   - name: build-lag
     description: Ramp producers to 3x so the single consumer falls behind
@@ -73,6 +86,23 @@ checks:
     operator: ">="
     value: "1"
 
+  # The dashboards are only useful if Prometheus is actually scraping Kafka.
+  # These two checks turn "the dashboard is empty" from a mystery into a
+  # failing check that names the cause.
+  - name: broker-metrics-scraped
+    type: promql
+    query: 'count(kafka_server_replicamanager_partitioncount)'
+    operator: ">="
+    value: "1"
+    remediation: "Prometheus is not scraping the Kafka brokers. Check that the Kafka CR has spec.kafka.metricsConfig (platform/data/kafka/install.sh applies the kafka-metrics ConfigMap), and that the kafka-broker PodMonitor is selected: kubectl -n kafka get podmonitor kafka-broker -o yaml — it needs the release label the Prometheus CR's podMonitorSelector expects."
+
+  - name: consumer-lag-metrics-scraped
+    type: promql
+    query: 'count(kafka_consumergroup_lag{topic="orders"})'
+    operator: ">="
+    value: "1"
+    remediation: "The kafka-exporter metrics are missing. Confirm the exporter pod is running (kubectl -n kafka get pods -l strimzi.io/name=lab-kafka-kafka-exporter) and that Prometheus selected the kafka-exporter PodMonitor (Status > Targets in the Prometheus UI)."
+
 snippets:
   - label: "The 'orders' Kafka topic (3 partitions)"
     description: "A Strimzi KafkaTopic. Three partitions let the consumer group scale to three parallel consumers."
@@ -83,8 +113,12 @@ snippets:
 
 explore:
   urls:
-    - label: "Grafana (Strimzi / Kafka dashboards if imported)"
-      url: "http://grafana.{{.DomainSuffix}}"
+    - label: "Grafana — Kafka Overview (cluster health, throughput, lag)"
+      url: "http://grafana.{{.DomainSuffix}}/d/kafka-overview"
+    - label: "Grafana — Kafka consumer-lag dashboard (lag, produce/consume rate)"
+      url: "http://grafana.{{.DomainSuffix}}/d/event-driven-arch"
+    - label: "Prometheus — are the Kafka targets being scraped?"
+      url: "http://prometheus.{{.DomainSuffix}}/targets"
   commands:
     - label: "Watch consumer-group lag build and drain"
       command: "kubectl -n kafka exec -it lab-kafka-dual-role-0 -- bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group order-processors"
@@ -94,7 +128,16 @@ explore:
       command: "kubectl -n kafka scale deployment/orders-consumer --replicas=3"
     - label: "List topics"
       command: "kubectl -n kafka exec -it lab-kafka-dual-role-0 -- bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"
+    - label: "Describe a topic — partitions, leader, replicas, ISR"
+      command: "kubectl -n kafka exec -it lab-kafka-dual-role-0 -- bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic orders"
+    - label: "See the raw broker metrics Prometheus scrapes"
+      command: "kubectl -n kafka exec lab-kafka-dual-role-0 -- curl -s localhost:9404/metrics | grep -E 'kafka_server_brokertopicmetrics|underreplicated' | head"
+    - label: "Confirm Prometheus picked up both Kafka PodMonitors"
+      command: "kubectl -n kafka get podmonitor && kubectl -n {{.MonitoringNamespace}} get prometheus -o jsonpath='{.items[0].spec.podMonitorSelector}'"
   tips:
+    - "Two dashboards: 'Kafka Overview' (uid kafka-overview) for cluster health and throughput, and 'Event-Driven — Kafka Consumer Lag' (uid event-driven-arch) for the lag exercise itself."
+    - "Kafka metrics come from TWO sources and you need both. The brokers expose JMX via spec.kafka.metricsConfig on the Kafka CR (throughput, under-replicated partitions, request latency); the separate kafka-exporter sidecar exposes consumer-group lag and topic offsets. A Kafka CR without metricsConfig publishes no broker metrics at all — the dashboard renders, and every broker panel stays empty."
+    - "If a panel is empty, check the scrape before the query: Prometheus > Status > Targets. kube-prometheus-stack only selects PodMonitors matching its podMonitorSelector, so a PodMonitor can exist and still be ignored."
     - "Lag = messages produced but not yet consumed for the 'order-processors' group."
     - "The 'orders' topic has 3 partitions, so up to 3 consumers in the group share the load."
     - "Stage 2 ramps producers to 3x; a single consumer falls behind and lag climbs."

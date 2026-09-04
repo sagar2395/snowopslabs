@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+TRAEFIK_CHART_VERSION="${TRAEFIK_CHART_VERSION:-41.4.0}"
+
 NAMESPACE=traefik
 
 echo "Installing Traefik..."
@@ -28,6 +30,7 @@ helm repo update
 
 # use a values file for configurability; default values live in this repo
 helm upgrade --install traefik traefik/traefik \
+  --version "$TRAEFIK_CHART_VERSION" \
   --namespace $NAMESPACE \
   --create-namespace \
   -f "$(dirname "$0")/values.yaml" \

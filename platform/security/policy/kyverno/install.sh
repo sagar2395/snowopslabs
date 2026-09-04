@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+KYVERNO_CHART_VERSION="${KYVERNO_CHART_VERSION:-3.9.0}"
+
 NAMESPACE="kyverno"
 SCRIPT_DIR="$(dirname "$0")"
 
@@ -17,6 +19,7 @@ helm repo update
 # Install or upgrade Kyverno
 echo "Installing Kyverno chart..."
 helm upgrade --install kyverno kyverno/kyverno \
+  --version "$KYVERNO_CHART_VERSION" \
   --namespace $NAMESPACE \
   --create-namespace \
   -f "$SCRIPT_DIR/values.yaml"

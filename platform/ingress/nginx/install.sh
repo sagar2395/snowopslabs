@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+INGRESS_NGINX_CHART_VERSION="${INGRESS_NGINX_CHART_VERSION:-4.15.1}"
+
 NAMESPACE="ingress-nginx"
 SCRIPT_DIR="$(dirname "$0")"
 
@@ -14,6 +16,7 @@ helm repo update
 # Install or upgrade Nginx Ingress Controller
 echo "Installing ingress-nginx chart..."
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+  --version "$INGRESS_NGINX_CHART_VERSION" \
   --namespace $NAMESPACE \
   --create-namespace \
   -f "$SCRIPT_DIR/values.yaml"
