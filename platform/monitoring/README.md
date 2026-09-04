@@ -313,7 +313,7 @@ Metrics include:
 - `http_request_duration_seconds`: Request latency distribution (histogram)
 - Standard Go runtime metrics
 
-Pod annotations in [apps/go-api/deploy/helm/templates/deployment.yaml](../../../apps/go-api/deploy/helm/templates/deployment.yaml):
+Pod annotations in [apps/go-api/deploy/helm/templates/deployment.yaml](../../apps/go-api/deploy/helm/templates/deployment.yaml):
 ```yaml
 prometheus.io/scrape: "true"
 prometheus.io/port: "8080"

@@ -5,12 +5,6 @@ import (
 	"net/http"
 )
 
-// API version identifiers used to select the error envelope.
-const (
-	apiV1 = "v1"
-	apiV2 = "v2"
-)
-
 // problemContentType is the RFC 7807 media type for machine-readable errors.
 const problemContentType = "application/problem+json"
 

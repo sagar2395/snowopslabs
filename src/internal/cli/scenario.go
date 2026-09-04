@@ -481,7 +481,7 @@ func init() {
 	scenarioNewCmd.Flags().BoolVar(&scenarioNewForce, "force", false, "overwrite the scenario if it already exists")
 	scenarioUpCmd.Flags().BoolVar(&scenarioUpForce, "force", false, "reinstall even if the scenario is already active")
 	scenarioUpCmd.Flags().BoolVar(&scenarioDeployPrereqs, "deploy-prereqs", false, "build and deploy any prerequisite apps that are not yet running")
-	scenarioUpCmd.Flags().StringToStringVar(&scenarioUpParams, "set", nil, "override a scenario parameter (repeatable): --set key=value (e.g. --set threshold=15 --set maxReplicas=4)")
+	scenarioUpCmd.Flags().StringToStringVar(&scenarioUpParams, "set", nil, "override a scenario parameter (repeatable): --set Name=value, matching the parameter name exactly (e.g. --set Threshold=15 --set MaxReplicas=4)")
 
 	scenarioCmd.AddCommand(scenarioNewCmd)
 	scenarioCmd.AddCommand(scenarioListCmd)

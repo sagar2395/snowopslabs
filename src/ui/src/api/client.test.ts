@@ -14,7 +14,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { api } from './client'
-import { API, jsonError, server } from '../test/server'
+import { API, jsonError, page, server } from '../test/server'
 
 describe('api client', () => {
   it('returns the decoded body on success', async () => {
@@ -22,16 +22,16 @@ describe('api client', () => {
     expect(status).toEqual({ authEnabled: false, authenticated: true })
   })
 
-  it('sends the request to the /api-prefixed path', async () => {
+  it('sends the request to the /api/v2-prefixed path', async () => {
     let seen = ''
     server.use(
       http.get(`${API}/scenarios`, ({ request }) => {
         seen = new URL(request.url).pathname
-        return HttpResponse.json([])
+        return page([])
       }),
     )
     await api.listScenarios()
-    expect(seen).toBe('/api/scenarios')
+    expect(seen).toBe('/api/v2/scenarios')
   })
 
   // Each transport failure must produce a distinct, actionable message —
@@ -85,60 +85,61 @@ describe('api client — every endpoint binds the right verb and path', () => {
     server.use(
       http.all('*', ({ request }) => {
         seen = { method: request.method, path: new URL(request.url).pathname }
-        return HttpResponse.json({})
+        // An empty page satisfies list endpoints; scalar endpoints ignore it.
+        return HttpResponse.json({ items: [] })
       }),
     )
   })
 
   const cases: { name: string; call: () => Promise<unknown>; method: string; path: string }[] = [
-    { name: 'getAuthStatus', call: () => api.getAuthStatus(), method: 'GET', path: '/api/auth/me' },
-    { name: 'login', call: () => api.login('u', 'p'), method: 'POST', path: '/api/auth/login' },
-    { name: 'logout', call: () => api.logout(), method: 'POST', path: '/api/auth/logout' },
-    { name: 'getStatus', call: () => api.getStatus(), method: 'GET', path: '/api/status' },
-    { name: 'getDashboards', call: () => api.getDashboards(), method: 'GET', path: '/api/dashboards' },
-    { name: 'getJobs', call: () => api.getJobs(), method: 'GET', path: '/api/jobs' },
-    { name: 'listApps', call: () => api.listApps(), method: 'GET', path: '/api/apps' },
-    { name: 'buildApp', call: () => api.buildApp('go-api'), method: 'POST', path: '/api/apps/go-api/build' },
-    { name: 'deployApp', call: () => api.deployApp('go-api'), method: 'POST', path: '/api/apps/go-api/deploy' },
-    { name: 'destroyApp', call: () => api.destroyApp('go-api'), method: 'POST', path: '/api/apps/go-api/destroy' },
-    { name: 'getPlatform', call: () => api.getPlatform(), method: 'GET', path: '/api/platform' },
-    { name: 'platformUp', call: () => api.platformUp(), method: 'POST', path: '/api/platform/up' },
-    { name: 'platformDown', call: () => api.platformDown(), method: 'POST', path: '/api/platform/down' },
+    { name: 'getAuthStatus', call: () => api.getAuthStatus(), method: 'GET', path: '/api/v2/auth/me' },
+    { name: 'login', call: () => api.login('u', 'p'), method: 'POST', path: '/api/v2/auth/login' },
+    { name: 'logout', call: () => api.logout(), method: 'POST', path: '/api/v2/auth/logout' },
+    { name: 'getStatus', call: () => api.getStatus(), method: 'GET', path: '/api/v2/status' },
+    { name: 'getDashboards', call: () => api.getDashboards(), method: 'GET', path: '/api/v2/dashboards' },
+    { name: 'getJobs', call: () => api.getJobs(), method: 'GET', path: '/api/v2/jobs' },
+    { name: 'listApps', call: () => api.listApps(), method: 'GET', path: '/api/v2/apps' },
+    { name: 'buildApp', call: () => api.buildApp('go-api'), method: 'POST', path: '/api/v2/apps/go-api/build' },
+    { name: 'deployApp', call: () => api.deployApp('go-api'), method: 'POST', path: '/api/v2/apps/go-api/deploy' },
+    { name: 'destroyApp', call: () => api.destroyApp('go-api'), method: 'POST', path: '/api/v2/apps/go-api/destroy' },
+    { name: 'getPlatform', call: () => api.getPlatform(), method: 'GET', path: '/api/v2/platform' },
+    { name: 'platformUp', call: () => api.platformUp(), method: 'POST', path: '/api/v2/platform/up' },
+    { name: 'platformDown', call: () => api.platformDown(), method: 'POST', path: '/api/v2/platform/down' },
     // catSegment sends only the last segment of a nested category.
-    { name: 'componentUp', call: () => api.componentUp('monitoring/metrics', 'prometheus'), method: 'POST', path: '/api/platform/component/metrics/prometheus/up' },
-    { name: 'componentDown', call: () => api.componentDown('monitoring/metrics', 'prometheus'), method: 'POST', path: '/api/platform/component/metrics/prometheus/down' },
-    { name: 'listScenarios', call: () => api.listScenarios(), method: 'GET', path: '/api/scenarios' },
-    { name: 'getScenario', call: () => api.getScenario('obs'), method: 'GET', path: '/api/scenarios/obs' },
-    { name: 'scenarioUp', call: () => api.scenarioUp('obs'), method: 'POST', path: '/api/scenarios/obs/up' },
-    { name: 'scenarioDown', call: () => api.scenarioDown('obs'), method: 'POST', path: '/api/scenarios/obs/down' },
-    { name: 'listRuntimes', call: () => api.listRuntimes(), method: 'GET', path: '/api/runtimes' },
-    { name: 'activateRuntime', call: () => api.activateRuntime('k3d'), method: 'POST', path: '/api/runtimes/k3d/activate' },
-    { name: 'deactivateRuntime', call: () => api.deactivateRuntime('k3d'), method: 'POST', path: '/api/runtimes/k3d/deactivate' },
-    { name: 'listLearnPaths', call: () => api.listLearnPaths(), method: 'GET', path: '/api/learn/paths' },
-    { name: 'getLearnPath', call: () => api.getLearnPath('sre'), method: 'GET', path: '/api/learn/paths/sre' },
-    { name: 'getLearnProgress', call: () => api.getLearnProgress('sre'), method: 'GET', path: '/api/learn/paths/sre/progress' },
-    { name: 'startLearnPath', call: () => api.startLearnPath('sre'), method: 'POST', path: '/api/learn/paths/sre/start' },
-    { name: 'completeLearnModule', call: () => api.completeLearnModule('sre', 2), method: 'POST', path: '/api/learn/paths/sre/complete' },
-    { name: 'listIncidents', call: () => api.listIncidents(), method: 'GET', path: '/api/incidents' },
-    { name: 'getIncidentStatus', call: () => api.getIncidentStatus(), method: 'GET', path: '/api/incidents/status' },
-    { name: 'getIncidentHistory', call: () => api.getIncidentHistory(), method: 'GET', path: '/api/incidents/history' },
-    { name: 'injectIncident', call: () => api.injectIncident('cpu'), method: 'POST', path: '/api/incidents/cpu/inject' },
-    { name: 'injectRandomIncident', call: () => api.injectRandomIncident(), method: 'POST', path: '/api/incidents/inject-random' },
-    { name: 'resolveIncident', call: () => api.resolveIncident(), method: 'POST', path: '/api/incidents/resolve' },
-    { name: 'nextIncidentHint', call: () => api.nextIncidentHint(), method: 'POST', path: '/api/incidents/hint' },
-    { name: 'listChallenges', call: () => api.listChallenges(), method: 'GET', path: '/api/challenges' },
-    { name: 'getChallengeStatus', call: () => api.getChallengeStatus(), method: 'GET', path: '/api/challenges/status' },
-    { name: 'getChallengeHistory', call: () => api.getChallengeHistory(), method: 'GET', path: '/api/challenges/history' },
-    { name: 'getResults', call: () => api.getResults(), method: 'GET', path: '/api/results' },
-    { name: 'getResultsByKind', call: () => api.getResultsByKind('scenario'), method: 'GET', path: '/api/results/scenario' },
-    { name: 'getLeaderboard', call: () => api.getLeaderboard(), method: 'GET', path: '/api/leaderboard' },
-    { name: 'getTraffic', call: () => api.getTraffic(), method: 'GET', path: '/api/traffic' },
-    { name: 'startTraffic', call: () => api.startTraffic({ profile: 'steady', rps: 10 }), method: 'POST', path: '/api/traffic/start' },
-    { name: 'stopTraffic', call: () => api.stopTraffic(), method: 'POST', path: '/api/traffic/stop' },
-    { name: 'listRuns', call: () => api.listRuns(), method: 'GET', path: '/api/runs' },
-    { name: 'getRun', call: () => api.getRun('r1'), method: 'GET', path: '/api/runs/r1' },
-    { name: 'getRunLogs', call: () => api.getRunLogs('r1'), method: 'GET', path: '/api/runs/r1/logs' },
-    { name: 'cancelRun', call: () => api.cancelRun('r1'), method: 'POST', path: '/api/runs/r1/cancel' },
+    { name: 'componentUp', call: () => api.componentUp('monitoring/metrics', 'prometheus'), method: 'POST', path: '/api/v2/platform/component/metrics/prometheus/up' },
+    { name: 'componentDown', call: () => api.componentDown('monitoring/metrics', 'prometheus'), method: 'POST', path: '/api/v2/platform/component/metrics/prometheus/down' },
+    { name: 'listScenarios', call: () => api.listScenarios(), method: 'GET', path: '/api/v2/scenarios' },
+    { name: 'getScenario', call: () => api.getScenario('obs'), method: 'GET', path: '/api/v2/scenarios/obs' },
+    { name: 'scenarioUp', call: () => api.scenarioUp('obs'), method: 'POST', path: '/api/v2/scenarios/obs/up' },
+    { name: 'scenarioDown', call: () => api.scenarioDown('obs'), method: 'POST', path: '/api/v2/scenarios/obs/down' },
+    { name: 'listRuntimes', call: () => api.listRuntimes(), method: 'GET', path: '/api/v2/runtimes' },
+    { name: 'activateRuntime', call: () => api.activateRuntime('k3d'), method: 'POST', path: '/api/v2/runtimes/k3d/activate' },
+    { name: 'deactivateRuntime', call: () => api.deactivateRuntime('k3d'), method: 'POST', path: '/api/v2/runtimes/k3d/deactivate' },
+    { name: 'listLearnPaths', call: () => api.listLearnPaths(), method: 'GET', path: '/api/v2/learn/paths' },
+    { name: 'getLearnPath', call: () => api.getLearnPath('sre'), method: 'GET', path: '/api/v2/learn/paths/sre' },
+    { name: 'getLearnProgress', call: () => api.getLearnProgress('sre'), method: 'GET', path: '/api/v2/learn/paths/sre/progress' },
+    { name: 'startLearnPath', call: () => api.startLearnPath('sre'), method: 'POST', path: '/api/v2/learn/paths/sre/start' },
+    { name: 'completeLearnModule', call: () => api.completeLearnModule('sre', 2), method: 'POST', path: '/api/v2/learn/paths/sre/complete' },
+    { name: 'listIncidents', call: () => api.listIncidents(), method: 'GET', path: '/api/v2/incidents' },
+    { name: 'getIncidentStatus', call: () => api.getIncidentStatus(), method: 'GET', path: '/api/v2/incidents/status' },
+    { name: 'getIncidentHistory', call: () => api.getIncidentHistory(), method: 'GET', path: '/api/v2/incidents/history' },
+    { name: 'injectIncident', call: () => api.injectIncident('cpu'), method: 'POST', path: '/api/v2/incidents/cpu/inject' },
+    { name: 'injectRandomIncident', call: () => api.injectRandomIncident(), method: 'POST', path: '/api/v2/incidents/inject-random' },
+    { name: 'resolveIncident', call: () => api.resolveIncident(), method: 'POST', path: '/api/v2/incidents/resolve' },
+    { name: 'nextIncidentHint', call: () => api.nextIncidentHint(), method: 'POST', path: '/api/v2/incidents/hint' },
+    { name: 'listChallenges', call: () => api.listChallenges(), method: 'GET', path: '/api/v2/challenges' },
+    { name: 'getChallengeStatus', call: () => api.getChallengeStatus(), method: 'GET', path: '/api/v2/challenges/status' },
+    { name: 'getChallengeHistory', call: () => api.getChallengeHistory(), method: 'GET', path: '/api/v2/challenges/history' },
+    { name: 'getResults', call: () => api.getResults(), method: 'GET', path: '/api/v2/results' },
+    { name: 'getResultsByKind', call: () => api.getResultsByKind('scenario'), method: 'GET', path: '/api/v2/results/scenario' },
+    { name: 'getLeaderboard', call: () => api.getLeaderboard(), method: 'GET', path: '/api/v2/leaderboard' },
+    { name: 'getTraffic', call: () => api.getTraffic(), method: 'GET', path: '/api/v2/traffic' },
+    { name: 'startTraffic', call: () => api.startTraffic({ profile: 'steady', rps: 10 }), method: 'POST', path: '/api/v2/traffic/start' },
+    { name: 'stopTraffic', call: () => api.stopTraffic(), method: 'POST', path: '/api/v2/traffic/stop' },
+    { name: 'listRuns', call: () => api.listRuns(), method: 'GET', path: '/api/v2/runs' },
+    { name: 'getRun', call: () => api.getRun('r1'), method: 'GET', path: '/api/v2/runs/r1' },
+    { name: 'getRunLogs', call: () => api.getRunLogs('r1'), method: 'GET', path: '/api/v2/runs/r1/logs' },
+    { name: 'cancelRun', call: () => api.cancelRun('r1'), method: 'POST', path: '/api/v2/runs/r1/cancel' },
   ]
 
   cases.forEach(({ name, call, method, path }) => {
@@ -150,6 +151,6 @@ describe('api client — every endpoint binds the right verb and path', () => {
 
   it('percent-encodes untrusted path segments', async () => {
     await api.getScenario('a/b c')
-    expect(seen.path).toBe('/api/scenarios/a%2Fb%20c')
+    expect(seen.path).toBe('/api/v2/scenarios/a%2Fb%20c')
   })
 })

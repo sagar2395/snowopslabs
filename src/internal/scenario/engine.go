@@ -337,7 +337,7 @@ func (e *Engine) Verify(ctx context.Context, name string, runner *checks.Runner)
 		return nil, err
 	}
 	if len(s.Checks) == 0 {
-		return nil, fmt.Errorf("%w: %s (add a checks block — see docs/scenarios.md)", ErrNoChecks, name)
+		return nil, fmt.Errorf("%w: %s (add a checks block — see docs/reference/scenario-schema.md)", ErrNoChecks, name)
 	}
 
 	runner.ScriptDir = s.Dir

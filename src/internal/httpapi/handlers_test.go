@@ -130,15 +130,15 @@ func TestRespondError_HasCodeField(t *testing.T) {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
 	}
 
-	var body ErrorResponse
+	var body problemDetail
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Code != "invalid_input" {
-		t.Errorf("code: got %q, want %q", body.Code, "invalid_input")
+	if body.Type != problemType("invalid_input") {
+		t.Errorf("type: got %q, want %q", body.Type, problemType("invalid_input"))
 	}
-	if body.Error != "bad value" {
-		t.Errorf("error: got %q, want %q", body.Error, "bad value")
+	if body.Detail != "bad value" {
+		t.Errorf("detail: got %q, want %q", body.Detail, "bad value")
 	}
 }
 
@@ -152,12 +152,12 @@ func TestHandleAppDeploy_InvalidName_HasCode(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("status: got %d, want %d", w.Code, http.StatusBadRequest)
 	}
-	var body ErrorResponse
+	var body problemDetail
 	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body.Code != "invalid_input" {
-		t.Errorf("code: got %q, want %q", body.Code, "invalid_input")
+	if body.Type != problemType("invalid_input") {
+		t.Errorf("type: got %q, want %q", body.Type, problemType("invalid_input"))
 	}
 }
 

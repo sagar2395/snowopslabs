@@ -53,22 +53,23 @@ Adopt uniform conventions under `/api/v2`:
 
 This ADR is the accepted target for all of Wave 5; it lands incrementally.
 
-- **Done (W5-T01):** the full handler set is mounted under `/api/v2` (with `/api`
-  kept as an unversioned alias so the current UI keeps working); every request
+> The unversioned `/api` alias this ADR originally kept alongside `/api/v2` has
+> since been removed — see [ADR-0013](0013-remove-unversioned-api.md).
+
+- **Done (W5-T01):** the full handler set is mounted under `/api/v2`; every request
   carries a correlation ID — honoured from a sane inbound `X-Request-ID`, else a
   minted UUIDv4 — echoed in the `X-Request-ID` response header and attached to a
   structured `http_request` access-log line (method, route template, status,
   duration, size, client, request ID). See `internal/httpapi/middleware.go`.
 - **Done (W5-T02):** `/api/v2` errors are `application/problem+json` with a
   stable `type` slug (`https://snowopslabs.dev/problems/<slug>`), `title`,
-  `status`, `detail`, `instance` (request path) and the `requestId`. The `/api`
-  alias keeps the legacy `{error, code}` envelope. The closed slug set lives in
+  `status`, `detail`, `instance` (request path) and the `requestId`. The closed slug set lives in
   `internal/httpapi/problems.go` and is asserted against actual usage by
   `TestProblemSlugs_StableSet`, so the error contract can't drift silently.
 - **Done (W5-T03):** catalog reads carry a content-derived `ETag` and honour
-  `If-None-Match` (→ 304); under `/api/v2` list collections return the opaque
-  cursor envelope `{items, nextCursor}` (`?limit`, `?cursor`), while `/api`
-  keeps the bare array. See `internal/httpapi/httpcache.go` + `pagination.go`.
+  `If-None-Match` (→ 304); list collections return the opaque cursor envelope
+  `{items, nextCursor}` (`?limit`, `?cursor`). See
+  `internal/httpapi/httpcache.go` + `pagination.go`.
 - **Done (W5-T04, streaming):** the event stream is cursor-based. Every event
   carries a monotonic `Seq`; the broadcaster keeps a bounded replay ring, and
   `SubscribeFrom(after)` returns the missed backlog plus the live channel

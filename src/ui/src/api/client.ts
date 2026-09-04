@@ -29,7 +29,7 @@ import type {
   RunLogs,
 } from '../types'
 
-const BASE = '/api'
+const BASE = '/api/v2'
 
 /** Read (GET) requests should answer fast; the server caps k8s calls at 10 s. */
 const GET_TIMEOUT_MS = 15_000
@@ -58,8 +58,11 @@ async function req<T>(path: string, opts?: RequestInit, timeoutMs = GET_TIMEOUT_
   if (!res.ok) {
     let msg = `HTTP ${res.status} ${res.statusText}`.trim()
     try {
-      const body = await res.json() as { error?: string }
-      if (body.error) msg = body.error
+      // Errors are application/problem+json (RFC 7807). `detail` carries the
+      // human-readable cause; `title` is the fallback for the error class.
+      const body = await res.json() as { detail?: string; title?: string }
+      if (body.detail) msg = body.detail
+      else if (body.title) msg = body.title
     } catch { /* non-JSON error body — keep the HTTP status message */ }
     throw new Error(msg)
   }
@@ -69,6 +72,32 @@ async function req<T>(path: string, opts?: RequestInit, timeoutMs = GET_TIMEOUT_
   } catch {
     throw new Error('Server returned an invalid response (not JSON)')
   }
+}
+
+/** Largest page the server will serve; asking for it keeps a normal-sized
+ *  collection to a single round trip. */
+const PAGE_LIMIT = 200
+/** Refuse to page forever if the server keeps handing back a cursor. */
+const MAX_PAGES = 50
+
+/** Reads a paginated collection whole. List endpoints answer with
+ *  `{items, nextCursor}`; views here render a full list, so follow the cursor
+ *  until it comes back empty rather than silently truncating at one page. */
+async function reqList<T>(path: string, params?: Record<string, string>): Promise<T[]> {
+  const out: T[] = []
+  let cursor = ''
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const q = new URLSearchParams({ ...params, limit: String(PAGE_LIMIT) })
+    if (cursor) q.set('cursor', cursor)
+    const res = await req<{ items: T[]; nextCursor?: string }>(`${path}?${q}`)
+    if (!Array.isArray(res?.items)) {
+      throw new Error(`Server returned an unexpected shape for ${path} (no items array)`)
+    }
+    out.push(...res.items)
+    if (!res.nextCursor) return out
+    cursor = res.nextCursor
+  }
+  return out
 }
 
 function post(path: string, body?: unknown) {
@@ -110,7 +139,7 @@ export const api = {
   getComponent:  (cat: string, name: string) => req<PlatformComponentDetail>(`/platform/component/${enc(catSegment(cat))}/${enc(name)}`),
 
   // ── Scenarios ─────────────────────────────────────────────────────────────
-  listScenarios: ()             => req<Scenario[]>('/scenarios'),
+  listScenarios: ()             => reqList<Scenario>('/scenarios'),
   getScenario:   (name: string) => req<Scenario>(`/scenarios/${enc(name)}`),
   scenarioUp:    (name: string, params?: Record<string, string>) =>
     post(`/scenarios/${enc(name)}/up`, params && Object.keys(params).length ? { params } : undefined),
@@ -125,7 +154,7 @@ export const api = {
   deactivateRuntime:(name: string) => post(`/runtimes/${enc(name)}/deactivate`),
 
   // ── Learn ─────────────────────────────────────────────────────────────────
-  listLearnPaths:  ()             => req<LearnPathSummary[]>('/learn/paths'),
+  listLearnPaths:  ()             => reqList<LearnPathSummary>('/learn/paths'),
   getLearnPath:    (name: string) => req<LearnPath>(`/learn/paths/${enc(name)}`),
   getLearnProgress:(name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/progress`),
   startLearnPath:  (name: string) => req<LearnProgress>(`/learn/paths/${enc(name)}/start`, { method: 'POST' }, POST_TIMEOUT_MS),
@@ -149,7 +178,7 @@ export const api = {
   nextIncidentHint:   ()             => req<IncidentHint>('/incidents/hint', { method: 'POST' }, POST_TIMEOUT_MS),
 
   // ── Challenges ────────────────────────────────────────────────────────────
-  listChallenges:     ()             => req<ChallengeSummary[]>('/challenges'),
+  listChallenges:     ()             => reqList<ChallengeSummary>('/challenges'),
   getChallengeStatus: ()             => req<ChallengeStatus>('/challenges/status'),
   getChallengeHistory:()             => req<ChallengeRunRecord[]>('/challenges/history'),
 
@@ -167,7 +196,7 @@ export const api = {
   stopTraffic:  ()                        => post('/traffic/stop'),
 
   // ── Durable runs (run console) ──────────────────────────────────────────────
-  listRuns:  (status?: string)            => req<RunSummary[]>(`/runs${status ? `?status=${enc(status)}` : ''}`),
+  listRuns:  (status?: string)            => reqList<RunSummary>('/runs', status ? { status } : undefined),
   getRun:    (id: string)                 => req<RunDetail>(`/runs/${enc(id)}`),
   getRunLogs:(id: string, after = 0)      => req<RunLogs>(`/runs/${enc(id)}/logs?after=${after}`),
   cancelRun: (id: string)                 => req<{ status: string; runId: string }>(`/runs/${enc(id)}/cancel`, { method: 'POST' }, POST_TIMEOUT_MS),

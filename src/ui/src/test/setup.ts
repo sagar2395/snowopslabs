@@ -12,7 +12,7 @@ import { cleanup } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll } from 'vitest'
 import { server } from './server'
 
-// The API client (src/api/client.ts) issues fetches against relative `/api`
+// The API client (src/api/client.ts) issues fetches against relative `/api/v2`
 // paths and wraps each in an AbortController for its timeout. Two things have
 // to hold for that to work under test:
 //

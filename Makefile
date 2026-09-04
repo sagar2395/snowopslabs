@@ -26,6 +26,7 @@ include make/platform.mk
 include make/check.mk
 include make/services.mk
 include make/shell.mk
+include make/docs.mk
 
 SRC_TARGETS := cli-build cli-build-all cli-install cli-clean ui-build ui-deps \
                test-go test-api test-coverage coverage-check fuzz \
@@ -38,7 +39,7 @@ $(SRC_TARGETS):
 
 .DEFAULT_GOAL := help
 
-.PHONY: help init teardown reset run test lint
+.PHONY: help init teardown reset run test lint docs-check
 
 # ── Aggregate test & lint (Go module + repo-wide shell gates) ─────────────────
 
@@ -55,7 +56,7 @@ test-apps:
 	done
 
 ## lint: every static-analysis gate — gofmt + shell (root) and Go/UI (src/)
-lint: fmt-check lint-shell lint-go lint-ui sec vuln
+lint: fmt-check lint-shell lint-go lint-ui sec vuln docs-check
 
 # ── Lifecycle ────────────────────────────────────────────────────────────────
 

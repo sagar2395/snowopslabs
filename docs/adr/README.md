@@ -21,5 +21,6 @@ otherwise have to reverse-engineer from the code.
 | [0010](0010-platform-values-single-source.md) | Platform values are the single source of truth; scenarios overlay or adopt | Accepted |
 | [0011](0011-chart-pinning-and-repo-migration.md) | Pin every chart; migrate off the deprecated Grafana charts | Accepted |
 | [0012](0012-alloy-as-trace-collector.md) | Grafana Alloy as the trace collector; Promtail retained for logs | Accepted |
+| [0013](0013-remove-unversioned-api.md) | `/api/v2` is the only API; the unversioned alias is removed | Accepted |
 
 Template: `0000-template.md`.

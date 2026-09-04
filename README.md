@@ -241,7 +241,7 @@ labctl teardown                       # remove everything (never hangs)
 >
 > Want to scrape labctl itself? Start the server with `LABCTL_METRICS=true` to
 > expose an optional Prometheus endpoint at `/metrics` (off by default). See the
-> [CLI reference](docs/cli-reference.md#metrics-prometheus).
+> [CLI reference](docs/reference/cli/server.md#metrics).
 
 [releases]: https://github.com/sagar2395/snowopslabs/releases
 
@@ -334,12 +334,14 @@ from the repo root even though the binary is built under `src/`.
 | [Decisions](docs/adr/) | Why it was built this way, with alternatives considered |
 | [Testing](docs/TESTING.md) | The four mandatory test layers and CI gates |
 | [Runbooks](docs/runbooks/) | Hands-on validation a human performs before a wave merges |
-| [CLI Reference](docs/cli-reference.md) | Every `labctl` command and flag |
+| [CLI Reference](docs/reference/cli/index.md) | Every `labctl` command and flag |
+| [Scenario schema](docs/reference/scenario-schema.md) | The complete `scenario.yaml` reference |
+| [Scenario catalog](docs/scenarios.md) | What ships in the repository |
 | [Runtime profiles](docs/runtime-profiles.md) | k3d / kind / incluster and the profile contract |
 | [Releasing](RELEASING.md) | How a versioned release is cut (goreleaser) |
-| [Scenarios](docs/scenarios.md) | The scenario format and how to author one |
 | [Authoring](docs/authoring/) | Your first scenario, extension seams, stability policy |
 | [Contributing](CONTRIBUTING.md) | Golden rules and the PR bar |
+| [Agent context](docs/AGENT-CONTEXT.md) | The contract AI agents and new contributors work under |
 
 ## Testing
 

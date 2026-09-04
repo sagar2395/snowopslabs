@@ -62,13 +62,14 @@ func TestHandleRunsList(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", w.Code, w.Body.String())
 	}
-	// No version tag on the context → v1 bare-array shape.
-	var got []runView
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+	var page struct {
+		Items []runView `json:"items"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &page); err != nil {
 		t.Fatalf("decode: %v (body %s)", err, w.Body.String())
 	}
-	if len(got) != 2 {
-		t.Fatalf("got %d runs, want 2", len(got))
+	if len(page.Items) != 2 {
+		t.Fatalf("got %d runs, want 2", len(page.Items))
 	}
 }
 
@@ -81,10 +82,12 @@ func TestHandleRunsList_FilterByStatus(t *testing.T) {
 	w := httptest.NewRecorder()
 	s.handleRunsList(w, req)
 
-	var got []runView
-	_ = json.Unmarshal(w.Body.Bytes(), &got)
-	if len(got) != 1 || got[0].ID != "run_b" {
-		t.Fatalf("status filter = %+v, want only run_b", got)
+	var page struct {
+		Items []runView `json:"items"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &page)
+	if len(page.Items) != 1 || page.Items[0].ID != "run_b" {
+		t.Fatalf("status filter = %+v, want only run_b", page.Items)
 	}
 }
 

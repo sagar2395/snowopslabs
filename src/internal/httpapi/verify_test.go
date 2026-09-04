@@ -70,12 +70,12 @@ func TestHandleScenarioVerify_NoChecks(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("got %d, want 400", w.Code)
 	}
-	var resp ErrorResponse
+	var resp problemDetail
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decoding error response: %v", err)
 	}
-	if resp.Code != "no_checks" {
-		t.Errorf("error code: got %q, want no_checks", resp.Code)
+	if resp.Type != problemType("no_checks") {
+		t.Errorf("problem type: got %q, want %q", resp.Type, problemType("no_checks"))
 	}
 }
 

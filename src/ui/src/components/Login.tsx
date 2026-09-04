@@ -8,7 +8,7 @@ interface LoginProps {
 }
 
 /** Sign-in form shown when auth is enabled and the user isn't authenticated.
- *  Submits credentials to /api/auth/login; the server sets an HttpOnly cookie
+ *  Submits credentials to /api/v2/auth/login; the server sets an HttpOnly cookie
  *  on success, so we just lift the returned status up via onLoggedIn. */
 export function Login({ onLoggedIn }: LoginProps) {
   const [username, setUsername] = useState('')

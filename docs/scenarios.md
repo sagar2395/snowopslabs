@@ -1,64 +1,40 @@
-# Scenarios Guide
+# Scenario catalog
 
-Scenarios are declarative playgrounds that install a collection of related tools, configurations, and dashboards to explore specific DevOps concepts.
+Scenarios are declarative labs. Each installs a set of related tools,
+configurations and dashboards so you can explore one platform-engineering
+concept hands-on, then grades your work with machine-verifiable checks.
 
-## How Scenarios Work
+- **Writing one?** The full YAML reference is the
+  [scenario schema](reference/scenario-schema.md), and the guided walkthrough is
+  [your first scenario](authoring/first-scenario.md).
+- **Running one?** The commands are in the
+  [CLI reference](reference/cli/scenarios.md).
 
-Each scenario is a directory in `scenarios/` containing a `scenario.yaml` that declares:
+This page is the catalog of what ships in the repository.
 
-- **Prerequisites** - platform components and apps that must be running
-- **Components** - what to install (Helm charts, manifests, dashboards, scripts)
-- **Explore hints** - URLs, commands, and tips for experimenting
+## How they work
 
-The scenario engine handles installation order, template resolution, and state tracking.
-
-## Using Scenarios
-
-### List available scenarios
-
-```bash
-labctl scenario list
-```
-
-### Get details before activating
+A scenario is a directory under `scenarios/` containing a `scenario.yaml` that
+declares its prerequisites (platform components and apps that must be running),
+its components (Helm charts, manifests, dashboards, scripts), its checks, and
+explore hints. The engine handles installation order, template resolution and
+state tracking.
 
 ```bash
-labctl scenario info observability-sre
+labctl scenario list                       # what is available, and what is active
+labctl scenario info observability-sre     # description, prerequisites, components, hints
+labctl scenario up observability-sre       # activate
+labctl scenario verify observability-sre   # grade
+labctl scenario down observability-sre     # deactivate
 ```
 
-This shows the full description, prerequisites, components that will be installed, and exploration hints.
-
-### Activate a scenario
-
-```bash
-labctl scenario up observability-sre
-```
-
-The engine will:
-1. Validate prerequisites (platform components and apps)
-2. Install each component in order (Helm charts, kubectl manifests, Grafana dashboards)
-3. Mark the scenario as active
-4. Print exploration tips
-
-### Deactivate a scenario
-
-```bash
-labctl scenario down observability-sre
-```
-
-Removes all components installed by the scenario.
-
-### Check status
-
-```bash
-labctl scenario status
-```
-
-You can also use the web UI (`labctl ui`) to activate/deactivate scenarios with a single click.
+`scenario up` validates prerequisites, installs each component in order, marks
+the scenario active and prints the explore tips. `scenario down` removes what it
+installed. The web UI (`labctl ui`) does the same in one click.
 
 ---
 
-## Available Scenarios
+## Available scenarios
 
 ### Observability & SRE (`observability-sre`)
 
@@ -188,7 +164,6 @@ go-api scaled up (≥3, post-spike), p99 latency within SLO.
 - Watch scaling: `kubectl -n go-api get hpa keda-hpa-go-api -w`
 - Verify post-spike: `labctl scenario verify autoscaling-under-load`
 
-Full walkthrough: `docs/runbooks/10-stack-expansion.md` (task 057).
 
 ---
 
@@ -393,263 +368,6 @@ exists** (script). The last four are marked `pending` — they render as PENDING
 
 ---
 
-## Scenario YAML Format
-
-```yaml
-apiVersion: scenario.snowops.net/v2  # schema version (optional; defaults to v2)
-name: my-scenario                    # Must match directory name
-displayName: "My Scenario"           # Shown in UI and CLI
-description: "What this scenario teaches"
-category: observability              # Grouping label
-
-prerequisites:
-  platform:                          # Required platform components
-    - ingress
-    - monitoring/metrics
-  apps:                              # Required apps
-    - go-api
-
-runtimes:                            # Compatible runtimes (optional)
-  - k3d
-  - kind
-
-components:                          # What to install (in order)
-  - name: my-chart
-    type: helm                       # helm | manifest | grafana-dashboard | script
-    chart: repo/chart-name
-    repo: https://charts.example.com # Helm repo URL
-    version: "1.0.0"
-    namespace: my-ns
-    valuesFile: values/my-chart.yaml
-
-  - name: my-manifests
-    type: manifest
-    path: manifests/my-resources.yaml
-    namespace: my-ns
-
-  - name: my-dashboards
-    type: grafana-dashboard
-    path: dashboards/
-    namespace: monitoring
-
-  - name: my-setup
-    type: script
-    script: scripts/setup.sh
-
-explore:
-  urls:
-    - label: "My Dashboard"
-      url: "http://my-app.{{.DomainSuffix}}"
-
-  commands:
-    - label: "Check status"
-      command: "kubectl get pods -n my-ns"
-
-  tips:
-    - "First, generate some traffic to see data in dashboards"
-    - "Try breaking things to see alerts fire"
-```
-
-### Verified (curation metadata)
-
-Content carries an optional `verified` flag:
-
-```yaml
-verified: true    # confirmed end-to-end on a fresh cluster
-```
-
-This is **curation metadata, not a user-facing badge** — it records which
-scenarios/incidents have been confirmed to activate, pass their checks, and tear
-down cleanly on a fresh cluster, so the nightly e2e job knows what to guard and
-maintainers know what's still to confirm. It is intentionally not surfaced in the
-CLI or UI: shipped content is expected to work, so it isn't labelled for users.
-Absent or `false` simply means "not yet confirmed end-to-end."
-
-### References and snippets
-
-Two optional blocks turn a scenario into a jumping-off point for hands-on
-learning. Both are shown by `labctl scenario info <name>` and are template-
-resolved, so they display with the deployment's real namespaces and domains.
-
-```yaml
-references:                            # links to the upstream tool/docs
-  - label: "KEDA — ScaledObject specification"
-    url: "https://keda.sh/docs/latest/reference/scaledobject-spec/"
-    note: "Optional one-liner on why this link is relevant."
-
-snippets:                              # applyable manifest fragments
-  - label: "KEDA ScaledObject for go-api"
-    description: "Optional context shown above the manifest."
-    path: manifests/scaledobject.yaml  # a file in the scenario dir, OR:
-  - label: "A quick inline manifest"
-    yaml: |
-      apiVersion: v1
-      kind: ConfigMap
-      metadata:
-        name: demo
-        namespace: "{{.MonitoringNamespace}}"
-  - label: "Helm values (not a kubectl manifest)"
-    path: values/overprovisioned.yaml
-    apply: "helm upgrade -f -  (or translate to 'kubectl set resources')"
-```
-
-- A `reference` needs a `label` and an `http(s)` `url`; `note` is optional.
-- A `snippet` needs a `label` and **exactly one** of `yaml` (inline manifest
-  text) or `path` (a file relative to the scenario directory — reuse the
-  existing `manifests/` convention rather than duplicating). `labctl validate`
-  fails if a `path` does not resolve, naming the file and the snippet.
-- Snippet bodies are template-resolved, so a `path` snippet can reuse the same
-  manifest the engine applies, and an inline `yaml` snippet can reference
-  `{{.MonitoringNamespace}}` etc. — it prints ready to `kubectl apply -f -`.
-- `apply` (optional) overrides the per-snippet "apply with" hint. It defaults to
-  `kubectl apply -f -`; set it when the snippet is **not** a kubectl manifest
-  (e.g. a Helm values file) so the learner isn't told to `kubectl apply` something
-  that isn't appliable.
-
-### Template Variables
-
-URLs and commands support Go template variables:
-
-| Variable | Example Value | Description |
-|----------|--------------|-------------|
-| `{{.DomainSuffix}}` | `k3d.local` | Domain suffix from active runtime |
-| `{{.ProjectRoot}}` | `/path/to/project` | Absolute path to project root |
-
-### Component Types
-
-| Type | What It Does |
-|------|-------------|
-| `helm` | Adds Helm repo, installs chart with values file |
-| `manifest` | Applies Kubernetes YAML via `kubectl apply` |
-| `grafana-dashboard` | Creates ConfigMap from dashboard JSON files (picked up by Grafana sidecar) |
-| `script` | Runs a shell script (`script:` path relative to the scenario directory) |
-
----
-
-## Scenario Format v2 — stages, objectives, checks
-
-Format v2 turns a scenario from "install these things" into a **verifiable
-simulation**. Three optional blocks extend the format above (v1 scenarios
-keep working unchanged):
-
-```yaml
-objectives:                          # human-readable goals
-  - "Aggregate application logs in Loki"
-  - "Keep p99 latency under 300ms"
-
-stages:                              # ordered groups of components
-  - name: baseline                   # replaces the flat components: list
-    description: Install the baseline stack
-    components:                      # same component schema as v1
-      - name: loki
-        type: helm
-        chart: grafana-community/loki
-        version: "18.12.0"           # always pinned — see config/versions.env
-        platformValues: logging/loki # base values; never a second copy
-        valuesFile: values/loki.yaml # optional overlay, applied on top
-        adopt: true                  # reuse an existing release, do not upgrade it
-        ...
-  - name: inject-failure
-    components: [...]
-
-checks:                              # machine-verifiable assertions
-  - name: loki-ready
-    type: kubectl                    # http | kubectl | promql | script
-    resource: statefulset/loki      # kubectl: type/name or a bare type (existence)
-    namespace: "{{.MonitoringNamespace}}"
-    jsonpath: "{.status.readyReplicas}"
-    operator: ">="                   # == != < <= > >= contains
-    value: "1"
-
-  - name: grafana-reachable
-    type: http
-    url: "http://grafana.{{.DomainSuffix}}"
-    expectStatus: 200                # default 200; bodyContains: optional
-
-  - name: latency-ok
-    type: promql                     # queries $PROMETHEUS_URL (default
-    query: 'histogram_quantile(...)' # http://prometheus.<DOMAIN_SUFFIX>)
-    operator: "<"
-    value: "0.3"
-
-  - name: custom
-    type: script                     # exit 0 = pass; runs with DOMAIN_SUFFIX,
-    script: checks/custom.sh         # MONITORING_NAMESPACE, PROJECT_ROOT set
-    timeoutSeconds: 60               # any check may override the 30s default
-    remediation: "run the fix: …"    # optional: shown under a failing check
-    pending: true                    # optional: render PENDING (not FAIL) until
-                                     # the user performs the matching drill step
-```
-
-**`remediation` / `pending`** make `verify` teach instead of alarm. A failing
-check with a `remediation` prints that fix under a **Next step(s)** heading; the
-generic "a pod may still be starting / --watch" hint is shown only for a genuine
-failure that has no remediation. A failing `pending` check renders **PENDING**
-and is reported as an incomplete drill step, so "you haven't run the backup yet"
-never reads as "the scenario is broken".
-
-Rules (enforced at load time — an invalid scenario refuses to load and CI
-fails on it):
-
-- Use **either** `components` (v1) **or** `stages` (v2), never both.
-- Stage names, component names, and check names must be unique and non-empty.
-- Each check type accepts only its own fields (an `http` check with a
-  `query` is rejected, not ignored).
-- Checks run in declaration order; a failing check does not stop the rest.
-
-Run the checks with:
-
-```bash
-labctl scenario verify my-scenario            # one shot, exit 1 on failure
-labctl scenario verify my-scenario --watch    # poll until green or timeout
-```
-
-The same checks are the grading primitive for the upcoming incident engine
-and challenge mode (see `docs/PRODUCT.md`) — write them as "what must be
-true when this scenario is healthy".
-
-## Sharing scenarios — external content roots
-
-Scenarios do not have to live in this repo. Because a scenario is just a
-directory, sharing one is git and nothing else — there is no pack format,
-registry or publish step (see
-[ADR-0008](adr/0008-content-extensibility-seam.md)).
-
-Keep your scenarios in your own repository, laid out one directory per
-scenario, then point SnowOps Labs at it:
-
-```bash
-git clone https://github.com/org/our-scenarios ~/our-scenarios
-export SNOWOPS_CONTENT_PATH=~/our-scenarios
-labctl scenario list        # your scenarios appear, badged as external
-```
-
-`SNOWOPS_CONTENT_PATH` accepts several roots separated by the OS path
-separator. How it behaves:
-
-- Each root is scanned for directories containing a `scenario.yaml`, and every
-  one is schema-validated. An invalid scenario is reported by name and skipped;
-  it never hides the rest.
-- External scenarios work with `up`, `down`, `verify` and `info` exactly like
-  in-repo ones, and show their root in the SOURCE column of `scenario list`.
-- **In-repo scenarios win name collisions.** An external scenario with a
-  colliding name is skipped with the conflict named.
-- Asset paths must stay inside the scenario directory — absolute paths and `..`
-  traversal are rejected at validation.
-
-**Security:** a scenario's components run scripts and apply manifests on your
-cluster with your credentials. Only point `SNOWOPS_CONTENT_PATH` at sources
-you trust, and read them first. This is the same trust level as running any
-script from that repository.
-
-## Creating a New Scenario
-
-1. Create directory: `scenarios/my-scenario/`
-2. Write `scenario.yaml` following the format above (prefer v2 with checks)
-3. Add supporting files under `values/`, `manifests/`, `dashboards/` as needed
-4. Test: `labctl scenario up my-scenario`, then `labctl scenario verify my-scenario`
-
-The scenario engine auto-discovers any directory under `scenarios/` that
-contains a valid `scenario.yaml`. Schema validation runs in CI for every
-scenario in the repo (`internal/scenario/repo_test.go`), so a
-malformed scenario cannot merge to main.
+Full YAML reference: [scenario schema](reference/scenario-schema.md).
+Sharing scenarios from your own repository, and the security implications of
+doing so, are covered there too.
