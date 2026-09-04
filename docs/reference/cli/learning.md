@@ -46,6 +46,15 @@ labctl challenge history                        # past runs with MTTR, score, hi
 the fraction of checks that pass. Details in
 [challenges/README.md](../../../challenges/README.md).
 
+**Grading runs the check the way its own engine does.** With
+`grading.useDetectionCheck: true`, `submit` resolves the fault's detection check
+exactly as `labctl incident status` does — template variables expanded, and the
+check's `script` resolved against the *fault's* directory rather than the
+project root. A challenge's own `grading.checks` are template-resolved too, with
+their scripts relative to the project root. Without this a templated URL reaches
+the HTTP client verbatim and a detection script is looked up in the wrong place,
+so a correct fix scores zero.
+
 REST: `GET /api/v2/challenges`, `GET /api/v2/challenges/{name}`,
 `GET /api/v2/challenges/status`, `GET /api/v2/challenges/history`,
 `POST /api/v2/challenges/complete`.

@@ -10,6 +10,13 @@ platform modules — and the stability guarantees you can rely on.
 
 - [Your First Scenario](first-scenario.md) — the fast path: scaffold → edit →
   validate → verify → share.
+- [Scenario Review](scenario-review.md) — the end-to-end quality gate: activate
+  on a live lab, tamper-test the checks, score out of 5, improve to 4.8.
+- [Incident Review](incident-review.md) — the same gate for a fault: diagnose it
+  blind, false-fix test the detection check, exercise the escape hatch.
+- [Learning Review](learning-review.md) — the same gate for a path or challenge:
+  sweep for checks that are green before the learner works, calibrate par time
+  against a real run.
 - [Extension Seams](extensions.md) — the resolver and hook interfaces that let
   custom builds plug in without forking the engine.
 - [SDK & Schema Stability Policy](sdk-stability-policy.md) — what we keep stable

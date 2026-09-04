@@ -94,13 +94,23 @@ Pages land in the in-cluster **pager** (`labctl service up pager`) unless
 6. Hints go from gentle nudge to near-answer; the last hint may name the
    resource, the solution names the command.
 
+## Reviewing a fault
+
+`labctl validate` proves a fault is well-formed and `resolve` proves it is
+reversible. Neither proves it is a good drill. The
+[incident review](../docs/authoring/incident-review.md) workflow does: it
+injects the fault on a live lab, diagnoses it blind, walks the hint ladder,
+false-fix tests the detection check in both directions, exercises the escape
+hatch from every state a learner can leave behind, and scores the result out of
+5. Below 4.8, the fault is still a draft.
+
 ## Current faults
 
 | Fault | Category | Severity | What breaks |
 |-------|----------|----------|-------------|
 | `crashloop-bad-config` | workload | medium | go-api's container command is replaced with one that exits immediately — new pods crash-loop |
 | `bad-deploy-rollout` | workload | medium | go-api is "deployed" with a nonexistent image tag — rollout sticks in ImagePullBackOff |
-| `oom-kill` | resources | high | echo-server's memory limit is slashed — pods are OOMKilled at startup |
+| `oom-kill` | resources | high | echo-server's memory limit is cut just below what it needs under load, and k6 traffic is started — the pod idles fine and is OOMKilled once requests arrive |
 | `network-blackhole` | network | high | a deny-all-ingress NetworkPolicy lands in go-api's namespace — the service goes dark through the ingress |
 | `service-selector-broken` | config | medium | go-api's Service selector stops matching its pods — endpoints empty, pods perfectly healthy (sneaky) |
 | `noisy-neighbor` | resources | low | a CPU-burning deployment lands on the cluster with big requests and no limits |

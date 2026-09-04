@@ -291,3 +291,38 @@ func TestResolveCheckTemplates(t *testing.T) {
 		t.Fatalf("url not resolved: %q", c.URL)
 	}
 }
+
+// The exported wrapper is what the challenge grader calls; an unresolved URL
+// there makes a correct fix score zero.
+func TestResolveCheck_Exported(t *testing.T) {
+	e := NewEngine(t.TempDir(), "lab.example")
+	tests := []struct {
+		name string
+		in   checks.Check
+		want checks.Check
+	}{
+		{
+			name: "http url",
+			in:   checks.Check{Name: "x", Type: "http", URL: "http://go-api.{{.DomainSuffix}}/health"},
+			want: checks.Check{Name: "x", Type: "http", URL: "http://go-api.lab.example/health"},
+		},
+		{
+			name: "kubectl resource and namespace",
+			in:   checks.Check{Name: "y", Type: "kubectl", Resource: "svc/{{.DomainSuffix}}", Namespace: "{{.DomainSuffix}}"},
+			want: checks.Check{Name: "y", Type: "kubectl", Resource: "svc/lab.example", Namespace: "lab.example"},
+		},
+		{
+			name: "no templates is unchanged",
+			in:   checks.Check{Name: "z", Type: "http", URL: "http://go-api.k3d.local/health"},
+			want: checks.Check{Name: "z", Type: "http", URL: "http://go-api.k3d.local/health"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := e.ResolveCheck(tt.in)
+			if got != tt.want {
+				t.Fatalf("ResolveCheck() = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}

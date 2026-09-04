@@ -59,6 +59,15 @@ labctl challenge abort                           # escape hatch, no score
 labctl challenge history                         # past runs
 ```
 
+## Reviewing a challenge
+
+A challenge is only as good as the fault or scenario it wraps, and its own work
+is the clock and the score. The
+[learning review](../docs/authoring/learning-review.md) workflow grades both: it
+submits without fixing anything (which must score zero), does a real timed run
+to calibrate `parTime`, checks each term of the score formula, and confirms
+`abort` leaves no residue. Below 4.8, the challenge is still a draft.
+
 ## Rules for challenge authors
 
 1. The challenge must be completable — test it end-to-end on a fresh lab.

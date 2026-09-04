@@ -40,10 +40,9 @@ modules:
       type: scenario
       ref: observability-sre
     check:
-      name: prometheus-up
-      type: http
-      url: "http://prometheus.${DOMAIN_SUFFIX:-k3d.local}/-/ready"
-      expectStatus: 200
+      name: alerting-rules-installed
+      type: script
+      script: checks/observability-installed.sh
       timeoutSeconds: 60
 
   - name: first-incident

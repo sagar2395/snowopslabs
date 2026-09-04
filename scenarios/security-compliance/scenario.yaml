@@ -1,50 +1,81 @@
+apiVersion: scenario.snowops.net/v2
 name: security-compliance
 verified: true
-displayName: "Security & Compliance"
-description: "Policy enforcement with Kyverno, TLS certificates via cert-manager, encrypted secrets with Sealed Secrets, namespace network isolation, and security best-practice policies."
+displayName: "Security & Compliance (Audit → Enforce)"
+description: "Take a cluster from 'policies exist' to 'policies bite'. Kyverno ships four Pod Security and best-practice ClusterPolicies in Audit mode, so nothing is blocked and every violation lands in a policy report. Your job is the part a real team owns: read the report, remediate the workload at the source, promote the policies to Enforce, prove the admission webhook now rejects a non-compliant Pod, and issue a real TLS certificate from the lab CA with cert-manager — on a namespace that is default-deny in both directions."
 category: security
 prerequisites:
   platform:
     - ingress
     - monitoring/metrics
     - monitoring/grafana
-    - security/policy/kyverno
-    - security/tls/cert-manager
   apps:
     - go-api
 runtimes:
   - k3d
   - kind
-components:
-  - name: kyverno
-    type: helm
-    chart: kyverno/kyverno
-    repo: https://kyverno.github.io/kyverno/
-    version: "3.3.4"
-    namespace: kyverno
-    valuesFile: values/kyverno.yaml
 
-  - name: cert-manager
-    type: helm
-    chart: jetstack/cert-manager
-    repo: https://charts.jetstack.io
-    version: "1.16.3"
-    namespace: cert-manager
-    valuesFile: values/cert-manager.yaml
+objectives:
+  - "Read Kyverno policy reports and identify exactly which rule each workload violates"
+  - "Remediate the go-api Deployment at the source so it satisfies all four policies — fix the workload, never the policy"
+  - "Triage the violation you cannot fix: exempt the vendor workload with a label-scoped Kyverno PolicyException instead of widening the policy"
+  - "Promote a policy from Audit to Enforce with 'kubectl patch', the change that turns a report into a rejection"
+  - "Prove enforcement is real: 'kubectl apply --dry-run=server' a root Pod and watch the admission webhook refuse it"
+  - "Issue a TLS certificate for go-api from the lab CA, wire it onto the Ingress, and prove the lab-signed leaf is what answers the TLS handshake"
+  - "Confirm the go-api namespace is default-deny in both directions, and that the allow rules re-open exactly what the workload needs — no more, no less"
 
-  - name: kyverno-policies
-    type: manifest
-    path: manifests/kyverno-policies.yaml
-    namespace: kyverno
+stages:
+  - name: policy-engine
+    description: Install the admission controller (Kyverno) and the certificate authority (cert-manager)
+    components:
+      - name: kyverno
+        type: helm
+        chart: kyverno/kyverno
+        repo: https://kyverno.github.io/kyverno/
+        version: "3.9.0"
+        namespace: kyverno
+        platformValues: security/policy/kyverno
+        valuesFile: values/kyverno.yaml
 
-  - name: network-policies
-    type: manifest
-    path: manifests/network-policies.yaml
+      - name: cert-manager
+        type: helm
+        chart: jetstack/cert-manager
+        repo: https://charts.jetstack.io
+        version: "v1.21.1"
+        namespace: cert-manager
+        platformValues: security/tls/cert-manager
 
-  - name: security-dashboards
-    type: grafana-dashboard
-    path: dashboards/
-    namespace: "{{.MonitoringNamespace}}"
+  - name: baseline-policies
+    description: Four ClusterPolicies in Audit mode, and the lab CA chain that signs workload certificates
+    components:
+      - name: kyverno-policies
+        type: manifest
+        path: manifests/kyverno-policies.yaml
+        namespace: kyverno
+
+      - name: cert-issuers
+        type: manifest
+        path: manifests/cert-issuers.yaml
+        namespace: cert-manager
+
+  - name: namespace-isolation
+    description: Lock the go-api namespace to default-deny, re-open only what the workload needs, and add the vendor workload that cannot comply
+    components:
+      - name: network-policies
+        type: manifest
+        path: manifests/network-policies.yaml
+
+      - name: legacy-workload
+        type: manifest
+        path: manifests/legacy-workload.yaml
+
+  - name: observability
+    description: The security dashboard that plots violations, certificates and admission latency
+    components:
+      - name: security-dashboards
+        type: grafana-dashboard
+        path: dashboards/
+        namespace: "{{.MonitoringNamespace}}"
 
 checks:
   - name: kyverno-ready
@@ -54,6 +85,7 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "The admission controller is the webhook that enforces policy — while it is down, nothing is validated. Check it: kubectl -n kyverno get pods && kubectl -n kyverno logs deploy/kyverno-admission-controller --tail=50"
 
   - name: cert-manager-ready
     type: kubectl
@@ -62,48 +94,163 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "No cert-manager means no Certificate is ever signed. Check it: kubectl -n cert-manager get pods && kubectl -n cert-manager logs deploy/cert-manager --tail=50"
 
-  - name: kyverno-policy-installed
+  - name: lab-ca-issued
     type: kubectl
-    resource: clusterpolicy/require-non-root-user
-    namespace: ""
+    resource: certificate/lab-ca
+    namespace: cert-manager
+    jsonpath: "{.status.conditions[?(@.type=='Ready')].status}"
+    operator: "=="
+    value: "True"
+    remediation: "The lab root CA has not been signed, so lab-ca-issuer cannot issue anything. Diagnose with: kubectl -n cert-manager describe certificate lab-ca — then re-apply the chain with 'labctl scenario up security-compliance'."
 
-  - name: network-policy-default-deny
+  - name: namespace-isolation-enforced
+    type: script
+    script: checks/check-namespace-isolation.sh
+    timeoutSeconds: 60
+    remediation: "Isolation is a property of the whole NetworkPolicy set, not of one object — a single allow-all rule cancels default-deny-all while leaving it in place. Read the set: kubectl -n go-api get networkpolicies -o yaml"
+
+  - name: go-api-scrape-not-blocked
+    type: promql
+    query: 'min(up{kubernetes_namespace="go-api",job="go-api"})'
+    operator: ">="
+    value: "1"
+    remediation: "go-api's metrics are not arriving, so its panels read 'No data' while the app itself looks healthy. Find the target and its error at http://prometheus.{{.DomainSuffix}}/targets (search go-api), then check the pod still carries the prometheus.io/scrape annotation and that allow-monitoring-scrape names the port the target is actually on — an injected mesh sidecar publishes merged metrics on 15020, not the app's own 8080. See docs/runbooks/R13-observability-pipeline.md."
+
+  - name: kyverno-metrics-scraped
+    type: promql
+    query: 'count(kyverno_policy_results_total)'
+    operator: ">="
+    value: "1"
+    remediation: "Straight after activation this is usually just timing — Prometheus needs a scrape interval or two to pick up the new ServiceMonitors, so re-run with 'labctl scenario verify security-compliance --watch'. If it stays red, Kyverno is genuinely not being scraped and every policy panel on the security dashboard reads 'No data'. The ServiceMonitors come from values/kyverno.yaml — confirm they exist (kubectl -n kyverno get servicemonitor) and that Prometheus selects them (see docs/runbooks/R13-observability-pipeline.md)."
+
+  - name: go-api-workload-compliant
+    type: script
+    script: checks/check-workload-compliant.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "This is the remediation task. Read what Kyverno flagged — kubectl -n go-api get policyreports -o wide — then fix the Deployment's pod template, not the policy: kubectl -n go-api patch deployment go-api --type=json -p '[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/securityContext/runAsNonRoot\",\"value\":true}]' && kubectl -n go-api rollout status deployment/go-api"
+
+  - name: policies-enforcing
+    type: script
+    script: checks/check-policies-enforcing.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "This is the promotion task, and it comes AFTER the workload is compliant — promoting first would reject go-api's own rollouts. Flip both Pod Security policies: for p in deny-privilege-escalation require-non-root-user; do kubectl patch clusterpolicy $p --type=json -p '[{\"op\":\"replace\",\"path\":\"/spec/rules/0/validate/failureAction\",\"value\":\"Enforce\"}]'; done"
+
+  - name: go-api-tls-certificate-ready
     type: kubectl
-    resource: networkpolicy/default-deny-all
+    resource: certificate/go-api-tls
     namespace: go-api
+    jsonpath: "{.status.conditions[?(@.type=='Ready')].status}"
+    operator: "=="
+    value: "True"
+    pending: true
+    remediation: "This is the certificate task. Apply the go-api-tls Certificate snippet from 'labctl scenario info security-compliance', then watch cert-manager sign it: kubectl -n go-api describe certificate go-api-tls. The signed leaf lands in the Secret go-api-tls-secret, which an Ingress references under tls[]."
+
+  - name: legacy-workload-exempted
+    type: script
+    script: checks/check-legacy-exception.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "legacy-reporter is a vendor workload you cannot edit, so the only honest route is a scoped exemption — apply the PolicyException snippet from 'labctl scenario info security-compliance'. This grades SCOPE, not just presence: it admits a Pod carrying compliance.snowops.net/exempt=vendor-image and then checks an unlabelled root Pod is still rejected, so widening the exception to the namespace, adding go-api to a policy's exclude list, or demoting the policy all fail it."
+
+  - name: ingress-serves-lab-certificate
+    type: script
+    script: checks/check-ingress-tls.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "A Ready Certificate protects nothing until something serves it — this grades the TLS handshake itself, not the manifest. Point the Ingress at the Secret: kubectl -n go-api patch ingress go-api --type=merge -p '{\"metadata\":{\"annotations\":{\"traefik.ingress.kubernetes.io/router.entrypoints\":\"web,websecure\"}},\"spec\":{\"tls\":[{\"hosts\":[\"go-api.{{.DomainSuffix}}\"],\"secretName\":\"go-api-tls-secret\"}]}}' — then check what is on the wire: echo | openssl s_client -connect go-api.{{.DomainSuffix}}:443 -servername go-api.{{.DomainSuffix}} 2>/dev/null | openssl x509 -noout -issuer -subject"
 
 snippets:
-  - label: "Kyverno ClusterPolicies (no privilege escalation, non-root, explicit tags)"
-    description: "Pod-security and best-practice policies in Audit mode, so existing workloads aren't disrupted on activation. Review the policy reports, then switch to Enforce once violations are resolved."
+  - label: "The four ClusterPolicies — shipped in Audit, promoted to Enforce by you"
+    description: "Read validate.failureAction on each rule: that single field is the difference between a report and a rejection. failureAction is per-rule (spec.validationFailureAction is deprecated), so a policy can be promoted one rule at a time — which is how a real team rolls enforcement out. Note the exclude list: platform namespaces legitimately need root and host paths, and enforcing pod-security on them would wedge the cluster."
     path: manifests/kyverno-policies.yaml
   - label: "Default-deny NetworkPolicies with explicit allow rules"
-    description: "Locks the go-api namespace to default-deny, then re-opens exactly what it needs: DNS, Traefik ingress, and Prometheus scraping — the model for zero-trust namespace isolation."
+    description: "Locks the go-api namespace to default-deny in BOTH directions, then re-opens exactly what it needs: DNS egress, ingress from Traefik, ingress from Prometheus. NetworkPolicies are additive and there is no 'deny' rule — so a single allow-all policy added later cancels the whole baseline without touching it. That is what 'namespace-isolation-enforced' grades."
     path: manifests/network-policies.yaml
+  - label: "legacy-reporter — the workload you are not allowed to fix"
+    description: "A stand-in for the vendor image every Audit rollout turns up: a fixed manifest the team does not own, violating three of the four policies. It is what makes the policy report a triage exercise instead of a one-line fix. Note the compliance.snowops.net/exempt label — an exemption should match an intent, so it survives a rename and reads as a decision."
+    path: manifests/legacy-workload.yaml
+  - label: "PolicyException for legacy-reporter — APPLY THIS ONE YOURSELF"
+    description: "The grown-up answer to 'this workload cannot comply'. It matches a LABEL, not a namespace and not a name, so everything else in go-api stays enforced — that scope is exactly what the grading checks. ruleNames must include the autogen- variants, or the Pod is exempt while the Deployment is still rejected."
+    path: manifests/policy-exception.yaml
+  - label: "The lab CA chain (selfsigned-issuer → lab-ca → lab-ca-issuer)"
+    description: "Installed by the scenario. A self-signed leaf is not what production looks like; here selfsigned-issuer signs a root ONCE, and every workload certificate is issued off that root by lab-ca-issuer — a real chain."
+    path: manifests/cert-issuers.yaml
+  - label: "go-api-tls Certificate — APPLY THIS ONE YOURSELF"
+    description: "The certificate task. cert-manager watches the Certificate, asks lab-ca-issuer for a leaf, and writes it into the Secret go-api-tls-secret. Note duration/renewBefore: cert-manager rotates the leaf 15 days before it expires, which is the whole reason to run it rather than issue certificates by hand."
+    path: manifests/go-api-tls-certificate.yaml
+
+references:
+  - label: "Kyverno — validate rules and failureAction"
+    url: "https://kyverno.io/docs/policy-types/cluster-policy/validate/"
+    note: "The Audit/Enforce field this scenario promotes, and the pattern syntax the four policies use."
+  - label: "Kyverno — policy reports"
+    url: "https://kyverno.io/docs/policy-reports/"
+    note: "What 'kubectl get policyreports' is showing you, and why namespaced reports exist but cluster reports may be empty."
+  - label: "cert-manager — Certificate resource"
+    url: "https://cert-manager.io/docs/usage/certificate/"
+    note: "Every field in the go-api-tls snippet, including renewBefore."
+  - label: "cert-manager — CA issuer"
+    url: "https://cert-manager.io/docs/configuration/ca/"
+    note: "Why the lab signs a root once and issues leaves from it."
+  - label: "Kubernetes — Network Policies"
+    url: "https://kubernetes.io/docs/concepts/services-networking/network-policies/"
+    note: "Read the 'policies are additive' section — it explains why an existence check cannot grade isolation."
 
 explore:
   urls:
-    - label: "Grafana Security Dashboard"
-      url: "http://grafana.{{.DomainSuffix}}"
+    - label: "Grafana — Security & Compliance dashboard"
+      url: "http://grafana.{{.DomainSuffix}}/d/security-compliance"
   commands:
-    - label: "List Kyverno cluster policies"
-      command: "kubectl get clusterpolicies"
-    - label: "View policy reports"
-      command: "kubectl get policyreports -A"
-    - label: "View cluster policy reports"
-      command: "kubectl get clusterpolicyreports"
-    - label: "Test policy audit — create non-compliant pod"
-      command: "kubectl run test-privileged --image=nginx --restart=Never --overrides='{\"spec\":{\"containers\":[{\"name\":\"test\",\"image\":\"nginx\",\"securityContext\":{\"allowPrivilegeEscalation\":true}}]}}' && kubectl get clusterpolicyreports"
-    - label: "List certificates"
-      command: "kubectl get certificates -A"
-    - label: "View network policies"
-      command: "kubectl get networkpolicies -A"
-    - label: "Test network isolation"
-      command: "kubectl run test-curl --image=curlimages/curl --restart=Never --rm -it -- curl -s --connect-timeout 3 http://go-api.go-api.svc.cluster.local:8080/health 2>&1 || echo 'Network policy blocked cross-namespace traffic'"
+    - label: "1. What is being enforced right now? (failureAction is the column that matters)"
+      command: "kubectl get clusterpolicies -o custom-columns='POLICY:.metadata.name,ACTION:.spec.rules[0].validate.failureAction,READY:.status.conditions[?(@.type==\"Ready\")].status'"
+    - label: "2. Read the report — which workload violates which rule"
+      command: "kubectl -n go-api get policyreports -o wide"
+    - label: "3. See the exact failure message for the go-api Deployment"
+      command: "kubectl -n go-api get policyreport -o jsonpath='{range .items[*]}{range .results[?(@.result==\"fail\")]}{.policy}{\" | \"}{.message}{\"\\n\"}{end}{end}' | sort -u"
+    - label: "4. REMEDIATE — fix the workload at the source, then watch the report clear"
+      command: "kubectl -n go-api patch deployment go-api --type=json -p '[{\"op\":\"add\",\"path\":\"/spec/template/spec/containers/0/securityContext/runAsNonRoot\",\"value\":true}]' && kubectl -n go-api rollout status deployment/go-api && sleep 20 && kubectl -n go-api get policyreports -o wide"
+    - label: "5. PROMOTE Audit → Enforce (only once the report is clean)"
+      command: "for p in deny-privilege-escalation require-non-root-user; do kubectl patch clusterpolicy $p --type=json -p '[{\"op\":\"replace\",\"path\":\"/spec/rules/0/validate/failureAction\",\"value\":\"Enforce\"}]'; done"
+    - label: "6a. See what Enforce just broke — legacy-reporter cannot create pods any more"
+      command: "kubectl -n go-api rollout restart deployment/legacy-reporter; sleep 5; kubectl -n go-api describe replicaset -l app=legacy-reporter | grep -A4 -i 'events\\|failedcreate' | tail -8"
+    - label: "6b. EXEMPT it — apply the PolicyException snippet, then confirm it recovers"
+      command: "kubectl -n go-api get polex; kubectl -n go-api rollout status deployment/legacy-reporter --timeout=120s"
+    - label: "6. PROVE it bites — a root Pod is now refused by the webhook, and nothing is created"
+      command: "kubectl -n go-api run policy-probe --image=nginx:1.27 --restart=Never --dry-run=server --overrides='{\"spec\":{\"containers\":[{\"name\":\"policy-probe\",\"image\":\"nginx:1.27\",\"securityContext\":{\"runAsNonRoot\":false,\"allowPrivilegeEscalation\":true}}]}}' || echo '^ rejected by the Kyverno admission webhook — that is enforcement'"
+    - label: "7. ISSUE a certificate — apply the go-api-tls snippet, then watch cert-manager sign it"
+      command: "kubectl -n go-api get certificate,certificaterequest,secret go-api-tls-secret 2>/dev/null; kubectl -n go-api describe certificate go-api-tls 2>/dev/null | tail -20"
+    - label: "8. WIRE IT UP — a Ready certificate protects nothing until the Ingress serves it"
+      command: "kubectl -n go-api patch ingress go-api --type=merge -p '{\"metadata\":{\"annotations\":{\"traefik.ingress.kubernetes.io/router.entrypoints\":\"web,websecure\"}},\"spec\":{\"tls\":[{\"hosts\":[\"go-api.{{.DomainSuffix}}\"],\"secretName\":\"go-api-tls-secret\"}]}}'"
+    - label: "9. PROVE it on the wire — before this, 443 answers with CN=TRAEFIK DEFAULT CERT"
+      command: "echo | openssl s_client -connect go-api.{{.DomainSuffix}}:443 -servername go-api.{{.DomainSuffix}} 2>/dev/null | openssl x509 -noout -issuer -subject -dates"
+    - label: "10. Inspect the signed leaf — issuer, validity window and SANs"
+      command: "kubectl -n go-api get secret go-api-tls-secret -o jsonpath='{.data.tls\\.crt}' | base64 -d | openssl x509 -noout -subject -issuer -dates -ext subjectAltName"
+    - label: "11. The isolation posture — default-deny plus its explicit allowances"
+      command: "kubectl -n go-api get networkpolicies -o custom-columns='NAME:.metadata.name,TYPES:.spec.policyTypes,PODS:.spec.podSelector'"
+    - label: "12. Prove isolation holds — a pod in another namespace must NOT reach go-api"
+      command: "kubectl run np-probe --image=curlimages/curl:8.11.1 --restart=Never --rm -i --overrides='{\"spec\":{\"containers\":[{\"name\":\"np-probe\",\"image\":\"curlimages/curl:8.11.1\",\"command\":[\"curl\",\"-s\",\"-o\",\"/dev/null\",\"-w\",\"cross-namespace HTTP %{http_code}\\n\",\"--connect-timeout\",\"5\",\"http://go-api.go-api.svc.cluster.local:8080/health\"],\"securityContext\":{\"runAsNonRoot\":true,\"runAsUser\":65534,\"allowPrivilegeEscalation\":false},\"resources\":{\"limits\":{\"cpu\":\"50m\",\"memory\":\"64Mi\"}}}]}}'; echo 'HTTP 000 means the NetworkPolicy dropped it — that is the pass'"
+    - label: "13. …while the ingress path, which IS allowed, still works"
+      command: "curl -s -o /dev/null -w 'via ingress HTTP %{http_code}\\n' http://go-api.{{.DomainSuffix}}/health"
+    - label: "14. Grade the whole drill"
+      command: "labctl scenario verify security-compliance --watch --timeout 5m"
   tips:
-    - "Kyverno policies run in Audit mode for this lab — non-compliant resources appear in policy reports without disrupting workloads"
-    - "Policy reports show compliance status for existing resources (not just new ones)"
-    - "Test with: kubectl run test --image=nginx -- Kyverno should enforce require-labels and disallow-privileged policies"
-    - "cert-manager creates a self-signed CA, then a CA issuer — use lab-ca-issuer for certificates"
-    - "Network policies deny all traffic by default, then allow DNS, monitoring, and ingress specifically"
-    - "Try accessing an external namespace from go-api — should be blocked by network policies"
+    - "Order matters: remediate FIRST, promote SECOND. Flipping to Enforce while go-api still violates a policy means its next rollout is rejected — which is exactly how teams take themselves down with policy, and why Audit exists."
+    - "Audit vs Enforce is one field: validate.failureAction on each rule. Audit writes a PolicyReport entry; Enforce makes the admission webhook return 'denied'. Nothing else about the policy changes."
+    - "The policy asks for runAsNonRoot on the CONTAINER securityContext. go-api already sets it at POD level — and Kyverno still fails it, because a 'pattern' asserts on the path you wrote. That mismatch is the single most common surprise when writing Kyverno patterns."
+    - "'kubectl apply --dry-run=server' runs the full admission chain without creating anything. It is the honest way to test enforcement — and the way this scenario's grading proves a policy really bites rather than merely existing."
+    - "An exception is a decision, not an escape hatch. Scope it to a label that says WHY, never to a namespace or a name — a namespace-wide exception looks identical in 'kubectl get polex' and quietly turns enforcement off for everything you add later. That is the difference 'legacy-workload-exempted' grades."
+    - "Kyverno's policyExceptions feature has two switches: 'enabled', and 'namespace' — which defaults to '' and restricts exceptions to a single unnamed namespace. Leave it and the feature reads as on while every exception is silently ignored and the pod it exempts is still rejected. The lab sets it to '*' in platform/security/policy/kyverno/values.yaml."
+    - "Existence is not enforcement. A ClusterPolicy that excludes your namespace, and a default-deny NetworkPolicy sitting next to an allow-all one, both look perfectly healthy in 'kubectl get'. Both checks here grade behaviour instead."
+    - "NetworkPolicies are additive and have no deny rule — the only way to deny is for no policy to allow. That is why removing default-deny-all is not the only way to break isolation."
+    - "Default-deny EGRESS is where teams hurt themselves. Deny outbound and a mesh sidecar can never reach istiod: it never gets its config, its probe on :15021 is refused forever, and every new pod sits at 1/2 Running while the app container is perfectly healthy. allow-mesh-control-plane is that rule; read its comment before you write your own default-deny namespace."
+    - "The scrape port is not always the app port: with a sidecar injected, Prometheus scrapes the merged endpoint on 15020, not the app's own 8080, so allow-monitoring-scrape names both. Write the allow rule against the port on http://prometheus.{{.DomainSuffix}}/targets, not the one in the Service."
+    - "Once Enforce is on it applies to YOU. A throwaway 'kubectl run --image=curlimages/curl' debug pod is rejected like anything else — no runAsNonRoot, no limits. Explore step 10 shows the compliant form; needing it is the point, not an inconvenience."
+    - "'kubectl get clusterpolicyreports' is usually empty: reports are written per namespace for namespaced resources. Use 'kubectl get policyreports -A'."
+    - "The security dashboard needs Kyverno's ServiceMonitors, which values/kyverno.yaml enables. If the policy panels read 'No data', that is the finding — see docs/runbooks/R13-observability-pipeline.md."
+    - "A Certificate reaching Ready only means a Secret was written. Until an Ingress references that Secret, port 443 still answers with 'CN=TRAEFIK DEFAULT CERT' — which is why the grading opens a TLS connection instead of reading the manifest."
+    - "cert-manager rotates: the go-api-tls Certificate asks for 90 days and renews at 15 days remaining. Watch it with 'kubectl -n go-api get certificate go-api-tls -o wide'."
+    - "Tear down with 'labctl scenario down security-compliance'. Anything you patched by hand — the Enforce flip, the Deployment securityContext — is yours to revert; the scenario only removes what it installed."

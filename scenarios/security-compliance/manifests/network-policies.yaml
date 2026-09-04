@@ -1,10 +1,17 @@
-# Network policies for the security-compliance scenario.
-# Demonstrates default-deny isolation for the go-api namespace with explicit
-# allow rules for DNS, ingress, and monitoring. (Only go-api is a prerequisite;
-# policies for other namespaces like echo-server are omitted so `scenario up`
-# never fails applying rules to a namespace that isn't deployed.)
+# Zero-trust isolation for the go-api namespace.
+#
+# NetworkPolicies are ADDITIVE and there is no deny rule: traffic is denied only
+# when no policy allows it. So the shape is always the same — one policy that
+# selects every pod and allows nothing (the baseline), then one narrow policy per
+# flow the workload genuinely needs. Adding a single allow-all policy later
+# cancels the baseline without touching it, which is why this scenario grades the
+# posture of the whole set rather than the existence of default-deny-all.
+#
+# Only go-api is a prerequisite, so no policies are written for other app
+# namespaces — `scenario up` must never fail applying rules to a namespace that
+# is not deployed.
 ---
-# Default deny all traffic in go-api namespace
+# The baseline: every pod, both directions, nothing allowed.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -16,7 +23,8 @@ spec:
     - Ingress
     - Egress
 ---
-# Allow DNS for go-api
+# DNS. Without this nothing resolves, and every other allow rule below is
+# useless because the pod cannot turn a Service name into an address.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -27,13 +35,61 @@ spec:
   policyTypes:
     - Egress
   egress:
-    - ports:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
         - port: 53
           protocol: UDP
         - port: 53
           protocol: TCP
 ---
-# Allow Traefik ingress -> go-api
+# Pod-to-pod inside the namespace. A default-deny baseline blocks a workload
+# from talking to its own siblings, which is rarely what anyone intends.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-intra-namespace
+  namespace: go-api
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector: {}
+  egress:
+    - to:
+        - podSelector: {}
+---
+# The service mesh control plane.
+#
+# This is the rule people forget, and the failure is brutal to diagnose: with
+# egress denied, an injected istio-proxy can never reach istiod, so it never
+# receives its configuration, its readiness probe on :15021 is refused forever,
+# and EVERY new pod in the namespace stays 1/2 Running. The workload container
+# is healthy the whole time — only the sidecar is starved — so the Deployment
+# simply never finishes rolling out.
+#
+# Harmless when no mesh is installed: the namespaceSelector matches nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mesh-control-plane
+  namespace: go-api
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+---
+# Inbound from the ingress controller — the only path from outside the cluster.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -52,7 +108,14 @@ spec:
         - port: 8080
           protocol: TCP
 ---
-# Allow Prometheus scraping -> go-api
+# Inbound from Prometheus. Isolation that silently stops metrics being scraped
+# is a misconfiguration, not a security win — the dashboards just go blank.
+#
+# Two ports, because "the metrics port" depends on whether a mesh is present:
+# 8080 is the application's own /metrics, while an injected sidecar publishes a
+# MERGED endpoint on 15020 and Prometheus is annotated to scrape that instead.
+# Allow only 8080 in a meshed namespace and the target goes down with
+# "connection refused" while the app looks perfectly healthy.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -69,4 +132,6 @@ spec:
               kubernetes.io/metadata.name: "{{.MonitoringNamespace}}"
       ports:
         - port: 8080
+          protocol: TCP
+        - port: 15020
           protocol: TCP

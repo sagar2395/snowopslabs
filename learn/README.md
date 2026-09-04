@@ -63,6 +63,16 @@ modules:
 The schema is validated by `go test ./internal/learn/...` in CI — a broken
 `path.yaml` fails the build before it reaches the cluster.
 
+## Reviewing a path
+
+`labctl validate` proves a path is well-formed and its refs resolve. It does not
+prove the path teaches. The
+[learning review](../docs/authoring/learning-review.md) workflow does: it walks
+the path cold on a live lab, runs every module's check *before* the module's
+work to catch checks that are already green, times the walk against
+`estimatedMinutes`, and scores the result out of 5. Below 4.8, the path is still
+a draft.
+
 ## Rules for path authors
 
 1. Checks must be idempotent and exit 0 only when the module's objective is

@@ -1,0 +1,46 @@
+# The scoped exemption for legacy-reporter — APPLY THIS ONE YOURSELF.
+#
+# A PolicyException is the grown-up answer to "this workload cannot comply".
+# The alternative — widening the policy's own exclude list, or demoting it back
+# to Audit — turns off enforcement for everyone to accommodate one workload.
+#
+# Scope is the whole point, and it is what the grading checks: this matches a
+# LABEL, not a namespace and not a name. Anything in go-api without
+# compliance.snowops.net/exempt=vendor-image is still rejected. Widen this to
+# the namespace and you have quietly re-opened the hole you just closed.
+#
+# ruleNames must include the autogen- variants: Kyverno generates a parallel
+# rule for pod controllers, and an exception naming only the Pod rule leaves the
+# Deployment itself rejected.
+---
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: legacy-reporter-exemption
+  namespace: go-api
+spec:
+  exceptions:
+    - policyName: require-non-root-user
+      ruleNames:
+        - require-run-as-non-root
+        - autogen-require-run-as-non-root
+    - policyName: deny-privilege-escalation
+      ruleNames:
+        - deny-privilege-escalation
+        - autogen-deny-privilege-escalation
+    - policyName: require-resource-limits
+      ruleNames:
+        - require-resource-limits
+        - autogen-require-resource-limits
+  match:
+    any:
+      - resources:
+          kinds:
+            - Pod
+            - Deployment
+            - ReplicaSet
+          namespaces:
+            - go-api
+          selector:
+            matchLabels:
+              compliance.snowops.net/exempt: vendor-image

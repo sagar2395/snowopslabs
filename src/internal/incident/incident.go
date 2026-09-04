@@ -502,6 +502,14 @@ func (e *Engine) Resolve(name string, exec *executor.Executor, user string) (*Fa
 	return f, nil
 }
 
+// ResolveCheck expands template variables in a check's fields, so a caller
+// outside this package grades against the same resolved check the incident
+// engine runs. Without it a templated detection URL reaches the HTTP client
+// verbatim and every grade is a parse error.
+func (e *Engine) ResolveCheck(c checks.Check) checks.Check {
+	return e.resolveCheck(c)
+}
+
 // resolveCheck resolves template variables in the detection check's fields.
 func (e *Engine) resolveCheck(c checks.Check) checks.Check {
 	c.URL = e.resolveTemplate(c.URL)

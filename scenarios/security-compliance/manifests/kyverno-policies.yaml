@@ -1,14 +1,17 @@
-# Kyverno ClusterPolicies for the security-compliance scenario
-# All policies use validationFailureAction: Audit so that existing workloads
-# are not disrupted on activation. Review policy reports and switch to Enforce
-# once all violations are resolved.
+# Kyverno ClusterPolicies for the security-compliance scenario.
 #
-# System namespace exclusions (kube-system, kyverno, cert-manager, argocd, chaos-mesh)
-# prevent these policies from blocking cluster-level components.
+# Every policy ships with validate.failureAction: Audit — the mode a real team
+# starts in. Audit records violations in policy reports without rejecting
+# anything, so turning policy on cannot take production down. Moving a policy to
+# Enforce once its violations are cleared is the drill this scenario grades.
+#
+# failureAction is per-rule (spec.validationFailureAction is deprecated), so
+# a policy can be promoted one rule at a time.
+#
+# System namespaces are excluded because platform components legitimately need
+# root, host paths and unbounded limits; enforcing pod-security on them would
+# wedge the cluster rather than teach anything.
 ---
-# Policy 1: Deny privilege escalation
-# Blocks containers that set allowPrivilegeEscalation: true, which grants a
-# process more privileges than its parent. This is a common attack vector.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -23,7 +26,6 @@ metadata:
       and is a common attack vector. All containers must set
       allowPrivilegeEscalation: false.
 spec:
-  validationFailureAction: Audit
   background: true
   rules:
     - name: deny-privilege-escalation
@@ -39,9 +41,13 @@ spec:
                 - kube-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - traefik
+                - istio-system
                 - argocd
                 - chaos-mesh
       validate:
+        failureAction: Audit
         message: "Privilege escalation is not allowed. Set securityContext.allowPrivilegeEscalation: false."
         pattern:
           spec:
@@ -49,9 +55,6 @@ spec:
               - securityContext:
                   allowPrivilegeEscalation: false
 ---
-# Policy 2: Require non-root user
-# All containers must set runAsNonRoot: true to prevent processes running as
-# UID 0, which would have root access on the host if container isolation breaks.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -64,7 +67,6 @@ metadata:
       Containers should not run as root. Requiring runAsNonRoot: true forces
       the runtime to reject any image whose entrypoint would run as UID 0.
 spec:
-  validationFailureAction: Audit
   background: true
   rules:
     - name: require-run-as-non-root
@@ -80,9 +82,13 @@ spec:
                 - kube-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - traefik
+                - istio-system
                 - argocd
                 - chaos-mesh
       validate:
+        failureAction: Audit
         message: "Containers must not run as root. Set securityContext.runAsNonRoot: true."
         pattern:
           spec:
@@ -90,9 +96,6 @@ spec:
               - securityContext:
                   runAsNonRoot: true
 ---
-# Policy 3: Require resource limits
-# All containers must declare CPU and memory limits to prevent noisy-neighbor
-# events and unbounded resource consumption in the lab cluster.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -105,7 +108,6 @@ metadata:
       Containers without CPU and memory limits can starve other workloads.
       All containers must specify both cpu and memory limits.
 spec:
-  validationFailureAction: Audit
   background: true
   rules:
     - name: require-resource-limits
@@ -121,9 +123,13 @@ spec:
                 - kube-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - traefik
+                - istio-system
                 - argocd
                 - chaos-mesh
       validate:
+        failureAction: Audit
         message: "Containers must declare CPU and memory limits."
         pattern:
           spec:
@@ -133,9 +139,6 @@ spec:
                     memory: "?*"
                     cpu: "?*"
 ---
-# Policy 4: Block latest tag
-# Images tagged :latest (or with no tag) are non-deterministic — two deploys of
-# the same manifest may pull different images. All images must use explicit tags.
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -148,7 +151,6 @@ metadata:
       Using :latest or no tag makes deployments non-reproducible. All container
       images must reference an explicit version tag.
 spec:
-  validationFailureAction: Audit
   background: true
   rules:
     - name: deny-latest-tag
@@ -164,9 +166,13 @@ spec:
                 - kube-system
                 - kyverno
                 - cert-manager
+                - monitoring
+                - traefik
+                - istio-system
                 - argocd
                 - chaos-mesh
       validate:
+        failureAction: Audit
         message: "Using ':latest' tag is not allowed. Specify an explicit image version tag."
         pattern:
           spec:

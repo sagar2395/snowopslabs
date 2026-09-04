@@ -102,6 +102,10 @@ func runWithStubKubectl(t *testing.T, script string) (string, string, error) {
 	cmd.Env = append(os.Environ(),
 		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"KUBECTL_LOG="+logFile,
+		// There is no cluster behind the stub, so a script that waits for the
+		// symptom it just staged would poll until its own timeout. Scripts that
+		// wait honour this budget; the rest ignore it.
+		"FAULT_WAIT_SECONDS=0",
 	)
 	out, err := cmd.CombinedOutput()
 	log, _ := os.ReadFile(logFile)

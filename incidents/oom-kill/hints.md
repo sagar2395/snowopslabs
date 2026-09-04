@@ -11,7 +11,9 @@ killing the container for exceeding its memory limit. So what *is* the
 limit? Check the deployment's `resources` block.
 
 ## Hint 3
-A 16Mi limit can't even hold a Go runtime. Compare with what the app
-actually needs (Grafana's container memory panels, or
-`kubectl top pod -n echo-server` on a healthy replica) and raise it:
+The limit is 8Mi. That is enough to idle on — which is why nothing looked
+wrong until traffic arrived — but not enough to serve requests. Compare it
+with what the app actually needs under load (Grafana's container memory
+panels, or `kubectl top pod -n echo-server` while the load is running) and
+raise it:
 `kubectl -n echo-server set resources deploy/echo-server --limits=memory=256Mi --requests=memory=64Mi`.

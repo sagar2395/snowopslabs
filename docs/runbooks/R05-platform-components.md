@@ -47,6 +47,24 @@ only when the release already exists, or Helm's own CRD install conflicts on
 leaves cluster-scoped CRDs behind is not uninstalled, and the next install
 inherits a CRD whose `status.storedVersions` can block it outright.
 
+**Kyverno's CRD migration hook fails every upgrade.** The chart's `post-upgrade`
+Job (`crds.migration.enabled`, default `true`) walks each Kyverno CRD to bump its
+stored version, but its ServiceAccount is not authorised for
+`policyexceptions.policies.kyverno.io`. The Job exits `Error: Unauthorized`, the
+hook never becomes ready, and Helm fails the whole upgrade with
+`context deadline exceeded` — so `labctl scenario up security-compliance --force`
+cannot converge. It is disabled in
+`platform/security/policy/kyverno/values.yaml`; the lab pins one version, so
+there is no stored version to migrate. Re-enable it only for an upgrade that
+genuinely changes a stored CRD version.
+
+**Kyverno's CRDs are large enough to time out a loaded apiserver.** A
+`helm upgrade` on a busy k3d lab can fail with
+`server-side apply failed for object /clusterpolicies.kyverno.io … Timeout:
+request did not complete within requested timeout`. This is apiserver pressure,
+not a chart fault: retry the same command, or free capacity by tearing down
+another scenario first.
+
 **Most of a StatefulSet spec is immutable.** Use `helm_upgrade_install` from
 `platform/_lib/helm.sh` for any StatefulSet-backed chart. It recovers by
 deleting the controller with `--cascade=orphan` — pods and PVCs survive — and
