@@ -63,7 +63,7 @@ type Scenario struct {
 	DisplayName string `yaml:"displayName" json:"displayName"`
 	Description string `yaml:"description" json:"description"`
 	Category    string `yaml:"category" json:"category"`
-	// Verified marks content confirmed end-to-end on a fresh cluster (W4-T07).
+	// Verified marks content confirmed end-to-end on a fresh cluster.
 	// Absent/false is unverified — usable, but the UI and CLI flag it so a user
 	// knows it hasn't been vouched for yet.
 	Verified      bool          `yaml:"verified,omitempty" json:"verified"`
@@ -417,7 +417,7 @@ func (s *Scenario) Validate() error {
 			add("%s: script component requires script", where)
 		}
 		// Asset paths must stay inside the scenario directory — external
-		// packs (task 044) are untrusted, and in-repo scenarios have no
+		// packs are untrusted, and in-repo scenarios have no
 		// business escaping their dir either.
 		for field, p := range map[string]string{"valuesFile": c.ValuesFile, "path": c.Path, "script": c.Script, "uninstallScript": c.UninstallScript} {
 			if unsafePath(p) {

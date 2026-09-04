@@ -84,7 +84,7 @@ func TestLoginLimiter_KeysAreIndependent(t *testing.T) {
 }
 
 // End-to-end: a credential-stuffing loop against the login endpoint is cut off
-// with 429 once the per-client cap is hit — the W5 exit criterion.
+// with 429 once the per-client cap is hit.
 func TestAuthLogin_RateLimitsCredentialStuffing(t *testing.T) {
 	s := &Server{
 		authEnabled: true,

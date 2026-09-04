@@ -12,7 +12,7 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
-// The run console (W6-T05) is a read-mostly view over the durable run store:
+// The run console is a read-mostly view over the durable run store:
 // list recorded runs, open one to watch its timeline and live transcript, and
 // cancel one that is still going. The store is the same database labctl writes
 // through the run engine, so the console shows runs whichever process created

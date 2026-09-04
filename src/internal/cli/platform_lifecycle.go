@@ -30,7 +30,7 @@ not in the inventory and are left untouched.`,
 }
 
 // Single-target `labctl platform up|down` and the default `platform status`
-// run through the durable engine (W3-T08): a per-component install/uninstall is
+// run through the durable engine: a per-component install/uninstall is
 // a recorded, cancellable run under an exclusive `platform:<category>/<provider>`
 // lock, and status is answered from the store. Bulk `up`/`down` (no target) and
 // `status --live` stay on the legacy executor path; wholesale orchestration and
@@ -150,7 +150,7 @@ func splitComponent(target string) (category, provider string) {
 
 // platformTeardown uninstalls exactly the components the inventory records as
 // installed, and reports what it could not remove instead of exiting 0 silently
-// (W3-T04). Each uninstall is a recorded run; a failure is collected and the
+// Each uninstall is a recorded run; a failure is collected and the
 // teardown carries on, so one stuck component does not strand the rest.
 func platformTeardown(cmd *cobra.Command) error {
 	ctx := cmd.Context()

@@ -129,7 +129,7 @@ func TestLoad_EmptyRoot(t *testing.T) {
 	}
 }
 
-// --- cross-reference (T03) --------------------------------------------------
+// --- cross-reference --------------------------------------------------
 
 func TestLoad_PathReferencesMissingScenario(t *testing.T) {
 	root := t.TempDir()
@@ -205,7 +205,7 @@ func TestLoad_InvalidScenarioComponent(t *testing.T) {
 	findProblem(t, c.Problems(), "helm component requires chart")
 }
 
-// --- templates (T04) --------------------------------------------------------
+// --- templates --------------------------------------------------------
 
 func TestLoad_UnknownTemplateKeyIsAProblem(t *testing.T) {
 	root := t.TempDir()
@@ -253,7 +253,7 @@ checks:
 	}
 }
 
-// --- external roots / override (T09) ----------------------------------------
+// --- external roots / override ----------------------------------------
 
 func TestLoad_LaterRootOverrides(t *testing.T) {
 	base := validRoot(t)

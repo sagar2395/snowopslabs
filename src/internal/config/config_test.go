@@ -174,7 +174,7 @@ func TestLoadAppConfig_NotFound(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Profile / app validation tests (task 029)
+// Profile / app validation tests
 // ---------------------------------------------------------------------------
 
 func TestLoad_InvalidProfile_ReturnsError(t *testing.T) {

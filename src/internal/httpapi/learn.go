@@ -175,7 +175,7 @@ func (s *Server) handleLearnMarkComplete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	// Load the path so the completion is recorded as "<path>/<module>" and
-	// attributed to the authenticated user (task 062).
+	// attributed to the authenticated user.
 	p, err := eng.LoadPath(name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

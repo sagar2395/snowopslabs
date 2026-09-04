@@ -21,7 +21,7 @@ const (
 	ComponentRemoved ComponentStatus = "removed"
 )
 
-// Component is one row of the installed-component inventory (W3-T04): the
+// Component is one row of the installed-component inventory: the
 // lasting effect of an install/uninstall operation, as opposed to the operation
 // itself (a run). Teardown reads this to remove exactly what was installed.
 type Component struct {

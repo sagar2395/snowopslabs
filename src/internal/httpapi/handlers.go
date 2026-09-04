@@ -756,7 +756,7 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Record the verification in history so the results view shows whether the
-	// user solved the scenario, with objectives + per-check breakdown (W4-T02).
+	// user solved the scenario, with objectives + per-check breakdown.
 	s.recordScenarioVerify(name, results, startedAt)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{

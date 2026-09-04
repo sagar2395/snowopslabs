@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # In-cluster runtime "up" — no-op. The labctl server already runs inside the
-# target cluster (team mode, task 063); there is no cluster to create. kubectl
+# target cluster (team mode); there is no cluster to create. kubectl
 # and helm use the in-cluster ServiceAccount config automatically.
 
 echo "In-cluster runtime: using the hosting cluster via the ServiceAccount token."

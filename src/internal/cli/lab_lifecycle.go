@@ -16,11 +16,11 @@ import (
 )
 
 // `labctl lab up|down|status` runs cluster lifecycle through the durable run
-// engine (W3-T01/T08): every bring-up and teardown is cancellable, time-bounded,
+// engine: every bring-up and teardown is cancellable, time-bounded,
 // and recorded in the same store `labctl runs` reads, so an operation can be
 // followed live and read back tomorrow. This replaces the fire-and-forget
 // executor path for the cluster itself; snapshot/restore/reset stay on their
-// existing path until component state lands (W3-T04).
+// existing path until component state lands.
 
 // labEngineFactory builds a lab service over the shared run-engine bootstrap
 // (see newRunEngine). The engine is returned UN-started: `up`/`down` start it,

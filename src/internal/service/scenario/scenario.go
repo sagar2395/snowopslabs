@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package scenario puts the scenario half of the break-it/fix-it loop on the
-// durable run engine (W4-T01). Unlike lab/platform/incident — whose operations
+// durable run engine. Unlike lab/platform/incident — whose operations
 // are single scripts — activating a scenario is multi-component orchestration
 // the scenario engine performs in Go (helm/kubectl per component, per stage). So
 // this service runs it as an in-process engine operation (run.Spec.Func): the
 // whole activation is one recorded, cancellable run, its transcript streamed to
 // the run log, and every component it installs is written to the store's
 // component inventory (kind=scenario) so deactivation and teardown know exactly
-// what to remove — the same inventory platform components use (W3-T04).
+// what to remove — the same inventory platform components use.
 package scenario
 
 import (

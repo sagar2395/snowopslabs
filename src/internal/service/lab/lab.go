@@ -5,20 +5,16 @@
 // cancellable, time-bounded, and recorded in the store rather than shelled out
 // and forgotten (ADR-0003/0004/0006).
 //
-// It is the first service in the internal/service layer and sets the shape the
-// platform (W3-T03) and scenario/incident (W4) services follow:
+// It sets the shape the platform, scenario and incident services follow:
 //
-//   - A service is a thin, domain-specific façade over the engine. It owns the
-//     run Kind, the exclusive LockKey, and how a caller-supplied name maps to a
-//     script; it never executes anything itself.
-//   - Mutations (Up/Down) return a run ID immediately — callers stream progress
-//     from the engine/store, they do not block here.
-//   - Status is answered from the store (fast, always available), with an
-//     opt-in live cluster probe for callers that need ground truth.
+//   - A service is a thin façade over the engine. It owns the run Kind, the
+//     exclusive LockKey and the name-to-script mapping; it executes nothing.
+//   - Mutations return a run ID immediately — callers stream progress from the
+//     store rather than blocking here.
+//   - Status comes from the store, with an opt-in live probe for callers that
+//     need ground truth.
 //
-// Snapshot/reset stay on their existing path (internal/lab) until component
-// state and exact teardown land (W3-T04/T05); this package covers the up/down/
-// status core that unblocks the run console (W6-T05) and the W4 services.
+// Snapshot and reset stay on their existing path (internal/lab).
 package lab
 
 import (

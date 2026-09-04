@@ -47,7 +47,7 @@ type Config struct {
 	HelmReleaseName string
 	HelmValues      string
 
-	// Pack registry (task 069). The community index is a static, optionally
+	// Pack registry. The community index is a static, optionally
 	// signed JSON artifact; these point the CLI at it. Empty key => no signature
 	// verification (community default).
 	RegistryIndexURL string

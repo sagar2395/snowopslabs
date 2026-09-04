@@ -3,8 +3,8 @@ package results
 
 import "sort"
 
-// LeaderboardEntry is the per-user aggregate used by the team leaderboard
-// (task 063). It rolls up every scored run in the store for one user.
+// LeaderboardEntry is the per-user aggregate used by the team leaderboard. It
+// rolls up every scored run in the store for one user.
 type LeaderboardEntry struct {
 	User                string `json:"user"`
 	TotalScore          int    `json:"totalScore"`          // sum of challenge scores (>=0 only)

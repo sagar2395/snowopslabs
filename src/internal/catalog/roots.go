@@ -10,7 +10,7 @@ import (
 // ContentPathEnv is the environment variable naming extra content roots,
 // separated by the OS path-list separator (":" on Unix). Roots listed here are
 // loaded after the in-repo root, so an external root can add new content or
-// shadow in-repo items of the same name without forking the repository (W2-T09).
+// shadow in-repo items of the same name without forking the repository.
 const ContentPathEnv = "SNOWOPS_CONTENT_PATH"
 
 // ResolveRoots returns the ordered content roots to load: the project root

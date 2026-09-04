@@ -16,7 +16,7 @@ import (
 // `labctl validate` loads every content item (scenarios, incidents, learning
 // paths, challenges) from the in-repo root and any SNOWOPS_CONTENT_PATH
 // roots, and reports schema, cross-reference and template problems. It exits
-// non-zero when anything is wrong so CI can gate on it (W2-T07).
+// non-zero when anything is wrong so CI can gate on it.
 func validateCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{

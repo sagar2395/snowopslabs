@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package inventory keeps the store's installed-component inventory in step with
-// what the run engine actually did (W3-T04). It is the bridge between the
+// what the run engine actually did. It is the bridge between the
 // domain-agnostic engine and the component table: registered as a run.FinishHook,
 // it watches runs finish and records the lasting effect — a succeeded
 // platform.install adds the component, a succeeded platform.uninstall marks it

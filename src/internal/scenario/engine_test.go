@@ -452,7 +452,7 @@ func TestPreflight_AllValid(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Idempotency tests (task 019)
+// Idempotency tests
 // ---------------------------------------------------------------------------
 
 const minimalScenarioYAML = `name: minimal-scenario

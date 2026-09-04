@@ -18,7 +18,7 @@ func resultsStore(s *Server) *results.Store {
 
 // recordScenarioVerify appends a scenario-verification record (objectives +
 // per-check pass/fail) to history, so the results view shows whether the user
-// solved the scenario (W4-T02). Best-effort — a history write never fails verify.
+// solved the scenario. Best-effort — a history write never fails verify.
 func (s *Server) recordScenarioVerify(name string, checkResults []checks.Result, startedAt time.Time) {
 	var objectives []string
 	if sc, err := s.scenes.Get(name); err == nil {
@@ -43,7 +43,7 @@ func dashOr(v string) string {
 	return v
 }
 
-// GET /api/results — all records, newest first.
+// GET /api/v2/results — all records, newest first.
 func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 	store := resultsStore(s)
 	recs, err := store.All()
@@ -61,7 +61,7 @@ func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, recs)
 }
 
-// GET /api/results/{kind} — records for a specific kind.
+// GET /api/v2/results/{kind} — records for a specific kind.
 func (s *Server) handleResultsByKind(w http.ResponseWriter, r *http.Request) {
 	kind := mux.Vars(r)["kind"]
 	switch kind {
@@ -87,7 +87,7 @@ func (s *Server) handleResultsByKind(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, recs)
 }
 
-// GET /api/leaderboard — per-user aggregate ranking for team mode (task 063).
+// GET /api/v2/leaderboard — per-user aggregate ranking for team mode.
 func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	store := resultsStore(s)
 	board, err := store.Leaderboard()
@@ -101,7 +101,7 @@ func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, board)
 }
 
-// GET /api/progress — learn module completions grouped by path.
+// GET /api/v2/progress — learn module completions grouped by path.
 func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 	store := resultsStore(s)
 	progress, err := store.Progress()
