@@ -1,8 +1,8 @@
 # End-to-end test on kind — the real-cluster gate (docs/TESTING.md).
 #
 # kind is a headless, CI-friendly runtime, so we can run a real lab lifecycle in
-# GitHub Actions: create a cluster, load the app image, activate a scenario, and
-# assert its checks pass via `labctl scenario verify`.
+# GitHub Actions: create a cluster, load the app image, activate a scenario,
+# walk its drill, and assert its checks pass via `labctl scenario verify`.
 #
 # Scheduled nightly + manual only (never per-PR): an e2e run is heavier and
 # slower than the unit suite, and a flake should not block merges.
@@ -60,8 +60,52 @@ jobs:
         # before activating, so the run doesn't fail preflight.
         run: labctl scenario up env-promotion --deploy-prereqs
 
+      - name: Wait for the baseline rollout in every environment
+        # `scenario up` returns once the manifests are applied, not once the
+        # pods are ready, and the readiness checks read .status.readyReplicas.
+        # Without this the run grades the cluster a second or two after apply
+        # and fails on a race, not on a defect.
+        run: |
+          for env_name in dev staging prod; do
+            kubectl -n "env-${env_name}" rollout status deployment/go-api --timeout=180s
+          done
+
+      - name: Promote v1.1.0 through dev -> staging -> prod
+        # env-promotion's last check, newer-release-reached-prod, is declared
+        # `pending: true`: it only passes once a release newer than the v1.0.0
+        # baseline has reached prod, so `verify` on a freshly activated scenario
+        # can never exit 0. Walk the drill the way a learner does — that is what
+        # this job is actually here to prove works end to end: build a versioned
+        # image, load it into the cluster, roll it out per environment, and
+        # record the release in each env's ConfigMap.
+        run: |
+          bash scenarios/env-promotion/scripts/build-image.sh v1.1.0
+          promoted_from=""
+          for env_name in dev staging prod; do
+            ns="env-${env_name}"
+            kubectl -n "$ns" set image deployment/go-api go-api=go-api:v1.1.0
+            kubectl -n "$ns" rollout status deployment/go-api --timeout=180s
+            kubectl -n "$ns" patch cm env-metadata --type=merge -p "{\"data\":{\"declared_tag\":\"v1.1.0\",\"promoted_from\":\"${promoted_from}\",\"promoted_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}"
+            promoted_from="$env_name"
+          done
+
       - name: Verify scenario checks pass
-        run: labctl scenario verify env-promotion
+        # --watch so the last of the superseded pods finishing termination reads
+        # as "not settled yet" rather than as a failed run:
+        # check-images-consistent.sh looks at every Running pod, and a pod that
+        # is terminating is still Phase=Running for a few seconds after
+        # `rollout status` returns.
+        run: labctl scenario verify env-promotion --watch --timeout=5m
+
+      - name: Dump cluster state on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          for env_name in dev staging prod; do
+            ns="env-${env_name}"
+            kubectl -n "$ns" get deploy,rs,cm -o wide || true
+            kubectl -n "$ns" describe deployment go-api || true
+          done
 
       - name: Tear down scenario
         if: always()
