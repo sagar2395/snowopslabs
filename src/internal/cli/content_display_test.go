@@ -82,3 +82,50 @@ func TestRenderSnippets_MissingFileReportedInline(t *testing.T) {
 		t.Fatalf("expected an inline unavailable notice, got %q", buf.String())
 	}
 }
+
+// `scenario info` is the learner's first contact, and it used to print the raw
+// "{{.MonitoringNamespace}}" — sending them to a namespace that does not exist
+// while install had already resolved it. observability-sre and gitops-cicd both
+// hit this.
+func TestRenderComponent_ResolvesTemplates(t *testing.T) {
+	resolve := func(s string) string {
+		return strings.ReplaceAll(s, "{{.MonitoringNamespace}}", "monitoring")
+	}
+
+	tests := []struct {
+		name string
+		comp scenario.Component
+		want string
+	}{
+		{
+			"templated namespace resolves",
+			scenario.Component{Name: "slo-dashboards", Type: "grafana-dashboard", Namespace: "{{.MonitoringNamespace}}"},
+			"  - slo-dashboards [grafana-dashboard] ns=monitoring\n",
+		},
+		{
+			"templated namespace resolves alongside a chart",
+			scenario.Component{Name: "loki", Type: "helm", Chart: "grafana-community/loki", Namespace: "{{.MonitoringNamespace}}"},
+			"  - loki [helm] chart=grafana-community/loki ns=monitoring\n",
+		},
+		{
+			"a literal namespace is unchanged",
+			scenario.Component{Name: "git-server", Type: "manifest", Namespace: "gitops"},
+			"  - git-server [manifest] ns=gitops\n",
+		},
+		{
+			"a component with no chart or namespace prints neither",
+			scenario.Component{Name: "gitops-demo-app", Type: "script"},
+			"  - gitops-demo-app [script]\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			renderComponent(&buf, tt.comp, "  ", resolve)
+			if got := buf.String(); got != tt.want {
+				t.Fatalf("renderComponent mismatch:\n got: %q\nwant: %q", got, tt.want)
+			}
+		})
+	}
+}

@@ -3,8 +3,10 @@
 
 # ArgoCD Server
 server:
-  # Run insecure (no TLS) for local dev behind ingress
   insecure: true
+
+  metrics:
+    enabled: true
 
   # Ingress configuration (Traefik)
   ingress:
@@ -12,9 +14,7 @@ server:
     ingressClassName: traefik
     annotations:
       traefik.ingress.kubernetes.io/router.entrypoints: web
-    # hostname is injected at install time via DOMAIN_SUFFIX — see install.sh
 
-  # Resource limits (minimal for local dev)
   resources:
     limits:
       cpu: 500m
@@ -26,11 +26,13 @@ server:
 # ArgoCD configs
 configs:
   params:
-    # Required for running behind HTTP ingress without TLS termination
     server.insecure: "true"
 
 # Controller
 controller:
+  metrics:
+    enabled: true
+
   resources:
     limits:
       cpu: 500m
@@ -41,6 +43,9 @@ controller:
 
 # Repo Server
 repoServer:
+  metrics:
+    enabled: true
+
   resources:
     limits:
       cpu: 500m

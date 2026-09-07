@@ -146,6 +146,63 @@ run). The same runs appear in `labctl runs list|logs` and in the web run console
 
 ---
 
+## 8. Replacing a node in a running lab
+
+`k3d node create` is not a drop-in for a node the cluster already had. Two
+traps bite every time, and both look like "the lab is broken" rather than like a
+cause. `scenarios/cluster-upgrade-drill/scripts/roll-node.sh` handles both; any
+other code path that adds a node must too.
+
+**The new node never goes Ready — containerd's CRI plugin failed to load.**
+The colima/Docker VM defaults `fs.inotify.max_user_instances` to 128, which is
+too low for containerd's CNI watcher. The node comes up, k3s runs, and
+`containerd.log` says:
+
+```
+failed to create CRI service: failed to create cni conf monitor for default:
+failed to create fsnotify watcher: too many open files
+```
+
+`runtimes/k3d/up.sh` raises the limit to 512 via `raise_inotify_limits` at
+cluster-create time only, so a node created later never gets it. Raise the
+sysctl on the cluster's node containers, then restart the new node — containerd
+has already failed by the time the sysctl lands:
+
+```sh
+for n in $(docker ps --filter "label=k3d.cluster=snowops" --format '{{.Names}}'); do
+  docker exec "$n" sysctl -w fs.inotify.max_user_instances=512
+done
+docker restart <new-node>
+```
+
+**The app lands in ImagePullBackOff on the new node.** Locally built lab images
+(`go-api`, `echo-server`) are side-loaded with `k3d image import` at deploy time
+(`src/engine/deploy.sh`) and exist in no registry. A fresh node has an empty
+image store, so re-import after it joins:
+
+```sh
+k3d image import go-api:v1.2.0 -c snowops
+```
+
+**Deleting a node destroys the local-path volumes pinned to it.** local-path PVs
+carry node affinity. When the node goes, the data goes with it, but the PV and
+its claim survive, so the pod sits `Pending` forever with "didn't match
+PersistentVolume's node affinity". In this lab that routinely strands
+Prometheus, Alertmanager and Loki — which means a scenario graded from
+Prometheus can no longer be graded at all. Release the dead claims so their
+StatefulSets rebind:
+
+```sh
+DRY_RUN=true bash scenarios/cluster-upgrade-drill/scripts/reclaim-stranded-pvcs.sh
+bash scenarios/cluster-upgrade-drill/scripts/reclaim-stranded-pvcs.sh
+```
+
+Also note that `k3d node create <name>` does not produce a node called `<name>`:
+k3d prefixes `k3d-` and appends its own index, so the created node must be
+discovered by diffing `kubectl get nodes` rather than assumed.
+
+---
+
 ## Sign-off
 
 | Step | Result | Notes |

@@ -15,6 +15,7 @@ import type { Fault, IncidentStatus, IncidentHint, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
+import { Collapsible } from '../components/Collapsible'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 interface IncidentsProps {
@@ -383,15 +384,14 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
             )}
             {detail.snippets && detail.snippets.length > 0 && (
               <div className="modal-section">
-                <h3>Applyable snippets</h3>
-                <div className="stack-3">
+                <h3>Applyable snippets <span className="hint-text">(expand one to read it)</span></h3>
+                <div className="collapse-group">
                   {detail.snippets.map((s, i) => (
-                    <div key={i}>
-                      <div className="field-label">{s.label}</div>
+                    <Collapsible key={i} title={s.label} aside={s.path} defaultOpen={i === 0}>
                       {s.description && <div className="field-help">{s.description}</div>}
                       {s.yaml && <pre className="modal-code"><code>{s.yaml}</code></pre>}
                       {s.path && !s.yaml && <div className="cli-hint"><code>{s.path}</code></div>}
-                    </div>
+                    </Collapsible>
                   ))}
                 </div>
               </div>

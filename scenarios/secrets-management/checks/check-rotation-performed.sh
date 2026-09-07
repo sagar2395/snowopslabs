@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -eu
+
+# Grades LEARNER work: the value in Vault must no longer be the baseline stage 1
+# seeded. Any rotation the learner performs satisfies this; no specific value is
+# demanded, so the drill is not a guess-the-magic-string exercise.
+
+ROOT_TOKEN="${VAULT_DEV_ROOT_TOKEN:-root}"
+BASELINE="${SECRETS_BASELINE_VALUE:-baseline-v1}"
+
+CURRENT="$(kubectl exec -n vault vault-0 -- sh -c \
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv get -field=api-key secret/go-api" 2>/dev/null || true)"
+
+if [ -z "$CURRENT" ]; then
+  echo "NOT COMPLETE: could not read secret/go-api from Vault." >&2
+  exit 1
+fi
+
+if [ "$CURRENT" = "$BASELINE" ]; then
+  echo "PENDING: secret/go-api is still the baseline ('${BASELINE}') — you have not rotated it yet." >&2
+  exit 1
+fi
+
+echo "OK: secret/go-api was rotated away from the baseline."

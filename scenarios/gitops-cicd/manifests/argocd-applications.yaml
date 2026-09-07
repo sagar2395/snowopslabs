@@ -1,60 +1,31 @@
-## ArgoCD Application CRDs
-## These Application resources tell ArgoCD which apps to manage declaratively.
-## ArgoCD will watch the referenced Git paths and keep the cluster in sync.
----
-# Application for go-api
+## The GitOps contract: one Application binds a path in the lab's Git repo to a
+## destination in this cluster. Everything else — what image runs, how many
+## replicas — is decided in Git, never with kubectl.
+##
+## No resources-finalizer here on purpose. With the finalizer, deleting this
+## Application cascades a delete through everything it manages, which on
+## teardown races the controller being uninstalled and wedges the namespace.
+## scripts/remove-apps.sh does the cleanup explicitly instead.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: go-api
+  name: gitops-demo
   namespace: argocd
   labels:
-    app.kubernetes.io/part-of: sagars-lab
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
+    app.kubernetes.io/part-of: gitops-cicd
 spec:
   project: default
   source:
-    repoURL: https://github.com/sagar2395/snowopslabs.git
-    targetRevision: HEAD
-    path: apps/go-api/deploy/helm
-    helm:
-      valueFiles:
-        - values-dev.yaml
+    repoURL: git://git-server.gitops.svc.cluster.local:9418/platform.git
+    targetRevision: main
+    path: demo
   destination:
     server: https://kubernetes.default.svc
-    namespace: go-api
+    namespace: gitops-demo
   syncPolicy:
     automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - CreateNamespace=true
----
-# Application for echo-server
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: echo-server
-  namespace: argocd
-  labels:
-    app.kubernetes.io/part-of: sagars-lab
-  finalizers:
-    - resources-finalizer.argocd.argoproj.io
-spec:
-  project: default
-  source:
-    repoURL: https://github.com/sagar2395/snowopslabs.git
-    targetRevision: HEAD
-    path: apps/echo-server/deploy/helm
-    helm:
-      valueFiles:
-        - values-dev.yaml
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: echo-server
-  syncPolicy:
-    automated:
+      ## prune: a file deleted in Git is deleted from the cluster.
+      ## selfHeal: a change made with kubectl is reverted back to Git.
       prune: true
       selfHeal: true
     syncOptions:

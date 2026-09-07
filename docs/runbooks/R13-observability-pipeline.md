@@ -34,6 +34,13 @@ back to `*SelectorNilUsesHelmValues`, which restricts selection to
 and label every ServiceMonitor, PodMonitor and PrometheusRule
 `release: prometheus` anyway.
 
+**A scrapeTimeout above the scrapeInterval voids the ServiceMonitor.**
+prometheus-operator rejects it outright (`InvalidConfiguration`, visible only in
+the operator log and a Warning event) and the target never appears. Charts that
+hardcode a timeout make this easy to hit: external-secrets pins
+`scrapeTimeout: 25s`, so a `serviceMonitor.interval` below 30s silently drops
+every ESO metric.
+
 **Tempo's HTTP API is port 3200**, not 3100. A datasource pointed at 3100 fails
 every query and looks exactly like "nothing was traced".
 
@@ -63,6 +70,18 @@ CLI output being in ms. A panel labelled `ms` is wrong by 1000×.
 
 **Apps export OTLP to Grafana Alloy, never straight to the backend.** Alloy
 forwards to Tempo — see [ADR-0012](../adr/0012-alloy-as-trace-collector.md).
+
+**Chaos Mesh ships no ServiceMonitor**, and its `prometheus.serviceMonitor`
+values key does not exist in the chart — setting it is silently ignored, so the
+chaos panels stay blank forever. Declare the scrape yourself against
+`chaos-mesh-controller-manager`, whose metrics port is named `http` (10080), not
+`metrics`.
+
+**The Chaos Mesh experiment gauge is `chaos_controller_manager_chaos_experiments`**,
+not `chaos_mesh_experiments`, its `phase` values are lowercase (`running`,
+`finished`), and the experiment's own namespace arrives as `exported_namespace`
+because the scrape target's `namespace` label wins. All three fail as an empty
+panel rather than an error.
 
 **Scenario checks should assert the metric exists**, so an empty dashboard fails
 `labctl scenario verify` instead of quietly confusing a learner.

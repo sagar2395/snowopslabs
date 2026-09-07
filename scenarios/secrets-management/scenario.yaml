@@ -2,12 +2,13 @@ apiVersion: scenario.snowops.net/v2
 name: secrets-management
 verified: true
 displayName: "Secrets Management & Rotation"
-description: "go-api consumes a Vault-backed secret synced by External Secrets. Stage 1 wires the sync and seeds a baseline value; stage 2 rotates it in Vault. A check verifies the new value propagated to the Kubernetes Secret with no redeploy."
+description: "A workload mounts a Vault-backed secret that External Secrets keeps in sync. You rotate the value in Vault; it must reach the running pod through ESO and the kubelet with no restart and no redeploy. The grade is what the running container reads from disk."
 category: security
 prerequisites:
   platform:
     - secrets/vault
     - secrets/external-secrets
+    - monitoring/metrics
   apps:
     - go-api
 runtimes:
@@ -15,39 +16,32 @@ runtimes:
   - kind
 
 objectives:
-  - "Sync a Vault KV secret into a Kubernetes Secret via External Secrets"
-  - "Rotate the secret in Vault and watch it propagate without a redeploy"
-  - "Treat rotation, not redeploy, as the way secrets change"
+  - "Compare two workloads consuming the same Vault-backed Secret — one as a file, one as an env var"
+  - "Rotate the value in Vault with the vault CLI and watch it flow through ESO to the pod"
+  - "Prove the rotation reached the file-mounted container with no restart and no redeploy"
+  - "Show the env-var container never sees it, and say why that is not a bug"
+  - "Read the rotation on ESO's own metrics rather than by polling kubectl"
 
 stages:
   - name: consume
-    description: Wire the Vault->ESO->Secret sync and seed a baseline value
+    description: Seed a known baseline in Vault and stand up two consumers of the same Secret — one mounting it as a file, one taking it as an env var
     components:
-      - name: es-wiring
+      - name: secret-consumers
         type: manifest
-        path: manifests/es-wiring.yaml
+        path: manifests/consumer.yaml
         namespace: go-api
 
       - name: seed-baseline
         type: script
         script: scripts/seed-baseline.sh
+        uninstallScript: scripts/restore-baseline.sh
 
-  - name: rotate
-    description: Rotate the value in Vault and let ESO propagate it
-    components:
-      - name: rotate-secret
-        type: script
-        script: scripts/rotate.sh
+      - name: rotation-dashboard
+        type: grafana-dashboard
+        path: dashboards/
+        namespace: "{{.MonitoringNamespace}}"
 
 checks:
-  - name: vault-running
-    type: kubectl
-    resource: pod/vault-0
-    namespace: vault
-    jsonpath: "{.status.phase}"
-    operator: "=="
-    value: "Running"
-
   - name: eso-controller-ready
     type: kubectl
     resource: deployment/external-secrets
@@ -55,6 +49,7 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "The sync operator is down. Install or repair it: labctl platform up secrets/external-secrets"
 
   - name: externalsecret-ready
     type: kubectl
@@ -63,32 +58,89 @@ checks:
     jsonpath: '{.status.conditions[?(@.type=="Ready")].status}'
     operator: "=="
     value: "True"
+    remediation: "ESO cannot sync from Vault. Check the reason: kubectl -n go-api describe externalsecret go-api-secret — a SecretSyncedError usually means the vault-token secret is wrong or Vault is sealed."
 
-  - name: rotation-propagated
+  - name: eso-metrics-scraped
+    type: promql
+    query: 'count(externalsecret_status_condition{name="go-api-secret"})'
+    operator: ">="
+    value: "1"
+    remediation: "Prometheus is not scraping ESO, so the Secret Rotation dashboard will be empty. Re-apply the platform values with: labctl platform up secrets/external-secrets"
+
+  - name: consumers-running
+    type: kubectl
+    resource: deployment/env-consumer
+    namespace: go-api
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+    remediation: "The env-var control workload is not running. Re-activate the scenario: labctl scenario up secrets-management --force"
+
+  - name: consumer-mounted
+    type: kubectl
+    resource: deployment/secret-consumer
+    namespace: go-api
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+    remediation: "The workload that reads the secret from disk is not running. Re-activate the scenario: labctl scenario up secrets-management --force"
+
+  - name: rotation-performed
     type: script
-    script: checks/verify-rotation.sh
+    script: checks/check-rotation-performed.sh
+    pending: true
+    remediation: "You have not rotated the secret yet. Rotate it in Vault: kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/go-api api-key=rotated-v2'"
+
+  - name: rotation-reached-pod
+    type: script
+    script: checks/check-propagated-to-pod.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "The rotation has not reached the container's file yet. ESO refreshes every 15s and the kubelet updates the mounted file on its own cycle, so allow ~90s, then re-run verify. Watch it land with: kubectl -n go-api logs -l app=secret-consumer -f"
+
+  - name: no-redeploy-needed
+    type: script
+    script: checks/check-no-restart.sh
+    remediation: "The consumer restarted or was redeployed, so this run cannot prove in-place propagation. Reset and rotate again without touching the Deployment: labctl scenario reset secrets-management"
+
+  - name: env-consumer-did-not-see-it
+    type: script
+    script: checks/check-env-consumer-stale.sh
+    pending: true
+    remediation: "Rotate the secret in Vault, then compare the two pods: the file-mounted one picks the new value up, the env-var one does not. If both already agree, the env-var pod restarted and re-read the Secret — reset and rotate again: labctl scenario reset secrets-management"
 
 snippets:
-  - label: "External Secrets wiring: Vault SecretStore + ExternalSecret"
-    description: "The sync contract — a SecretStore pointing at Vault and an ExternalSecret that materializes a Kubernetes Secret from it. refreshInterval: 10s makes rotation visible quickly; rotate the value in Vault and watch it propagate."
-    path: manifests/es-wiring.yaml
+  - label: "The same secret, mounted as a file and taken as an env var"
+    description: "A file-mounted secret is the reason rotation works without a redeploy: the kubelet rewrites the file in place when the Secret changes, and the process re-reads it. The same secret consumed via envFrom would be frozen at process start — that is the distinction this scenario exists to teach."
+    path: manifests/consumer.yaml
 
 explore:
   urls:
-    - label: "Vault UI"
+    - label: "Grafana — Secret Rotation (ESO sync calls, readiness, Vault API)"
+      url: "http://grafana.{{.DomainSuffix}}/d/secret-rotation"
+    - label: "Vault UI (token auth — use your dev root token)"
       url: "http://vault.{{.DomainSuffix}}"
   commands:
-    - label: "Read the synced Kubernetes Secret (should be the rotated value)"
-      command: "kubectl -n go-api get secret go-api-secrets -o go-template='{{index .data \"api-key\" | base64decode}}{{\"\\n\"}}'"
-    - label: "Read the source of truth in Vault"
-      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN:-root} vault kv get secret/go-api'"
-    - label: "Rotate again and watch it propagate (within refreshInterval)"
-      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN:-root} vault kv put secret/go-api api-key=my-new-value'"
-    - label: "Inspect ExternalSecret sync status"
+    - label: "1. Watch the file-mounted consumer read the secret from disk (leave this running)"
+      command: "kubectl -n go-api logs -l app=secret-consumer -f"
+    - label: "2. Confirm the baseline the stage seeded"
+      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv get secret/go-api'"
+    - label: "3. Rotate the secret in Vault — this is the drill; pick any new value"
+      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/go-api api-key=rotated-v2'"
+    - label: "4. Watch the new value appear in terminal 1 — no restart, no redeploy (~90s)"
+      command: "kubectl -n go-api get pod -l app=secret-consumer -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}{\"\\n\"}'"
+    - label: "5. Compare the two consumers — the file moved, the environment did not"
+      command: "kubectl -n go-api exec deploy/secret-consumer -- cat /etc/api/api-key; kubectl -n go-api exec deploy/env-consumer -- sh -c 'echo $API_KEY'"
+    - label: "6. Grade the rotation"
+      command: "labctl scenario verify secrets-management"
+    - label: "Inspect the sync contract ESO is honouring"
       command: "kubectl -n go-api describe externalsecret go-api-secret"
   tips:
-    - "The ExternalSecret refreshInterval is 10s — rotations show up within that window."
-    - "Nothing redeploys: ESO updates the Secret in place; mount it via envFrom and restart only to pick up env changes."
-    - "The rotation-propagated check decodes go-api-secrets and asserts it equals the value stage 2 wrote."
-    - "Dev-mode Vault keeps data in memory; a Vault pod restart wipes it — re-run the scenario to reseed."
+    - "Rotate in Vault, never in Kubernetes. Editing the Secret directly is undone at ESO's next refresh — that is the operator doing its job, and it is the habit this scenario is trying to build."
+    - "Propagation is two hops, not one: ESO refreshes the Secret every 15s, then the kubelet refreshes the mounted file on its own cycle. End to end it can take ~90s, so 'rotation-reached-pod' showing PENDING for a minute is normal, not broken."
+    - "The Vault->Secret wiring (SecretStore, ExternalSecret, vault-token) belongs to the secrets/external-secrets platform component. This scenario only seeds a value and mounts the result, so tearing it down leaves that wiring intact."
+    - "env-consumer is the control group, not a broken pod. The kubelet cannot rewrite a running process's environment, so an env-var secret is frozen at start and only a rollout moves it. That is why it still shows the old value, and why file mounts are the answer when you want rotation to be free."
+    - "Binding the key explicitly (secretKeyRef) rather than envFrom is deliberate: 'api-key' is not a valid environment variable name, and envFrom would skip it silently with an InvalidVariableNames event."
+    - "The Secret Rotation dashboard shows the rotation as a step in ESO's sync-call rate; if those panels are empty, 'eso-metrics-scraped' will have failed first."
+    - "Dev-mode Vault keeps data in memory. If vault-0 restarts, its KV is wiped — re-run 'labctl scenario up secrets-management --force' to reseed the baseline."
     - "Never commit tokens: the dev root token comes from VAULT_DEV_ROOT_TOKEN (default 'root')."

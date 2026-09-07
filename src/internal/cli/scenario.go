@@ -419,15 +419,14 @@ var scenarioInfoCmd = &cobra.Command{
 			}
 		}
 
+		// Resolve with the scenario's parameter defaults, exactly as the HTTP API
+		// does for the UI. Without them the CLI printed a raw "{{.MinReplicas}}"
+		// for the same snippet the UI rendered as a real number.
+		defaults := scenes.ParamDefaults(s)
+		resolve := func(in string) string { return scenes.ResolveTemplateWithParams(in, defaults) }
+
 		printComponent := func(c scenariopkg.Component, indent string) {
-			fmt.Printf("%s- %s [%s]", indent, c.Name, c.Type)
-			if c.Chart != "" {
-				fmt.Printf(" chart=%s", c.Chart)
-			}
-			if c.Namespace != "" {
-				fmt.Printf(" ns=%s", c.Namespace)
-			}
-			fmt.Println()
+			renderComponent(os.Stdout, c, indent, resolve)
 		}
 
 		if len(s.Stages) > 0 {
@@ -455,18 +454,18 @@ var scenarioInfoCmd = &cobra.Command{
 		if len(s.Explore.URLs) > 0 || len(s.Explore.Commands) > 0 || len(s.Explore.Tips) > 0 {
 			fmt.Println("\nExplore:")
 			for _, u := range s.Explore.URLs {
-				fmt.Printf("  URL: %-25s %s\n", scenes.ResolveTemplate(u.Label), scenes.ResolveTemplate(u.URL))
+				fmt.Printf("  URL: %-25s %s\n", resolve(u.Label), resolve(u.URL))
 			}
 			for _, c := range s.Explore.Commands {
-				fmt.Printf("  CMD: %s\n       %s\n", scenes.ResolveTemplate(c.Label), scenes.ResolveTemplate(c.Command))
+				fmt.Printf("  CMD: %s\n       %s\n", resolve(c.Label), resolve(c.Command))
 			}
 			for _, t := range s.Explore.Tips {
-				fmt.Printf("  TIP: %s\n", scenes.ResolveTemplate(t))
+				fmt.Printf("  TIP: %s\n", resolve(t))
 			}
 		}
 
 		renderReferences(os.Stdout, s.References)
-		renderSnippets(os.Stdout, s.Snippets, s.Dir, scenes.ResolveTemplate)
+		renderSnippets(os.Stdout, s.Snippets, s.Dir, resolve)
 
 		return nil
 	},

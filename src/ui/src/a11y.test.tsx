@@ -16,6 +16,8 @@ import { server, API } from './test/server'
 import { ThemeToggle } from './components/ThemeToggle'
 import { CommandPalette } from './components/CommandPalette'
 import { ErrorState } from './components/ErrorState'
+import { Tabs } from './components/Tabs'
+import { Collapsible } from './components/Collapsible'
 
 expect.extend(toHaveNoViolations)
 
@@ -35,6 +37,31 @@ describe('accessibility (axe)', () => {
           { id: 'b', label: 'Go to Results', hint: '/results', run: () => {} },
         ]}
       />,
+    )
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('Tabs (the detail-modal grouping) has no violations', async () => {
+    const { container } = render(
+      <Tabs
+        label="Scenario sections"
+        tabs={[
+          { id: 'overview', label: 'Overview', content: <p>What it does.</p> },
+          { id: 'impl', label: 'Implementation', count: 2, content: <p>How it is built.</p> },
+        ]}
+      />,
+    )
+    expect(await axe(container)).toHaveNoViolations()
+  })
+
+  it('Collapsible has no violations open or closed', async () => {
+    const { container } = render(
+      <>
+        <Collapsible title="The ScaledObject" aside="manifests/scaledobject.yaml" defaultOpen>
+          <pre>kind: ScaledObject</pre>
+        </Collapsible>
+        <Collapsible title="Traffic generator"><pre>k6 run</pre></Collapsible>
+      </>,
     )
     expect(await axe(container)).toHaveNoViolations()
   })

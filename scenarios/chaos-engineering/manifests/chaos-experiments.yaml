@@ -3,11 +3,11 @@
 # Each experiment targets go-api and a specific failure mode. Apply them
 # selectively with a label selector, e.g.:
 #   kubectl apply -f chaos-experiments.yaml -l experiment=pod-kill
-# (echo-server experiments were removed: echo-server is not a prerequisite of
-# this scenario, so its namespace does not exist and applying CRs there fails.)
+# Run ONE at a time: overlapping experiments make the blast radius
+# unattributable, which defeats the purpose of the measurement.
 ---
 # Experiment 1: Pod Kill — randomly kill go-api pods
-# Tests: Self-healing, PDB protection, HPA response
+# Tests: self-healing, and how large the blast radius is at one replica
 apiVersion: chaos-mesh.org/v1alpha1
 kind: PodChaos
 metadata:
@@ -73,7 +73,7 @@ spec:
   duration: "60s"
 ---
 # Experiment 4: CPU Stress — saturate CPU on go-api pods
-# Tests: HPA scale-up reaction, resource limit behavior, OOM avoidance
+# Tests: what a CPU-saturated pod does to latency when nothing autoscales
 apiVersion: chaos-mesh.org/v1alpha1
 kind: StressChaos
 metadata:
@@ -94,3 +94,60 @@ spec:
       workers: 2
       load: 80
   duration: "120s"
+---
+# Experiment 5: Network Delay — add 300ms of latency between go-api and ingress
+# Tests: latency budgets, client timeouts. Watch the p99 panel, not the error
+# rate: a delayed service is still "up", which is what makes this failure mode
+# harder to spot than a pod kill.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-go-api
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: network-delay
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - go-api
+    labelSelectors:
+      app: go-api
+  direction: both
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - traefik
+  delay:
+    latency: "300ms"
+    jitter: "50ms"
+  duration: "120s"
+---
+# Experiment 6: Memory Stress — push go-api past its 128Mi memory limit
+# Tests: OOMKill and restart behaviour. The container is killed by the kernel,
+# not by Chaos Mesh, so the OOMKill Events panel is the one that proves it.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: memory-stress-go-api
+  namespace: go-api
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+    experiment: memory-stress
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - go-api
+    labelSelectors:
+      app: go-api
+  stressors:
+    memory:
+      # stress-ng byte format, NOT a Kubernetes quantity: "256Mi" is rejected by
+      # the validating webhook ("invalid suffix: 'mi'").
+      workers: 1
+      size: "256MB"
+  duration: "60s"
