@@ -227,6 +227,17 @@ URLs, commands, namespaces, snippets and manifests are Go templates.
 
 An unknown variable is a validation error, not an empty string.
 
+Everything `labctl scenario info` and the UI display is resolved before it is
+shown — component namespaces and charts included — using the scenario's
+parameter **defaults** where a `{{.Param}}` appears. A learner therefore reads
+`ns=monitoring` and `minReplicaCount: 1`, never the raw placeholder, and both
+surfaces render the same content identically.
+
+Templates belonging to another system are left alone: Prometheus rule
+annotations (`{{ $value }}`, `{{ $labels.pod }}`), Loki `line_format`, and
+`kubectl -o go-template` expressions print literally, because resolving them
+would corrupt the very thing the snippet is teaching.
+
 ## References and snippets
 
 Two optional blocks that turn a scenario into a jumping-off point. Both are

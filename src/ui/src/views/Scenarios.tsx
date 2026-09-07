@@ -6,6 +6,8 @@ import type { Scenario, ScenarioParameter, ScenarioCheck, ScenarioVerifyResult, 
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
+import { Tabs, type TabItem } from '../components/Tabs'
+import { Collapsible } from '../components/Collapsible'
 import { useJobRunner } from '../hooks/useJobRunner'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
@@ -289,11 +291,11 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
       {/* Detail modal */}
       {detail && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) closeDetail() }}>
-          <div className="modal-card" role="dialog" aria-modal="true" aria-label={`${detail.displayName || detail.name} details`}>
+          <div className="modal-card modal-tabbed" role="dialog" aria-modal="true" aria-label={`${detail.displayName || detail.name} details`}>
             <button ref={modalCloseRef} className="modal-close" aria-label="Close details" onClick={closeDetail}><Icon name="x" size={18} /></button>
 
             {detailLoading ? (
-              <div className="loading" role="status">Loading…</div>
+              <div className="modal-scroll"><div className="loading" role="status">Loading…</div></div>
             ) : (
               <>
                 <div className="modal-header">
@@ -304,138 +306,12 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                   </div>
                 </div>
 
-                {detail.description && (
-                  <div className="modal-section">
-                    <h3>Description</h3>
-                    <p>{detail.description}</p>
-                  </div>
-                )}
-
-                {detail.objectives && detail.objectives.length > 0 && (
-                  <div className="modal-section">
-                    <h3>What you'll learn</h3>
-                    <ul>{detail.objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>
-                  </div>
-                )}
-
-                {detail.prerequisites && (
-                  <div className="modal-section">
-                    <h3>Prerequisites</h3>
-                    <div className="prereq-chips">
-                      {(detail.prerequisites.platform || []).map(p => (
-                        <Badge key={p} variant="category">Platform: {p}</Badge>
-                      ))}
-                      {(detail.prerequisites.apps || []).map(a => (
-                        <Badge key={a} variant="category">App: {a}</Badge>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {allComponents(detail).length > 0 && (
-                  <div className="modal-section">
-                    <h3>Components</h3>
-                    <div className="table-scroll">
-                      <table className="data-table">
-                        <thead>
-                          <tr><th>Name</th><th>Type</th><th>Namespace</th><th>Details</th></tr>
-                        </thead>
-                        <tbody>
-                          {allComponents(detail).map(c => (
-                            <tr key={c.name}>
-                              <td>{c.name}</td>
-                              <td><Badge variant="category">{c.type}</Badge></td>
-                              <td className="td-muted">{c.namespace || 'default'}</td>
-                              <td className="td-muted">{c.chart || (c.path ? repoPath(detail.name, c.path) : c.script) || ''}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {detail.snippets && detail.snippets.length > 0 && (
-                  <div className="modal-section">
-                    <h3>How it's implemented</h3>
-                    <div className="stack-3">
-                      {detail.snippets.map(sn => (
-                        <div key={sn.label} className="snippet">
-                          <div className="snippet-head">
-                            <span className="snippet-label">{sn.label}</span>
-                            {sn.yaml && <button className="cmd-copy" onClick={() => copyCmd(sn.yaml!)}>Copy</button>}
-                          </div>
-                          {sn.description && <div className="snippet-desc">{sn.description}</div>}
-                          {sn.path && <div className="hint-text snippet-source">source: <code>{repoPath(detail.name, sn.path)}</code></div>}
-                          {sn.yaml && <pre className="snippet-code">{sn.yaml}</pre>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {detail.explore?.urls && detail.explore.urls.length > 0 && (
-                  <div className="modal-section">
-                    <h3>Explore URLs</h3>
-                    <div className="stack-2">
-                      {detail.explore.urls.map(u => (
-                        <div key={u.label} className="row-flex">
-                          <a href={u.url} target="_blank" rel="noopener noreferrer">{u.label}</a>
-                          <span className="hint-text">{u.url}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {detail.explore?.commands && detail.explore.commands.length > 0 && (
-                  <div className="modal-section">
-                    <h3>Explore Commands</h3>
-                    {detail.explore.commands.map(c => (
-                      <div key={c.label} className="cmd-block">
-                        <div className="cmd-label">{c.label}</div>
-                        <code>{c.command}</code>
-                        <button className="cmd-copy" onClick={() => copyCmd(c.command)}>Copy</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {detail.explore?.tips && detail.explore.tips.length > 0 && (
-                  <div className="modal-section">
-                    <h3>Tips</h3>
-                    <ul>{detail.explore.tips.map((t, i) => <li key={i}>{t}</li>)}</ul>
-                  </div>
-                )}
-
-                {detail.checks && detail.checks.length > 0 && (
-                  <div className="modal-section">
-                    <h3>What "success" checks <span className="hint-text">(run these with Verify)</span></h3>
-                    <div className="table-scroll">
-                      <table className="data-table">
-                        <thead>
-                          <tr><th>Check</th><th>Type</th><th>Asserts</th></tr>
-                        </thead>
-                        <tbody>
-                          {detail.checks.map(c => (
-                            <tr key={c.name}>
-                              <td>{c.name}</td>
-                              <td><Badge variant="category">{c.type || 'check'}</Badge></td>
-                              <td className="td-muted"><code>{checkAssertion(c)}</code></td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {verifyResults[detail.name] && (
-                  <div className="modal-section">
-                    <h3>Verification</h3>
-                    <CheckResults result={verifyResults[detail.name]} />
-                  </div>
-                )}
+                <ScenarioDetailTabs
+                  key={detail.name}
+                  detail={detail}
+                  verifyResult={verifyResults[detail.name]}
+                  onCopy={copyCmd}
+                />
 
                 <div className="card-footer">
                   <button
@@ -455,7 +331,7 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                   <button
                     className="btn"
                     disabled={!detail.active || verifying[detail.name]}
-                    title={detail.active ? 'Run the scenario’s checks' : 'Activate the scenario before verifying'}
+                    title={detail.active ? 'Run the scenario\u2019s checks' : 'Activate the scenario before verifying'}
                     onClick={() => verify(detail.name)}
                   >
                     {verifying[detail.name] ? 'Verifying…' : 'Verify'}
@@ -468,6 +344,217 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
         </div>
       )}
     </>
+  )
+}
+
+/** The scenario detail body, grouped into tabs. A rich scenario carries ten
+ *  sections at once — flat, that is a long scroll with the action footer far
+ *  from the content it acts on. Four tabs match how the sections are used: read
+ *  it, see how it is built, poke at the running cluster, grade it. A tab with
+ *  nothing behind it is not rendered. */
+function ScenarioDetailTabs({ detail, verifyResult, onCopy }: {
+  detail: Scenario
+  verifyResult?: ScenarioVerifyResult
+  onCopy: (text: string) => void
+}) {
+  const components = allComponents(detail)
+  const snippets = detail.snippets ?? []
+  const objectives = detail.objectives ?? []
+  const prereqPlatform = detail.prerequisites?.platform ?? []
+  const prereqApps = detail.prerequisites?.apps ?? []
+  const urls = detail.explore?.urls ?? []
+  const commands = detail.explore?.commands ?? []
+  const tips = detail.explore?.tips ?? []
+  const checks = detail.checks ?? []
+
+  const tabs: TabItem[] = []
+
+  tabs.push({
+    id: 'overview',
+    label: 'Overview',
+    content: (
+      <>
+        {detail.description && (
+          <div className="modal-section">
+            <h3>Description</h3>
+            <p>{detail.description}</p>
+          </div>
+        )}
+
+        {objectives.length > 0 && (
+          <div className="modal-section">
+            <h3>What you&apos;ll learn</h3>
+            <ul>{objectives.map((o, i) => <li key={i}>{o}</li>)}</ul>
+          </div>
+        )}
+
+        {(prereqPlatform.length > 0 || prereqApps.length > 0) && (
+          <div className="modal-section">
+            <h3>Prerequisites</h3>
+            <div className="prereq-chips">
+              {prereqPlatform.map(p => <Badge key={`p-${p}`} variant="category">Platform: {p}</Badge>)}
+              {prereqApps.map(a => <Badge key={`a-${a}`} variant="category">App: {a}</Badge>)}
+            </div>
+          </div>
+        )}
+
+        {!detail.description && objectives.length === 0 && prereqPlatform.length === 0 && prereqApps.length === 0 && (
+          <div className="empty-state"><div>This scenario has no description yet.</div></div>
+        )}
+      </>
+    ),
+  })
+
+  if (components.length > 0 || snippets.length > 0) {
+    tabs.push({
+      id: 'implementation',
+      label: 'Implementation',
+      count: components.length + snippets.length,
+      content: (
+        <>
+          {components.length > 0 && (
+            <div className="modal-section">
+              <h3>Components <span className="hint-text">(installed in this order)</span></h3>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Name</th><th>Type</th><th>Namespace</th><th>Details</th></tr>
+                  </thead>
+                  <tbody>
+                    {components.map(c => (
+                      <tr key={c.name}>
+                        <td>{c.name}</td>
+                        <td><Badge variant="category">{c.type}</Badge></td>
+                        <td className="td-muted">{c.namespace || 'default'}</td>
+                        <td className="td-muted">{c.chart || (c.path ? repoPath(detail.name, c.path) : c.script) || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {snippets.length > 0 && (
+            <div className="modal-section">
+              <h3>How it&apos;s implemented <span className="hint-text">(expand a file to read it)</span></h3>
+              <div className="collapse-group">
+                {snippets.map((sn, i) => (
+                  <Collapsible
+                    key={sn.label}
+                    title={sn.label}
+                    aside={sn.path ? repoPath(detail.name, sn.path) : undefined}
+                    defaultOpen={i === 0}
+                  >
+                    {sn.description && <div className="snippet-desc">{sn.description}</div>}
+                    {sn.yaml && (
+                      <>
+                        <div className="snippet-head">
+                          <span className="hint-text">{sn.yaml.split('\n').length} lines</span>
+                          <button className="cmd-copy" onClick={() => onCopy(sn.yaml!)}>Copy</button>
+                        </div>
+                        <pre className="snippet-code">{sn.yaml}</pre>
+                      </>
+                    )}
+                  </Collapsible>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      ),
+    })
+  }
+
+  if (urls.length > 0 || commands.length > 0 || tips.length > 0) {
+    tabs.push({
+      id: 'explore',
+      label: 'Explore',
+      count: urls.length + commands.length + tips.length,
+      content: (
+        <>
+          {urls.length > 0 && (
+            <div className="modal-section">
+              <h3>Explore URLs</h3>
+              <div className="stack-2">
+                {urls.map(u => (
+                  <div key={u.label} className="row-flex">
+                    <a href={u.url} target="_blank" rel="noopener noreferrer">{u.label}</a>
+                    <span className="hint-text">{u.url}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {commands.length > 0 && (
+            <div className="modal-section">
+              <h3>Explore Commands</h3>
+              {commands.map(c => (
+                <div key={c.label} className="cmd-block">
+                  <div className="cmd-label">{c.label}</div>
+                  <code>{c.command}</code>
+                  <button className="cmd-copy" onClick={() => onCopy(c.command)}>Copy</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {tips.length > 0 && (
+            <div className="modal-section">
+              <h3>Tips</h3>
+              <ul>{tips.map((t, i) => <li key={i}>{t}</li>)}</ul>
+            </div>
+          )}
+        </>
+      ),
+    })
+  }
+
+  if (checks.length > 0 || verifyResult) {
+    tabs.push({
+      id: 'checks',
+      label: 'Checks',
+      count: checks.length,
+      content: (
+        <>
+          {verifyResult && (
+            <div className="modal-section">
+              <h3>Last verification</h3>
+              <CheckResults result={verifyResult} />
+            </div>
+          )}
+
+          {checks.length > 0 && (
+            <div className="modal-section">
+              <h3>What &ldquo;success&rdquo; checks <span className="hint-text">(run these with Verify)</span></h3>
+              <div className="table-scroll">
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Check</th><th>Type</th><th>Asserts</th></tr>
+                  </thead>
+                  <tbody>
+                    {checks.map(c => (
+                      <tr key={c.name}>
+                        <td>{c.name}</td>
+                        <td><Badge variant="category">{c.type || 'check'}</Badge></td>
+                        <td className="td-muted"><code>{checkAssertion(c)}</code></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      ),
+    })
+  }
+
+  return (
+    <div className="modal-scroll">
+      <Tabs tabs={tabs} label={`${detail.displayName || detail.name} sections`} />
+    </div>
   )
 }
 

@@ -140,7 +140,7 @@ describe('Scenarios view — detail modal teaches implementation', () => {
     checks: [{ name: 'keda-hpa-created', type: 'kubectl', resource: 'hpa/keda-hpa-go-api', operator: 'exists' }],
   }
 
-  it('renders objectives, the implementation snippet, and the success checks', async () => {
+  it('groups the sections into tabs and lands on Overview', async () => {
     const user = userEvent.setup()
     mockApi.listScenarios.mockResolvedValue([{ ...rich }])
     mockApi.getScenario.mockResolvedValue(rich)
@@ -148,13 +148,44 @@ describe('Scenarios view — detail modal teaches implementation', () => {
     renderScenarios()
     await user.click(await screen.findByRole('button', { name: /details/i }))
 
-    // Objectives, snippet content (the actual manifest), and check assertion all show.
-    expect(await screen.findByText(/What you'll learn/i)).toBeInTheDocument()
+    // Overview is selected on open; the heavier sections are behind their tabs
+    // so the modal opens on one readable screen.
+    expect(await screen.findByRole('tab', { name: /overview/i })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText(/What you'll learn/i)).toBeInTheDocument()
     expect(screen.getByText('Declare a KEDA ScaledObject')).toBeInTheDocument()
+    expect(screen.queryByText(/How it's implemented/i)).not.toBeInTheDocument()
+    expect(screen.queryByText('keda-hpa-created')).not.toBeInTheDocument()
+  })
+
+  it('shows the implementation snippet and the success checks on their tabs', async () => {
+    const user = userEvent.setup()
+    mockApi.listScenarios.mockResolvedValue([{ ...rich }])
+    mockApi.getScenario.mockResolvedValue(rich)
+
+    renderScenarios()
+    await user.click(await screen.findByRole('button', { name: /details/i }))
+
+    await user.click(await screen.findByRole('tab', { name: /implementation/i }))
     expect(screen.getByText(/How it's implemented/i)).toBeInTheDocument()
     expect(screen.getByText(/kind: ScaledObject/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: /checks/i }))
     expect(screen.getByText('keda-hpa-created')).toBeInTheDocument()
     expect(screen.getByText(/hpa\/keda-hpa-go-api/)).toBeInTheDocument()
+  })
+
+  it('moves between tabs with the arrow keys', async () => {
+    const user = userEvent.setup()
+    mockApi.listScenarios.mockResolvedValue([{ ...rich }])
+    mockApi.getScenario.mockResolvedValue(rich)
+
+    renderScenarios()
+    await user.click(await screen.findByRole('button', { name: /details/i }))
+
+    const overview = await screen.findByRole('tab', { name: /overview/i })
+    overview.focus()
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByRole('tab', { name: /implementation/i })).toHaveAttribute('aria-selected', 'true')
   })
 })
 

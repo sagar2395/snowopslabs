@@ -31,6 +31,21 @@ func renderReferences(w io.Writer, refs []scenario.Reference) {
 	}
 }
 
+// renderComponent writes one component line for `scenario info`. Chart and
+// namespace are template-resolved because info is the learner's first contact:
+// a raw "{{.MonitoringNamespace}}" sent them looking for a namespace that does
+// not exist, while install had long since resolved it to the real one.
+func renderComponent(w io.Writer, c scenario.Component, indent string, resolve resolveFunc) {
+	fmt.Fprintf(w, "%s- %s [%s]", indent, c.Name, c.Type)
+	if c.Chart != "" {
+		fmt.Fprintf(w, " chart=%s", resolve(c.Chart))
+	}
+	if c.Namespace != "" {
+		fmt.Fprintf(w, " ns=%s", resolve(c.Namespace))
+	}
+	fmt.Fprintln(w)
+}
+
 // renderSnippets writes each reference snippet with its resolved body. Path
 // snippets are read from dir; every body is template-resolved so it prints as it
 // is used. Each snippet carries its own "apply with" hint (defaulting to

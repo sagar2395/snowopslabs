@@ -1,7 +1,8 @@
+apiVersion: scenario.snowops.net/v2
 name: chaos-engineering
 verified: true
 displayName: "Chaos Engineering"
-description: "Failure injection with Chaos Mesh — pod kills, network delays, CPU/memory stress, partitions. Correlate chaos experiments with application metrics via Grafana dashboard."
+description: "Run the chaos engineering loop against go-api with Chaos Mesh: establish a steady state under load, form a hypothesis, inject a failure — pod kill, network delay, CPU and memory stress — and measure the blast radius on a Grafana dashboard. go-api ships as a single replica behind a PodDisruptionBudget, so it starts out with disruptionsAllowed=0: a node drain would block forever while a pod kill is still a full outage. Your job is to find that with an experiment and fix it, then prove the same experiment no longer hurts."
 category: reliability
 prerequisites:
   platform:
@@ -14,24 +15,31 @@ prerequisites:
 runtimes:
   - k3d
   - kind
+
+objectives:
+  - "Establish a steady state: put continuous load on go-api with 'labctl traffic' and read baseline RPS, error rate and p99 off the chaos dashboard"
+  - "Run a pod-kill experiment against the single-replica go-api and measure the blast radius — the requests that fail before Kubernetes restarts the pod"
+  - "Read the control that is missing: 'kubectl -n go-api get pdb' reports disruptionsAllowed 0 / InsufficientPods, so the PDB blocks every drain instead of protecting anything"
+  - "Harden the workload with 'kubectl -n go-api scale deploy/go-api --replicas=3' until the PDB reports disruptionsAllowed >= 1"
+  - "Re-run the same pod-kill experiment against the hardened service and prove the outage is gone while the restart still shows on the dashboard"
+  - "Explore the other failure modes — CPU stress, memory stress, network delay and partition — and find the signal that reveals each one, including the two the dashboard cannot show you"
+
 components:
-  - name: chaos-mesh
-    type: helm
-    chart: chaos-mesh/chaos-mesh
-    repo: https://charts.chaos-mesh.org
-    version: "2.7.0"
-    namespace: chaos-mesh
-    valuesFile: values/chaos-mesh.yaml
+  # Chaos Mesh itself is a PLATFORM component (prerequisite chaos/chaos-mesh),
+  # not a scenario one: its install picks the containerd socket per PROFILE and
+  # publishes the dashboard ingress, neither of which a helm component can do.
+  - name: chaos-servicemonitor
+    type: manifest
+    path: manifests/chaos-servicemonitor.yaml
 
   - name: pod-disruption-budgets
     type: manifest
     path: manifests/pod-disruption-budgets.yaml
 
-  # NOTE: the chaos experiments in manifests/chaos-experiments.yaml are NOT
-  # applied at `up` on purpose — applying them all at once immediately kills,
-  # partitions, and stresses go-api. They are applied on demand from the explore
-  # commands (e.g. `kubectl apply -f ... -l experiment=pod-kill`) so learners run
-  # one failure mode at a time and observe recovery.
+  # NOTE: the experiments in manifests/chaos-experiments.yaml are NOT applied at
+  # `up` on purpose — applying them all at once kills, delays and stresses go-api
+  # simultaneously, and nothing can be attributed. They are applied one at a time
+  # from the explore commands with a label selector.
 
   - name: chaos-dashboards
     type: grafana-dashboard
@@ -46,53 +54,95 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "Chaos Mesh is a platform prerequisite and is not installed by this scenario. Install it with: labctl platform up chaos/chaos-mesh"
 
-  - name: go-api-pdb-present
-    type: kubectl
-    resource: poddisruptionbudget/go-api-pdb
-    namespace: go-api
+  - name: chaos-metrics-scraped
+    type: promql
+    query: 'max(up{job="chaos-mesh-controller-manager"}) or vector(0)'
+    operator: "=="
+    value: "1"
+    remediation: "Prometheus is not scraping Chaos Mesh, so every chaos panel will stay blank. Re-apply the ServiceMonitor: kubectl apply -f scenarios/chaos-engineering/manifests/chaos-servicemonitor.yaml — note the metrics port on chaos-mesh-controller-manager is named 'http' (10080), not 'metrics'."
 
   - name: go-api-healthy
     type: http
     url: "http://go-api.{{.DomainSuffix}}/health"
     expectStatus: 200
+    remediation: "The steady state is broken before the experiment starts. Check for a chaos experiment still running (kubectl get podchaos,networkchaos,stresschaos -A) and delete it, then wait for go-api to become ready."
+
+  - name: chaos-experiment-was-run
+    type: promql
+    query: 'sum(chaos_controller_manager_chaos_experiments{exported_namespace="go-api"}) or vector(0)'
+    operator: ">="
+    value: "1"
+    pending: true
+    remediation: "You have not run an experiment yet. Start load first, then inject one failure: labctl traffic start --profile browse --rps 20 && kubectl apply -f scenarios/chaos-engineering/manifests/chaos-experiments.yaml -l experiment=pod-kill — then watch the blast radius on http://grafana.{{.DomainSuffix}}/d/chaos-engineering"
+
+  - name: go-api-survives-pod-loss
+    type: kubectl
+    resource: poddisruptionbudget/go-api-pdb
+    namespace: go-api
+    jsonpath: "{.status.disruptionsAllowed}"
+    operator: ">="
+    value: "1"
+    pending: true
+    remediation: "go-api runs a single replica behind minAvailable=1, so the PDB reports disruptionsAllowed 0 (reason InsufficientPods): a node drain blocks forever and a pod kill is still a full outage. Scale it out and re-run the experiment: kubectl -n go-api scale deploy/go-api --replicas=3 && kubectl -n go-api rollout status deploy/go-api"
 
 snippets:
-  - label: "Chaos Mesh experiments (pod-kill, pod-failure, network partition, CPU stress)"
-    description: "Four failure injections targeting go-api by label. Apply one at a time with a label selector (e.g. -l experiment=pod-kill) and watch how the platform reacts."
+  - label: "Chaos Mesh experiments (pod kill, pod failure, partition, CPU, network delay, memory)"
+    description: "Six failure injections targeting go-api by label. Apply ONE at a time with a label selector (e.g. -l experiment=pod-kill) — running several at once makes the blast radius unattributable, which is the one thing chaos engineering must never be."
     path: manifests/chaos-experiments.yaml
   - label: "PodDisruptionBudget protecting go-api during chaos"
-    description: "Caps how many go-api pods can be down at once, so voluntary disruptions can't take the service fully offline."
+    description: "minAvailable=1 against a Deployment that runs one replica is the trap this scenario is built on: the budget can never be satisfied, so it blocks voluntary disruptions entirely (disruptionsAllowed 0) while doing nothing about the involuntary ones a pod kill simulates. Scaling out is what makes it a control."
     path: manifests/pod-disruption-budgets.yaml
+  - label: "ServiceMonitor that makes the chaos panels work"
+    description: "The Chaos Mesh chart ships no ServiceMonitor and its prometheus.serviceMonitor values key is silently ignored, so without this the experiment panels are blank forever."
+    path: manifests/chaos-servicemonitor.yaml
+
+references:
+  - label: "Principles of Chaos Engineering"
+    url: "https://principlesofchaos.org/"
+    note: "The steady-state / hypothesis / blast-radius loop these objectives follow."
+  - label: "Chaos Mesh — experiment types"
+    url: "https://chaos-mesh.org/docs/simulate-pod-chaos-on-kubernetes/"
+    note: "The full field reference for PodChaos, NetworkChaos and StressChaos."
+  - label: "Kubernetes — disruptions and PodDisruptionBudgets"
+    url: "https://kubernetes.io/docs/concepts/workloads/pods/disruptions/"
+    note: "Why a PDB governs voluntary disruptions only, and what InsufficientPods means."
 
 explore:
   urls:
-    - label: "Grafana — go-api requests (watch RPS/errors during chaos)"
-      url: "http://grafana.{{.DomainSuffix}}/d/app-requests"
+    - label: "Grafana — chaos dashboard (blast radius, PDB budget, restarts, latency)"
+      url: "http://grafana.{{.DomainSuffix}}/d/chaos-engineering"
     - label: "Chaos Mesh Dashboard"
       url: "http://chaos.{{.DomainSuffix}}"
   commands:
-    - label: "Port-forward Chaos Mesh dashboard (fallback if the URL doesn't resolve)"
-      command: "kubectl port-forward -n chaos-mesh svc/chaos-dashboard 2333:2333 &"
-    - label: "List all active experiments"
-      command: "kubectl get podchaos,networkchaos,stresschaos --all-namespaces"
-    - label: "Run pod-kill experiment on go-api"
+    - label: "1. Establish the steady state — continuous load on go-api"
+      command: "labctl traffic start --profile browse --rps 20 --duration 30m"
+    - label: "2. Read the control that is missing (expect disruptionsAllowed 0, InsufficientPods)"
+      command: "kubectl -n go-api get pdb go-api-pdb -o wide"
+    - label: "3. Inject one failure: kill a go-api pod"
       command: "kubectl apply -f {{.ProjectRoot}}/scenarios/chaos-engineering/manifests/chaos-experiments.yaml -l experiment=pod-kill"
-    - label: "Watch pod restarts during chaos"
-      command: "watch kubectl get pods -n go-api"
-    - label: "Generate traffic during chaos"
-      command: "for i in $(seq 1 200); do curl -s -o /dev/null -w '%{http_code}\\n' http://go-api.{{.DomainSuffix}}/health; sleep 0.1; done"
-    - label: "Delete all chaos experiments"
-      command: "kubectl delete podchaos,networkchaos,stresschaos --all --all-namespaces"
-    - label: "Check PDB status"
-      command: "kubectl get pdb -n go-api"
+    - label: "4. Measure the blast radius while it runs"
+      command: "kubectl get pods -n go-api -w"
+    - label: "5. Harden it — give the PDB enough replicas to be a control"
+      command: "kubectl -n go-api scale deploy/go-api --replicas=3 && kubectl -n go-api rollout status deploy/go-api"
+    - label: "6. Re-run the same experiment against the hardened service"
+      command: "kubectl delete podchaos pod-kill-go-api -n go-api --ignore-not-found && kubectl apply -f {{.ProjectRoot}}/scenarios/chaos-engineering/manifests/chaos-experiments.yaml -l experiment=pod-kill"
+    - label: "List the experiments and their phases"
+      command: "kubectl get podchaos,networkchaos,stresschaos --all-namespaces"
+    - label: "Try another failure mode (swap pod-kill for network-delay, cpu-stress, memory-stress or network-partition)"
+      command: "kubectl apply -f {{.ProjectRoot}}/scenarios/chaos-engineering/manifests/chaos-experiments.yaml -l experiment=network-delay"
+    - label: "Measure client-observed latency through the ingress — the only place a network fault shows"
+      command: "curl -s -o /dev/null -w 'connect=%{time_connect}s ttfb=%{time_starttransfer}s\\n' http://go-api.{{.DomainSuffix}}/health"
+    - label: "Clean up every experiment and stop the load"
+      command: "kubectl delete podchaos,networkchaos,stresschaos --all --all-namespaces && labctl traffic stop"
   tips:
-    - "Start by generating background traffic, then activate experiments to see their impact in Grafana"
-    - "Grafana → the linked go-api requests dashboard: during an experiment watch RPS dip and 5xx errors rise, then recover as pods self-heal. A healthy platform returns to baseline within seconds."
-    - "Pod kill experiments test self-healing — Kubernetes will restart terminated pods automatically"
-    - "Network delay experiments simulate degraded connectivity — watch latency spike in Grafana"
-    - "CPU stress triggers HPA scale-up if autoscaling is enabled — watch replica count increase"
-    - "Memory stress can cause OOMKills — watch the OOMKill Events panel in the chaos dashboard"
-    - "PDBs prevent all pods from being disrupted simultaneously — verify with: kubectl get pdb"
-    - "Experiments are one-shot by default. For continuous chaos, create Schedules via the Chaos Dashboard UI"
-    - "To run experiments selectively, apply with label selectors: kubectl apply -f manifests/chaos-experiments.yaml -l experiment=pod-kill"
+    - "Start the load FIRST. An experiment run against an idle service proves nothing, and every dashboard panel is honestly empty. The generator exits when its --duration is up — 'labctl traffic status' tells you whether it is still running."
+    - "The two pending checks are the drill: 'chaos-experiment-was-run' goes green once you inject a failure, 'go-api-survives-pod-loss' once you scale go-api out. Run 'labctl scenario verify chaos-engineering' after each step."
+    - "Blast radius is the number to watch, not the restart. On one replica a pod kill drops the HTTP Request Rate panel to zero for several seconds; on three it barely dents it."
+    - "A PDB governs VOLUNTARY disruptions (drains, evictions) only. It cannot stop a pod-kill experiment or a node dying — scaling out is what limits both."
+    - "Network delay is the failure mode the dashboard CANNOT show you. go-api's own histogram measures handler time, so it sits at ~4ms while a 300ms NetworkChaos is active; the delay only appears client-side. Measure it with the curl ttfb command above — 'ttfb minus connect' goes from ~4ms to ~600ms."
+    - "network-partition is the other half of that lesson: the go-api pod stays 1/1 Ready and its own metrics look perfect, while every request through the ingress fails. A healthy pod is not a reachable service."
+    - "Memory stress pushes go-api past its 128Mi limit, so the kernel OOMKills the container — watch the OOMKill Events panel, and see RESTARTS climb in kubectl."
+    - "CPU stress is where an autoscaler would react. There is none here; 'autoscaling-under-load' is the scenario that adds one."
+    - "Experiments are one-shot and expire after their 'duration'. For continuous chaos, create a Schedule from the Chaos Dashboard UI."

@@ -1,0 +1,52 @@
+## Scrape ArgoCD's three metrics endpoints. These live with the scenario rather
+## than the platform component so a lab without the Prometheus CRDs can still
+## install ArgoCD.
+##
+## Two details the chart does not make obvious, and both silently yield zero
+## targets rather than an error: the metrics port is named `http-metrics`, not
+## `metrics`, and each metrics endpoint is a SEPARATE Service from the workload
+## it belongs to — `argocd-repo-server-metrics`, not `argocd-repo-server`.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argocd-controller
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: gitops-cicd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-metrics
+  endpoints:
+    - port: http-metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argocd-server
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: gitops-cicd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-server-metrics
+  endpoints:
+    - port: http-metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: argocd-repo-server
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: gitops-cicd
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: argocd-repo-server-metrics
+  endpoints:
+    - port: http-metrics
+      interval: 15s

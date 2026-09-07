@@ -1,0 +1,15 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: chaos-mesh-controller
+  namespace: chaos-mesh
+  labels:
+    app.kubernetes.io/part-of: chaos-engineering
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: controller-manager
+      app.kubernetes.io/instance: chaos-mesh
+  endpoints:
+    - port: http
+      interval: 15s

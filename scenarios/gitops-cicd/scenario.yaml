@@ -1,29 +1,76 @@
+apiVersion: scenario.snowops.net/v2
 name: gitops-cicd
 verified: true
-displayName: "GitOps & CI/CD"
-description: "ArgoCD-based GitOps deployment with Application CRDs for declarative app management."
+displayName: "GitOps & CI/CD (ArgoCD)"
+description: "Run a real GitOps loop against a Git repository you can actually push to. The lab serves its own repo in-cluster; ArgoCD reconciles it. You clone it, change the declared image and replica count, push, and watch the cluster follow — then prove the two halves of the contract that make GitOps different from kubectl: self-heal reverts a change you make by hand, and prune deletes a resource you remove from Git."
 category: delivery
 prerequisites:
   platform:
     - ingress
     - gitops/argocd
+    - monitoring/metrics
+    - monitoring/grafana
   apps: []
 runtimes:
   - k3d
   - kind
-components:
-  - name: argocd
-    type: helm
-    chart: argo/argo-cd
-    repo: https://argoproj.github.io/argo-helm
-    version: "7.8.13"
-    namespace: argocd
-    valuesFile: values/argocd.yaml
 
-  - name: argocd-apps
-    type: manifest
-    path: manifests/argocd-applications.yaml
-    namespace: argocd
+objectives:
+  - "Read an Application CRD as a contract: a Git path bound to a cluster destination"
+  - "Clone the repository ArgoCD actually watches, over a port-forward to the in-cluster Git server"
+  - "Change declared state in Git — bump the image tag and the replica count — commit and push it"
+  - "Watch ArgoCD reconcile your commit into the cluster without you touching the cluster"
+  - "Prove self-heal: scale the Deployment with kubectl and watch ArgoCD revert you"
+  - "Prove prune: delete a manifest from Git and watch the resource leave the cluster"
+  - "Diagnose a failed sync from the Application's conditions and repair it in Git"
+
+stages:
+  - name: gitops-controller
+    description: Make sure ArgoCD is running, adopting the platform's release if it already is
+    components:
+      ## adopt: the platform owns this release. If it is already installed the
+      ## scenario reuses it untouched and leaves it behind on teardown; if it is
+      ## not, the scenario stands it up so `scenario up` needs no manual step.
+      ## Values come from the platform component — there is no second copy.
+      - name: argocd
+        type: helm
+        chart: argo/argo-cd
+        repo: https://argoproj.github.io/argo-helm
+        version: "10.7.1"
+        namespace: argocd
+        platformValues: gitops/argocd
+        adopt: true
+        set:
+          server.ingress.hostname: "argocd.{{.DomainSuffix}}"
+
+  - name: git-source
+    description: Serve the lab's own Git repository in-cluster, seeded with the demo app's manifests
+    components:
+      - name: git-server
+        type: manifest
+        path: manifests/git-server.yaml
+        namespace: gitops
+
+  - name: gitops-telemetry
+    description: Scrape ArgoCD's controller, server and repo-server metrics, and plot sync state
+    components:
+      - name: argocd-servicemonitors
+        type: manifest
+        path: manifests/argocd-servicemonitors.yaml
+        namespace: argocd
+
+      - name: gitops-dashboard
+        type: grafana-dashboard
+        path: dashboards/
+        namespace: "{{.MonitoringNamespace}}"
+
+  - name: bind-application
+    description: Point ArgoCD at the lab repo and wait for the first reconcile
+    components:
+      - name: gitops-demo-app
+        type: script
+        script: scripts/apply-apps.sh
+        uninstallScript: scripts/remove-apps.sh
 
 checks:
   - name: argocd-server-ready
@@ -33,45 +80,107 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "ArgoCD is a platform component the scenario adopts rather than owns. Reinstall it with: labctl platform up gitops/argocd"
 
-  - name: argocd-repo-server-ready
+  - name: git-server-ready
     type: kubectl
-    resource: deployment/argocd-repo-server
-    namespace: argocd
+    resource: deployment/git-server
+    namespace: gitops
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "The lab's Git source is down, so ArgoCD has nothing to reconcile from. Check it: kubectl -n gitops describe deployment/git-server"
 
-  - name: go-api-application-present
-    type: kubectl
-    resource: application/go-api
-    namespace: argocd
+  - name: application-synced-and-healthy
+    type: script
+    script: checks/check-sync-healthy.sh
+    timeoutSeconds: 60
+    remediation: "ArgoCD is not reconciling. Read the Application's own complaint first: kubectl -n argocd get application gitops-demo -o jsonpath='{.status.conditions}'. A ComparisonError points at the source (repoURL, targetRevision or path); a Degraded health points at the manifests in Git."
 
-  - name: echo-server-application-present
+  - name: demo-workload-running
     type: kubectl
-    resource: application/echo-server
-    namespace: argocd
+    resource: deployment/gitops-demo
+    namespace: gitops-demo
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "1"
+    remediation: "The Deployment ArgoCD created from Git has no ready pods. kubectl -n gitops-demo describe deployment/gitops-demo — an image tag that does not exist in the registry is the usual cause, and the fix belongs in Git, not in kubectl."
+
+  - name: git-matches-live
+    type: script
+    script: checks/check-git-matches-live.sh
+    timeoutSeconds: 60
+    remediation: "Declared state and live state have diverged. Git wins: push the value you want rather than editing the cluster, then force a sync with the 'Sync now' command from 'labctl scenario info gitops-cicd'."
+
+  - name: sync-metrics-scraped
+    type: promql
+    ## Asserts the dashboard has something to draw. Without it an unscraped
+    ## ArgoCD looks merely like an empty panel instead of a failure — see R13.
+    query: 'count(argocd_app_info)'
+    operator: ">="
+    value: "1"
+    remediation: "Grafana's GitOps Delivery dashboard will be empty. ArgoCD's metrics endpoints are separate Services from the workloads (argocd-application-controller-metrics, argocd-server-metrics, argocd-repo-server-metrics) and their port is named 'http-metrics'. Check the ServiceMonitors match: kubectl -n argocd get servicemonitor -o yaml, then confirm the targets are up in Prometheus."
+
+  - name: learner-pushed-a-revision
+    type: script
+    script: checks/check-learner-pushed.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "Do the drill: port-forward the git server, clone git://127.0.0.1:9418/platform.git, edit demo/deployment.yaml (bump the image to nginx:1.27.4-alpine and replicas to 3), commit, push, then force a sync. The exact commands are in 'labctl scenario info gitops-cicd'."
 
 snippets:
-  - label: "ArgoCD Application CRDs for go-api and echo-server"
-    description: "The declarative GitOps contract: ArgoCD watches each app's Helm path in Git and keeps the cluster in sync. automated.prune + selfHeal mean drift is corrected automatically."
+  - label: "The Application CRD — the whole GitOps contract"
+    description: "One object binds a Git path to a cluster destination. automated.selfHeal reverts changes you make with kubectl; automated.prune deletes what you remove from Git. Note there is no resources-finalizer: teardown removes the managed workload explicitly instead, because a finalizer that outlives its controller wedges the namespace forever."
     path: manifests/argocd-applications.yaml
+
+  - label: "The in-cluster Git server — why this loop is performable"
+    description: "A git daemon over an emptyDir, seeded from a ConfigMap into a bare repo with receive-pack enabled. This is the source of truth: you can clone it, push to it, and break it. Read the init container to see exactly what the seed commit contains."
+    path: manifests/git-server.yaml
+
+  - label: "check-git-matches-live.sh — what 'verify' actually grades"
+    description: "Reads the image and replica count out of Git at HEAD, not out of the Application's status, and compares them with the live Deployment. It fails for drift in either direction, so it stays red whether you edited the cluster behind ArgoCD's back or pushed a commit that never synced."
+    path: checks/check-git-matches-live.sh
 
 explore:
   urls:
     - label: "ArgoCD Dashboard"
       url: "http://argocd.{{.DomainSuffix}}"
+    - label: "Grafana — GitOps Delivery (sync and health over time)"
+      url: "http://grafana.{{.DomainSuffix}}/d/gitops-delivery"
   commands:
-    - label: "Get ArgoCD admin password"
+    - label: "Get the ArgoCD admin password"
       command: "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo"
-    - label: "List ArgoCD applications"
+    - label: "Sync and health of every Application"
       command: "kubectl -n argocd get applications"
-    - label: "Sync go-api application"
-      command: "kubectl -n argocd patch application go-api --type merge -p '{\"operation\":{\"initiatedBy\":{\"username\":\"admin\"},\"sync\":{\"revision\":\"HEAD\"}}}'"
+    - label: "Serve the lab repo on localhost (leave this running in its own terminal)"
+      command: "kubectl -n gitops port-forward svc/git-server 9418:9418"
+    - label: "Clone the repository ArgoCD watches"
+      command: "git clone git://127.0.0.1:9418/platform.git && cd platform"
+    - label: "Push a new declared state (run inside the clone)"
+      command: "sed -i.bak 's|nginx:1.27.3-alpine|nginx:1.27.4-alpine|; s|replicas: 2|replicas: 3|' demo/deployment.yaml && rm -f demo/deployment.yaml.bak && git commit -am 'promote nginx 1.27.4, scale to 3' && git push origin main"
+    - label: "Sync now, instead of waiting ~3 minutes for the poll"
+      command: "kubectl -n argocd patch application gitops-demo --type merge -p '{\"operation\":{\"initiatedBy\":{\"username\":\"admin\"},\"sync\":{\"revision\":\"main\"}}}'"
+    - label: "Watch the cluster follow Git"
+      command: "kubectl -n gitops-demo get deployment gitops-demo -o wide -w"
+    - label: "Self-heal: change the cluster by hand and watch ArgoCD revert you"
+      command: "kubectl -n gitops-demo scale deployment/gitops-demo --replicas=7 && sleep 20 && kubectl -n gitops-demo get deployment gitops-demo"
+    - label: "Why a sync failed"
+      command: "kubectl -n argocd get application gitops-demo -o jsonpath='{.status.conditions}'; echo"
   tips:
-    - "Login: username 'admin', password from the 'Get ArgoCD admin password' command above."
-    - "Source of truth: ArgoCD syncs from the GitHub repo (github.com/sagar2395/snowopslabs @ HEAD), NOT your local working copy. It watches apps/go-api/deploy/helm and apps/echo-server/deploy/helm."
-    - "To make an edit sync: commit and push it to that repo — or fork the repo, set 'repoURL' in manifests/argocd-applications.yaml to your fork, and re-apply the manifest."
-    - "Two Applications are defined in manifests/argocd-applications.yaml (go-api, echo-server), each with automated sync (prune + selfHeal)."
-    - "See sync/health status: kubectl -n argocd get applications. Force a sync now with the 'Sync go-api application' command above."
-    - "Because selfHeal is on, editing the live resources directly (kubectl edit) is reverted by ArgoCD — change the git source instead."
+    - "The source of truth is the repo INSIDE the cluster (git://git-server.gitops.svc:9418/platform.git), not this GitHub project and not your working copy. Reach it with the port-forward command above."
+    - "The clone URL is git:// on purpose — the git daemon is unauthenticated. That is a lab convenience and the one thing here you must not copy into a real cluster."
+    - "Automated sync polls roughly every 3 minutes. Every step below works if you wait; use the 'Sync now' command when you would rather not."
+    - "selfHeal means kubectl is not the way to change anything ArgoCD manages — try it and watch your change disappear. That is the lesson, not a bug."
+    - "prune means Git deletions are cluster deletions: remove demo/service.yaml, push, sync, and the Service is gone."
+    - "'verify' grades Git against the cluster, so it stays red until the two agree. 'learner-pushed-a-revision' shows PENDING until you have actually pushed and synced a commit."
+    - "The repo is on a PersistentVolumeClaim, so your commits survive a pod restart or a node reboot. 'scenario down' deletes the gitops namespace and the claim with it, which is when the repo goes back to its seed."
+
+references:
+  - label: "ArgoCD — Application specification"
+    url: "https://argo-cd.readthedocs.io/en/stable/user-guide/application-spec/"
+  - label: "ArgoCD — Automated sync, self-heal and prune"
+    url: "https://argo-cd.readthedocs.io/en/stable/user-guide/auto_sync/"
+  - label: "ArgoCD — Monitoring and metrics"
+    url: "https://argo-cd.readthedocs.io/en/stable/operator-manual/metrics/"
+  - label: "OpenGitOps — the four principles"
+    url: "https://opengitops.dev/"

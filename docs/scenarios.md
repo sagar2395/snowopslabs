@@ -68,23 +68,42 @@ changes show as queueing at a constant arrival rate. See runbook
 
 ### GitOps & CI/CD (`gitops-cicd`)
 
-**Category:** gitops
+**Category:** delivery
 
 **What it deploys:**
-- ArgoCD (via Helm chart with Traefik ingress)
-- ArgoCD Application CRDs pointing at `apps/go-api/deploy/helm/` and `apps/echo-server/deploy/helm/`
-- Multi-environment setup (dev/staging namespaces with different values files)
+- A Git server in the cluster (namespace `gitops`), serving a bare repo over
+  `git://` on a PVC, seeded with the demo app's manifests
+- ArgoCD — adopted from the `gitops/argocd` platform component, never a second
+  copy of it
+- One ArgoCD Application binding `demo/` in that repo to namespace
+  `gitops-demo`, with automated sync, prune and self-heal
+- ServiceMonitors for ArgoCD's three metrics endpoints, and a Grafana dashboard
+  (`gitops-delivery`) plotting sync and health state
 
 **Prerequisites:**
-- Platform: ingress, monitoring/metrics, monitoring/grafana
-- Apps: go-api
+- Platform: ingress, gitops/argocd, monitoring/metrics, monitoring/grafana
+- Apps: none
+
+**The drill:** the learner clones the in-cluster repo over a port-forward,
+changes the declared image tag and replica count, commits and pushes, and
+watches ArgoCD reconcile the commit into the cluster. `verify` compares what
+Git declares against what the cluster runs, and `learner-pushed-a-revision`
+stays PENDING until a commit beyond the seed has actually been synced.
 
 **Explore after activation:**
-- Open ArgoCD dashboard at `http://argocd.k3d.local`
-- Login: admin / (password printed during install)
-- Watch both apps synced in the ArgoCD UI
-- Change a values file, observe ArgoCD detect drift and sync
-- Perform a rollback via ArgoCD UI
+- Open the ArgoCD dashboard at `http://argocd.k3d.local` (admin / the password
+  from `kubectl -n argocd get secret argocd-initial-admin-secret`)
+- `kubectl -n gitops port-forward svc/git-server 9418:9418`, then
+  `git clone git://127.0.0.1:9418/platform.git`
+- Edit `demo/deployment.yaml`, push, and force a sync rather than waiting for
+  the ~3 minute poll
+- Prove self-heal: `kubectl -n gitops-demo scale deployment/gitops-demo
+  --replicas=7` and watch ArgoCD put it back
+- Prove prune: delete `demo/service.yaml` in Git, push, sync, and the Service
+  leaves the cluster
+
+> The Git daemon is unauthenticated, which is what makes the loop performable in
+> a lab. It is the one thing here that must not be copied into a real cluster.
 
 ---
 
@@ -156,28 +175,57 @@ go-api's own next rollout — which is exactly why Audit mode exists.
 
 ### Chaos Engineering (`chaos-engineering`)
 
-**Category:** chaos
+**Category:** reliability
 
 **What it deploys:**
-- Chaos Mesh (failure injection engine via Helm)
-- PodDisruptionBudgets for go-api and echo-server
-- 8 pre-built chaos experiments:
-  - **PodChaos:** pod-kill (go-api), pod-kill (echo-server), pod-failure (go-api)
-  - **NetworkChaos:** delay (echo-server to Redis, 500ms), partition (go-api to Traefik), packet loss (echo-server to Redis, 50%)
-  - **StressChaos:** CPU stress (go-api), memory stress (echo-server)
-- Chaos Grafana dashboard (experiment timeline, pod restarts, HTTP metrics, resource usage)
+- A `ServiceMonitor` for the Chaos Mesh controller-manager — the chart ships
+  none, and its `prometheus.serviceMonitor` values key is silently ignored
+- A `PodDisruptionBudget` for go-api (`minAvailable: 1`), deliberately against a
+  single-replica Deployment
+- A chaos Grafana dashboard: active/total experiments, PDB disruptions allowed,
+  restarts, request rate, latency, CPU/memory, OOMKills
+- Six Chaos Mesh experiments as **snippets**, applied one at a time by the
+  learner: pod-kill, pod-failure, network-partition, network-delay, cpu-stress,
+  memory-stress
+
+Chaos Mesh itself is a **platform prerequisite** (`chaos/chaos-mesh`), not a
+scenario component: its installer picks the containerd socket per `PROFILE` and
+publishes the dashboard ingress, neither of which a scenario helm component can
+do. Install it with `labctl platform up chaos/chaos-mesh`.
 
 **Prerequisites:**
-- Platform: ingress, monitoring/metrics, monitoring/grafana
+- Platform: ingress, monitoring/metrics, monitoring/grafana, chaos/chaos-mesh
 - Apps: go-api
 
+**The drill:** two checks start PENDING and only pass on the learner's work —
+`chaos-experiment-was-run` (inject a failure) and `go-api-survives-pod-loss`
+(scale go-api out until the PDB reports `disruptionsAllowed >= 1`). Measured on
+a k3d lab: a pod-kill at one replica drops go-api from 20.3 to 4.2 rps for about
+a minute; the same experiment at three replicas causes no dip at all.
+
 **Explore after activation:**
-- Port-forward Chaos Dashboard: `kubectl -n chaos-mesh port-forward svc/chaos-dashboard 2333:2333`
-- Run an experiment: `kubectl apply -f scenarios/chaos-engineering/manifests/chaos-experiments.yaml`
-- Watch pods recover: `kubectl get pods -n go-api -w`
-- Generate traffic during experiments: `while true; do curl -s http://go-api.k3d.local/health; sleep 0.1; done`
-- Monitor impact in Grafana chaos dashboard
-- Check PDB status: `kubectl get pdb -A`
+- Chaos dashboard at `http://grafana.k3d.local/d/chaos-engineering`
+- Chaos Mesh UI at `http://chaos.k3d.local`
+- Load with `labctl traffic start --profile browse --rps 20` — never a curl loop
+- Run one experiment: `kubectl apply -f
+  scenarios/chaos-engineering/manifests/chaos-experiments.yaml -l experiment=pod-kill`
+
+**Traps this scenario documents:**
+- `minAvailable: 1` on a one-replica Deployment can never be satisfied, so the
+  PDB reports `disruptionsAllowed 0` / `InsufficientPods` and blocks every node
+  drain while doing nothing about involuntary failures. Scaling out is the fix.
+- The experiment gauge is `chaos_controller_manager_chaos_experiments` with
+  lowercase phases (`running`, `finished`), not `chaos_mesh_experiments`; the
+  experiment's own namespace arrives as `exported_namespace` because the scrape
+  target's `namespace` label wins. See
+  [R13](runbooks/R13-observability-pipeline.md).
+- go-api's `http_request_duration_seconds` is **handler** time, so it stays flat
+  at ~4ms under a 300ms `NetworkChaos` delay. Network faults are only visible
+  client-side (`curl -w time_starttransfer` through the ingress).
+- A `network-partition` leaves the pod `1/1 Ready` with perfect pod metrics
+  while every request through the ingress fails.
+- Chaos Mesh's memory stressor takes stress-ng byte format (`256MB`), not a
+  Kubernetes quantity — `256Mi` is rejected by the validating webhook.
 
 ---
 
@@ -255,19 +303,44 @@ consumer running.
 **Category:** security
 
 **What it deploys:**
-- A `SecretStore` + `ExternalSecret` syncing Vault `secret/go-api` → k8s Secret `go-api-secrets`
-- Stage 1 seeds a baseline value; stage 2 **rotates** it in Vault
+- Two workloads consuming the same synced Secret `go-api-secrets`:
+  `secret-consumer` mounts it as a **file** (`/etc/api/api-key`), `env-consumer`
+  takes it as an **env var** — the control group
+- A baseline value seeded at Vault `secret/go-api`
+- A **Secret Rotation** Grafana dashboard (ESO sync calls, readiness, Vault API rate)
+
+The Vault->ESO->Secret wiring itself belongs to the `secrets/external-secrets`
+platform component; this scenario mounts what that component publishes and does
+not re-create or remove it.
 
 **Prerequisites:**
-- Platform: secrets/vault, secrets/external-secrets
+- Platform: secrets/vault, secrets/external-secrets, monitoring/metrics
 - Apps: go-api
 
-**Checks (4):** Vault running, ESO controller ready, ExternalSecret ready,
-**rotation propagated** (script check — the synced Secret equals the rotated value, no redeploy).
+**Checks (9):** ESO controller ready, ExternalSecret ready, **ESO metrics scraped**
+(promql — an empty dashboard fails `verify`), both consumers running, **rotation
+performed** (pending — you rotated the value away from the baseline), **rotation
+reached pod** (pending — the file in the running container equals Vault), **no
+redeploy needed** (the consumer never restarted or rolled), **env consumer did not
+see it** (pending — the env-var pod is still on the old value, which is the lesson).
 
-**Explore after activation:**
-- Read the synced Secret: `kubectl -n go-api get secret go-api-secrets -o go-template='{{index .data "api-key" | base64decode}}'`
-- Rotate again: `vault kv put secret/go-api api-key=my-new-value` (via the Vault pod) and watch it propagate
+**Run the drill:**
+- Watch the pod read the file: `kubectl -n go-api logs -l app=secret-consumer -f`
+- Rotate in Vault: `kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/go-api api-key=rotated-v2'`
+- Watch the new value appear in the log with no restart (~90s), then compare:
+  `kubectl -n go-api exec deploy/secret-consumer -- cat /etc/api/api-key` against
+  `kubectl -n go-api exec deploy/env-consumer -- sh -c 'echo $API_KEY'`
+- Grade it: `labctl scenario verify secrets-management`
+
+> **Two hops, not one:** ESO refreshes the Secret every 15s, then the kubelet
+> refreshes the mounted file on its own cycle — end to end is up to ~90s, so a
+> PENDING `rotation-reached-pod` for a minute is normal.
+
+> **Env vars are the trap:** the kubelet cannot rewrite a running process's
+> environment, so `env-consumer` stays on its start-time value until something
+> rolls it. Mount a secret as a file when you want rotation to be free. (The key is
+> bound with `secretKeyRef`, not `envFrom`: `api-key` is not a valid env var name
+> and `envFrom` would skip it silently.)
 
 > **No secrets in git:** the Vault dev token comes from `VAULT_DEV_ROOT_TOKEN` (default `root`).
 
@@ -301,26 +374,49 @@ consumer running.
 **Category:** operations
 
 **What it deploys:**
-- A `PodDisruptionBudget` (`maxUnavailable: 1`) for go-api so the node roll keeps
-  the app available
+- The shape the drill needs: go-api scaled to 3 replicas. The
+  `PodDisruptionBudget` is yours to write and apply — that is objective one
+- A **Cluster Upgrade Drill** Grafana dashboard (`/d/cluster-upgrade-drill`)
+  plotting nodes by kubelet version, go-api pods per node, cordoned nodes, the
+  PDB's healthy-pods vs disruptions-allowed, and the success rate being graded
 
 **Prerequisites:**
 - Platform: ingress, monitoring/metrics
 - Apps: go-api
 - Runtime: k3d (multi-node)
 
-**Checks (4):** PDB present, go-api ≥2 ready, all nodes Ready & schedulable
-(script), **success rate ≥ 99%** across the upgrade window (promql).
+**Checks (8):** PDB present, PDB protects >=2 pods, go-api >=2 ready, all nodes
+Ready and uncordoned (script), no node left behind on the old version (script),
+workload survived the roll and is still spread across nodes (script), traffic was
+actually flowing (promql), **success rate >= 99%** across the upgrade window
+(promql).
 
 **Run the drill:**
 - Start traffic: `labctl traffic start --profile steady --rps 20`
-- Roll workers to a newer version:
-  `TARGET_K3S_VERSION=v1.29.4-k3s1 bash scenarios/cluster-upgrade-drill/scripts/upgrade.sh`
+- Apply your PDB: `kubectl apply -f scenarios/cluster-upgrade-drill/manifests/baseline.yaml`
+- Per worker node, cordon and drain it yourself:
+  `kubectl cordon <node>` then
+  `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data --timeout=120s`
+- Then replace the drained node:
+  `TARGET_K3S_VERSION=<tag> bash scenarios/cluster-upgrade-drill/scripts/roll-node.sh <node>`
 - Grade it: `labctl scenario verify cluster-upgrade-drill`
 
-> **Honest scope:** k3d has no in-place node upgrade. `upgrade.sh` drains and
-> replaces each agent node on the target k3s image — a faithful rolling **worker**
-> upgrade. The control-plane node is left as-is; managed clusters upgrade it first.
+> **Honest scope:** k3d has no in-place node upgrade. `roll-node.sh` replaces one
+> already-drained agent node with a fresh one on the target k3s image — a faithful
+> rolling **worker** upgrade, and the same operation a managed node group performs.
+> It refuses to touch a node you have not drained, refuses a downgrade, and refuses
+> a kubelet more than three minor versions behind the API server. The control-plane
+> node is left as-is; managed clusters upgrade it first.
+
+> **Node replacement destroys local storage.** Any local-path PersistentVolume
+> pinned to a node you replace is lost and its claim sits Pending forever — in
+> this lab that routinely strands Prometheus itself, so the drill can no longer
+> be graded. `roll-node.sh` warns before deleting such a node, and
+> `scripts/reclaim-stranded-pvcs.sh` (try `DRY_RUN=true` first) releases the dead
+> claims so their StatefulSets rebind. A drain also evicts the k6 traffic Job,
+> which does not restart itself — check `labctl traffic status` after each roll.
+> See [R04 §8](runbooks/R04-lab-lifecycle.md) for the full set of node-replacement
+> traps.
 
 ---
 

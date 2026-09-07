@@ -1,6 +1,3 @@
-# PodDisruptionBudgets for chaos-engineering scenario
-# These ensure minimum availability during chaos experiments.
-# Applied when the scenario is activated, removed when deactivated.
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -14,5 +11,3 @@ spec:
   selector:
     matchLabels:
       app: go-api
-# (echo-server PDB omitted: echo-server is not a prerequisite of this scenario,
-# so applying a PDB to its namespace fails when the app isn't deployed.)

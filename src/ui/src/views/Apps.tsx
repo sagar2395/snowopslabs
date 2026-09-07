@@ -6,6 +6,8 @@ import type { AppInfo, AppDetail, AppFileRef, NotifyFn } from '../types'
 import { Badge, DeployedBadge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
+import { Tabs, type TabItem } from '../components/Tabs'
+import { Collapsible } from '../components/Collapsible'
 import { useJobRunner } from '../hooks/useJobRunner'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
@@ -224,17 +226,27 @@ export function Apps({ notify, requestConfirm }: AppsProps) {
 }
 
 /** Per-app details: what it is, its stack, and the real Dockerfile + Helm chart
- *  (with repo paths) so a learner can find the files and rebuild/redeploy it. */
+ *  (with repo paths) so a learner can find the files and rebuild/redeploy it.
+ *  The source files run to hundreds of lines each, so they live behind tabs
+ *  rather than stacked into one scroll. */
 function FileBlock({ label, file, onCopy }: { label: string; file: AppFileRef; onCopy: (t: string) => void }) {
   return (
     <div className="modal-section">
       <h3>{label} <span className="hint-text">{file.path}</span></h3>
+      <FileBody file={file} onCopy={onCopy} />
+    </div>
+  )
+}
+
+function FileBody({ file, onCopy }: { file: AppFileRef; onCopy: (t: string) => void }) {
+  return (
+    <>
       <div className="cmd-block cmd-block-multiline">
         <button className="cmd-copy" onClick={() => onCopy(file.content)}>Copy</button>
         <pre className="snippet-code">{file.content}</pre>
       </div>
       {file.truncated && <div className="field-help">Showing the first part of the file — open <code>{file.path}</code> for the full contents.</div>}
-    </div>
+    </>
   )
 }
 
@@ -246,9 +258,67 @@ function AppDetailModal({ detail, loading, onClose, onCopy }: {
 }) {
   const tech = detail.tech ?? []
   const templates = detail.templates ?? []
+
+  const tabs: TabItem[] = [{
+    id: 'overview',
+    label: 'Overview',
+    content: (
+      <>
+        {detail.description && (
+          <div className="modal-section">
+            <h3>What it is</h3>
+            <p>{detail.description}</p>
+          </div>
+        )}
+
+        <div className="modal-section">
+          <h3>Build &amp; deploy</h3>
+          {detail.buildStrategy && <div className="field-help">Build strategy: <code>{detail.buildStrategy}</code></div>}
+          {detail.deployStrategy && <div className="field-help">Deploy strategy: <code>{detail.deployStrategy}</code></div>}
+          <div className="field-help">Namespace: <code>{detail.namespace}</code></div>
+          {detail.helmChartPath && <div className="field-help">Helm chart: <code>{detail.helmChartPath}</code></div>}
+        </div>
+      </>
+    ),
+  }]
+
+  if (detail.dockerfile) {
+    tabs.push({
+      id: 'dockerfile',
+      label: 'Dockerfile',
+      content: <FileBlock label="Dockerfile" file={detail.dockerfile} onCopy={onCopy} />,
+    })
+  }
+
+  if (detail.valuesFile || detail.chartYaml || templates.length > 0) {
+    tabs.push({
+      id: 'helm',
+      label: 'Helm',
+      content: (
+        <div className="collapse-group">
+          {detail.valuesFile && (
+            <Collapsible title="Helm values (used by Deploy)" aside={detail.valuesFile.path} defaultOpen>
+              <FileBody file={detail.valuesFile} onCopy={onCopy} />
+            </Collapsible>
+          )}
+          {detail.chartYaml && (
+            <Collapsible title="Chart.yaml" aside={detail.chartYaml.path}>
+              <FileBody file={detail.chartYaml} onCopy={onCopy} />
+            </Collapsible>
+          )}
+          {templates.length > 0 && (
+            <Collapsible title="Helm templates" aside={`${templates.length} files`}>
+              <ul>{templates.map(t => <li key={t}><code>{t}</code></li>)}</ul>
+            </Collapsible>
+          )}
+        </div>
+      ),
+    })
+  }
+
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal-card" role="dialog" aria-modal="true" aria-label={`${detail.name} details`}>
+      <div className="modal-card modal-tabbed" role="dialog" aria-modal="true" aria-label={`${detail.name} details`}>
         <button className="modal-close" aria-label="Close details" onClick={onClose}><Icon name="x" size={18} /></button>
 
         <div className="modal-header">
@@ -259,35 +329,11 @@ function AppDetailModal({ detail, loading, onClose, onCopy }: {
         </div>
 
         {loading ? (
-          <div className="loading" role="status">Loading…</div>
+          <div className="modal-scroll"><div className="loading" role="status">Loading…</div></div>
         ) : (
-          <>
-            {detail.description && (
-              <div className="modal-section">
-                <h3>What it is</h3>
-                <p>{detail.description}</p>
-              </div>
-            )}
-
-            <div className="modal-section">
-              <h3>Build &amp; deploy</h3>
-              {detail.buildStrategy && <div className="field-help">Build strategy: <code>{detail.buildStrategy}</code></div>}
-              {detail.deployStrategy && <div className="field-help">Deploy strategy: <code>{detail.deployStrategy}</code></div>}
-              <div className="field-help">Namespace: <code>{detail.namespace}</code></div>
-              {detail.helmChartPath && <div className="field-help">Helm chart: <code>{detail.helmChartPath}</code></div>}
-            </div>
-
-            {detail.dockerfile && <FileBlock label="Dockerfile" file={detail.dockerfile} onCopy={onCopy} />}
-            {detail.valuesFile && <FileBlock label="Helm values (used by Deploy)" file={detail.valuesFile} onCopy={onCopy} />}
-            {detail.chartYaml && <FileBlock label="Chart.yaml" file={detail.chartYaml} onCopy={onCopy} />}
-
-            {templates.length > 0 && (
-              <div className="modal-section">
-                <h3>Helm templates</h3>
-                <ul>{templates.map(t => <li key={t}><code>{t}</code></li>)}</ul>
-              </div>
-            )}
-          </>
+          <div className="modal-scroll">
+            <Tabs tabs={tabs} label={`${detail.name} sections`} />
+          </div>
         )}
 
         <div className="card-footer">

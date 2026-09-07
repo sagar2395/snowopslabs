@@ -1,0 +1,189 @@
+## The lab's Git source of truth.
+## ArgoCD reconciles from THIS repository, which lives in the cluster and which
+## you can push to — that is what makes the GitOps loop performable here.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gitops
+  labels:
+    app.kubernetes.io/part-of: gitops-cicd
+---
+## The seed commit's contents. The init container turns these into the first
+## commit of a bare repo; from then on the repo is yours to change.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: git-seed
+  namespace: gitops
+data:
+  deployment.yaml: |
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: gitops-demo
+      labels:
+        app: gitops-demo
+    spec:
+      replicas: 2
+      selector:
+        matchLabels:
+          app: gitops-demo
+      template:
+        metadata:
+          labels:
+            app: gitops-demo
+        spec:
+          containers:
+            - name: web
+              image: nginx:1.27.3-alpine
+              ports:
+                - containerPort: 80
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
+  service.yaml: |
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: gitops-demo
+      labels:
+        app: gitops-demo
+    spec:
+      selector:
+        app: gitops-demo
+      ports:
+        - port: 80
+          targetPort: 80
+---
+## The repo outlives the pod on purpose. On an emptyDir, any restart — a scale
+## to zero, an eviction, a node reboot — silently discards every commit the
+## learner pushed and reseeds, leaving `verify` red with no way back. The PVC is
+## deleted with the gitops namespace on teardown, so it still leaks nothing.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: git-repos
+  namespace: gitops
+  labels:
+    app.kubernetes.io/part-of: gitops-cicd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git-server
+  namespace: gitops
+  labels:
+    app: git-server
+spec:
+  replicas: 1
+  ## Recreate, not RollingUpdate: a ReadWriteOnce claim cannot be mounted by the
+  ## new pod while the old one still holds it, so a rolling update deadlocks.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: git-server
+  template:
+    metadata:
+      labels:
+        app: git-server
+    spec:
+      initContainers:
+        ## Builds the bare repo from the seed ConfigMap. Skips if it already
+        ## exists so a restarted pod never discards a learner's pushes.
+        - name: seed
+          image: alpine/git:2.47.2
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              if [ -d /srv/git/platform.git ]; then
+                echo "repo already seeded"; exit 0
+              fi
+              mkdir -p /tmp/seed/demo
+              cp /seed/deployment.yaml /seed/service.yaml /tmp/seed/demo/
+              cd /tmp/seed
+              git init -q -b main .
+              git -c user.email=lab@snowops.local -c user.name=SnowOps add -A
+              git -c user.email=lab@snowops.local -c user.name=SnowOps \
+                commit -q -m "seed: gitops-demo at nginx:1.27.3-alpine, 2 replicas"
+              git clone -q --bare /tmp/seed /srv/git/platform.git
+              ## A bare repo still refuses a push to its checked-out HEAD unless
+              ## told not to care.
+              git -C /srv/git/platform.git config receive.denyCurrentBranch ignore
+              echo "seeded /srv/git/platform.git"
+          volumeMounts:
+            - name: repos
+              mountPath: /srv/git
+            - name: seed
+              mountPath: /seed
+      containers:
+        - name: git-daemon
+          image: alpine/git:2.47.2
+          ## alpine/git carries the git client but not the daemon — `git daemon`
+          ## lives in the separate git-daemon subpackage, so add it at start.
+          ## --enable=receive-pack is what makes the repo pushable, which is the
+          ## whole point: a repo you can only read teaches nothing about GitOps.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              apk add --no-cache git-daemon
+              exec git daemon \
+                --reuseaddr \
+                --base-path=/srv/git \
+                --export-all \
+                --enable=receive-pack \
+                --verbose \
+                /srv/git
+          ports:
+            - name: git
+              containerPort: 9418
+          readinessProbe:
+            tcpSocket:
+              port: 9418
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          volumeMounts:
+            - name: repos
+              mountPath: /srv/git
+      volumes:
+        - name: repos
+          persistentVolumeClaim:
+            claimName: git-repos
+        - name: seed
+          configMap:
+            name: git-seed
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git-server
+  namespace: gitops
+  labels:
+    app: git-server
+spec:
+  selector:
+    app: git-server
+  ports:
+    - name: git
+      port: 9418
+      targetPort: 9418
