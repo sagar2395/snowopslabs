@@ -174,6 +174,26 @@ describe('Scenarios view — detail modal teaches implementation', () => {
     expect(screen.getByText(/hpa\/keda-hpa-go-api/)).toBeInTheDocument()
   })
 
+  // A scenario states what it needs of the bound app; the reader must be able to
+  // see that requirement without opening scenario.yaml.
+  it('shows required workload capabilities alongside the other prerequisites', async () => {
+    const user = userEvent.setup()
+    const needsCaps: Scenario = {
+      ...rich,
+      prerequisites: { platform: ['ingress'], apps: ['go-api'], capabilities: ['prometheus-metrics', 'otlp-tracing'] },
+    }
+    mockApi.listScenarios.mockResolvedValue([{ ...needsCaps }])
+    mockApi.getScenario.mockResolvedValue(needsCaps)
+
+    renderScenarios()
+    await user.click(await screen.findByRole('button', { name: /details/i }))
+
+    expect(await screen.findByText(/Platform: ingress/)).toBeInTheDocument()
+    expect(screen.getByText(/App: go-api/)).toBeInTheDocument()
+    expect(screen.getByText(/Needs: prometheus-metrics/)).toBeInTheDocument()
+    expect(screen.getByText(/Needs: otlp-tracing/)).toBeInTheDocument()
+  })
+
   it('moves between tabs with the arrow keys', async () => {
     const user = userEvent.setup()
     mockApi.listScenarios.mockResolvedValue([{ ...rich }])

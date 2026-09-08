@@ -2,7 +2,7 @@ apiVersion: scenario.snowops.net/v2
 name: mesh-traffic-management
 verified: true
 displayName: "Mesh Traffic Management"
-description: "Istio canary release for go-api: a 90/10 weighted split between v1 and v2, mesh-level latency fault injection, and STRICT mTLS on the canary workload. Watch the split and faults in mesh telemetry."
+description: "Istio canary release for {{.WorkloadName}}: a 90/10 weighted split between v1 and v2, mesh-level latency fault injection, and STRICT mTLS on the canary workload. Watch the split and faults in mesh telemetry."
 category: networking
 prerequisites:
   platform:
@@ -10,13 +10,13 @@ prerequisites:
     - mesh
     - monitoring/metrics
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
 runtimes:
   - k3d
   - kind
 
 objectives:
-  - "Route traffic 90/10 across two go-api versions with an Istio VirtualService"
+  - "Route traffic 90/10 across two {{.WorkloadName}} versions with an Istio VirtualService"
   - "Inject mesh-level latency without touching the app, and observe the impact"
   - "Enforce STRICT mTLS between meshed workloads and verify it"
 
@@ -27,7 +27,7 @@ stages:
       - name: canary
         type: manifest
         path: manifests/canary.yaml
-        namespace: go-api
+        namespace: "{{.WorkloadNamespace}}"
 
   - name: fault-injection
     description: Add a mesh-level latency fault to a fraction of requests
@@ -35,7 +35,7 @@ stages:
       - name: latency-fault
         type: manifest
         path: manifests/fault-injection.yaml
-        namespace: go-api
+        namespace: "{{.WorkloadNamespace}}"
 
 # These assume the mesh provider is Istio (the default). Checks read CR/Deployment
 # state via jsonpath — no text scraping.
@@ -50,29 +50,29 @@ checks:
 
   - name: canary-v1-ready
     type: kubectl
-    resource: deployment/go-api-v1
-    namespace: go-api
+    resource: deployment/{{.WorkloadName}}-v1
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
 
   - name: canary-v2-ready
     type: kubectl
-    resource: deployment/go-api-v2
-    namespace: go-api
+    resource: deployment/{{.WorkloadName}}-v2
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
 
   - name: virtualservice-present
     type: kubectl
-    resource: virtualservice/go-api-canary
-    namespace: go-api
+    resource: virtualservice/{{.WorkloadName}}-canary
+    namespace: "{{.WorkloadNamespace}}"
 
   - name: mtls-strict-present
     type: kubectl
-    resource: peerauthentication/go-api-mtls
-    namespace: go-api
+    resource: peerauthentication/{{.WorkloadName}}-mtls
+    namespace: "{{.WorkloadNamespace}}"
 
 references:
   - label: "Istio — Traffic management (VirtualService & DestinationRule)"
@@ -95,20 +95,20 @@ snippets:
 
 explore:
   urls:
-    - label: "Grafana — go-api requests (v1/v2 traffic split)"
+    - label: "Grafana — {{.WorkloadName}} requests (v1/v2 traffic split)"
       url: "http://grafana.{{.DomainSuffix}}/d/app-requests"
   commands:
     - label: "Send 20 requests and watch the 90/10 split by version"
-      command: "for i in $(seq 1 20); do kubectl -n go-api exec deploy/go-api-v1 -c go-api -- wget -qO- http://go-api-canary/version 2>/dev/null; done | sort | uniq -c"
+      command: "for i in $(seq 1 20); do kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}}-v1 -c {{.WorkloadName}} -- wget -qO- http://{{.WorkloadName}}-canary/version 2>/dev/null; done | sort | uniq -c"
     - label: "Observe the injected latency (v2 path delayed)"
-      command: "kubectl -n go-api exec deploy/go-api-v1 -c go-api -- sh -c 'time wget -qO- http://go-api-canary/health'"
+      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}}-v1 -c {{.WorkloadName}} -- sh -c 'time wget -qO- http://{{.WorkloadName}}-canary/health'"
     - label: "Verify mTLS is STRICT on the canary workload"
-      command: "kubectl -n go-api get peerauthentication go-api-mtls -o jsonpath='{.spec.mtls.mode}{\"\\n\"}'"
+      command: "kubectl -n {{.WorkloadNamespace}} get peerauthentication {{.WorkloadName}}-mtls -o jsonpath='{.spec.mtls.mode}{\"\\n\"}'"
     - label: "Inspect the weighted route"
-      command: "kubectl -n go-api get virtualservice go-api-canary -o jsonpath='{.spec.http[0].route}{\"\\n\"}'"
+      command: "kubectl -n {{.WorkloadNamespace}} get virtualservice {{.WorkloadName}}-canary -o jsonpath='{.spec.http[0].route}{\"\\n\"}'"
   tips:
     - "Subsets v1/v2 are selected by the pod label 'version'; the DestinationRule maps them."
-    - "Grafana → the linked go-api requests dashboard: with the 90/10 split v2 should carry ~10% of requests. Shift the VirtualService weights, re-apply, and watch the balance move."
+    - "Grafana → the linked {{.WorkloadName}} requests dashboard: with the 90/10 split v2 should carry ~10% of requests. Shift the VirtualService weights, re-apply, and watch the balance move."
     - "Shift the split by editing spec.http[0].route weights and re-applying — canary promotion."
     - "The fault-injection stage adds a fixed delay to the v2 subset; mesh-level, no app change."
     - "STRICT mTLS means plaintext clients without a sidecar are rejected — that is the security win."

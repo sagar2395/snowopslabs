@@ -61,6 +61,13 @@ type AppStatusResp struct {
 	// app's ingress to be enabled and the host resolvable (a /etc/hosts entry
 	// for k3d/kind), which the UI notes.
 	URL string `json:"url,omitempty"`
+	// ServiceURL is the app's in-cluster base URL, from its declared contract.
+	// The UI drives traffic at it, so the address is derived once here rather
+	// than reconstructed in the client where it would drift from the contract.
+	ServiceURL string `json:"serviceUrl,omitempty"`
+	// Capabilities the app declares (ADR-0014), so the UI can show which
+	// scenarios a given app is able to run.
+	Capabilities []string `json:"capabilities,omitempty"`
 	// HPA carries live autoscaler state when an HPA (KEDA-managed included)
 	// targets the app; nil otherwise, so the UI shows the plain replica count.
 	HPA *k8s.HPAStatus `json:"hpa,omitempty"`
@@ -135,6 +142,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		if appCfg != nil {
 			appResp.Build = appCfg.BuildStrategy
 			appResp.Deploy = appCfg.DeployStrategy
+			appResp.ServiceURL = appCfg.Workload().URL()
+			for _, c := range appCfg.Contract.Capabilities {
+				appResp.Capabilities = append(appResp.Capabilities, string(c))
+			}
 			ns := appName
 			if appCfg.Namespace != "" {
 				ns = appCfg.Namespace
@@ -642,6 +653,18 @@ func (s *Server) handleScenarioInfo(w http.ResponseWriter, r *http.Request) {
 	resolve := func(in string) string { return s.scenes.ResolveTemplateWithParams(in, defaults) }
 	resp := *sc
 
+	// Description and objectives are prose a learner reads first, and they name
+	// the workload the scenario is bound to. Unresolved, they would say
+	// "{{.WorkloadName}}" in the UI.
+	resp.Description = resolve(sc.Description)
+	if len(sc.Objectives) > 0 {
+		objectives := make([]string, len(sc.Objectives))
+		for i, o := range sc.Objectives {
+			objectives[i] = resolve(o)
+		}
+		resp.Objectives = objectives
+	}
+
 	urls := make([]scenario.ExploreURL, len(sc.Explore.URLs))
 	for i, u := range sc.Explore.URLs {
 		u.URL = resolve(u.URL)
@@ -659,16 +682,26 @@ func (s *Server) handleScenarioInfo(w http.ResponseWriter, r *http.Request) {
 	resp.Explore = scenario.Explore{URLs: urls, Commands: cmds, Tips: tips}
 
 	// Inline each snippet's content (from its file or inline YAML) so the UI can
-	// show the actual manifest a learner would apply.
+	// show the actual manifest a learner would apply. Label and description are
+	// resolved with it — they name the workload too.
 	if len(sc.Snippets) > 0 {
 		snips := make([]scenario.Snippet, len(sc.Snippets))
 		for i, sn := range sc.Snippets {
 			if content, err := s.scenes.SnippetContent(sc, sn); err == nil {
 				sn.YAML = content
 			}
+			sn.Label = resolve(sn.Label)
+			sn.Description = resolve(sn.Description)
 			snips[i] = sn
 		}
 		resp.Snippets = snips
+	}
+	if len(sc.Prerequisites.Apps) > 0 {
+		apps := make([]string, len(sc.Prerequisites.Apps))
+		for i, a := range sc.Prerequisites.Apps {
+			apps[i] = resolve(a)
+		}
+		resp.Prerequisites.Apps = apps
 	}
 
 	respondJSON(w, http.StatusOK, resp)

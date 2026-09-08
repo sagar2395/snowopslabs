@@ -14,8 +14,8 @@ set -euo pipefail
 # This is the same invariant GitOps tools call drift: desired vs live state.
 
 ENVS="dev staging prod"
-APP="go-api"
-REPO="go-api"
+APP="${WORKLOAD_NAME:-go-api}"
+REPO="${WORKLOAD_NAME:-go-api}"
 fail=0
 
 jp() { kubectl get "$1" "$2" -n "$3" -o jsonpath="$4" 2>/dev/null || echo ""; }
@@ -32,7 +32,7 @@ for env_name in $ENVS; do
     continue
   fi
 
-  # Compare the FULL image reference, not just the tag: "otherrepo/go-api:v1.1.0"
+  # Compare the FULL image reference, not just the tag: "otherrepo/<app>:v1.1.0"
   # must not satisfy declared_tag=v1.1.0.
   want="${REPO}:${declared}"
 
@@ -70,8 +70,8 @@ for env_name in $ENVS; do
   # Deliberately .spec, not .status.containerStatuses[].image: when several tags
   # share one digest in the node's image store (the lab builds tag both vX.Y.Z
   # and :latest), the kubelet reports whichever tag it resolved — commonly
-  # "docker.io/library/go-api:latest" for a pod that correctly requested
-  # go-api:v1.1.0. Comparing tags against that field reports drift that is not
+  # "docker.io/library/<app>:latest" for a pod that correctly requested
+  # ${WORKLOAD_NAME:-go-api}:v1.1.0. Comparing tags against that field reports drift that is not
   # there.
   running_images=$(kubectl get pods -n "$ns" -l app="$APP" \
     --field-selector=status.phase=Running \
@@ -105,7 +105,7 @@ done
 if [ "$fail" = "0" ]; then
   echo ""
   echo "All environments consistent. Confirm the running binary agrees:"
-  echo "  for e in dev staging prod; do echo -n \"\$e: \"; curl -s go-api-\$e.\${DOMAIN_SUFFIX:-k3d.local}/version; echo; done"
+  echo "  for e in dev staging prod; do echo -n \"\$e: \"; curl -s ${WORKLOAD_NAME:-go-api}-\$e.\${DOMAIN_SUFFIX:-k3d.local}/version; echo; done"
 fi
 
 exit "$fail"

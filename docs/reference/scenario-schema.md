@@ -19,6 +19,7 @@ category: observability               # grouping label
 prerequisites:
   platform: [ingress, monitoring/metrics]
   apps: [go-api]
+  capabilities: [prometheus-metrics]   # what the bound app must promise
 
 runtimes: [k3d, kind]                 # optional; compatible runtimes
 
@@ -215,6 +216,50 @@ labctl scenario up autoscaling-under-load --set MaxReplicas=4 --set Threshold=15
 An `int` parameter is bounds-checked and parsed before substitution, for both
 the default and any override.
 
+## Prerequisites
+
+| Field | Meaning |
+|---|---|
+| `platform` | Platform components that must be installed |
+| `apps` | Apps whose `apps/<name>/app.env` must exist |
+| `capabilities` | What the **bound workload** must declare |
+
+### `capabilities` — stating what you need, not who provides it
+
+A scenario that names an app can only ever run against that app. One that states
+what it needs of an app can run against any app that provides it — including a
+user's own. See [ADR-0014](../adr/0014-workload-binding-and-app-contract.md).
+
+```yaml
+prerequisites:
+  capabilities:
+    - prometheus-metrics
+    - otlp-tracing
+```
+
+The vocabulary is closed — `labctl app capabilities` lists it, and an unknown
+name fails `labctl validate` rather than silently meaning "never satisfied":
+
+| Capability | The app… |
+|---|---|
+| `prometheus-metrics` | serves the metrics path in Prometheus format, including the request-duration histogram |
+| `otlp-tracing` | honours `OTEL_EXPORTER_OTLP_ENDPOINT` and exports spans |
+| `readiness-toggle` | can have its readiness flipped to failing on demand |
+
+Require only what the scenario genuinely uses. A requirement is a restriction on
+which apps can run it, so an unnecessary one narrows the scenario for nothing.
+
+Preflight refuses to activate a scenario the bound app cannot satisfy, before
+anything installs. `labctl scenario info` shows the requirement graded against
+the app currently bound:
+
+```
+Prerequisites (workload capabilities), bound to "echo-server":
+  - prometheus-metrics     ok
+  - otlp-tracing           missing
+  - readiness-toggle       missing
+```
+
 ## Template variables
 
 URLs, commands, namespaces, snippets and manifests are Go templates.
@@ -224,8 +269,91 @@ URLs, commands, namespaces, snippets and manifests are Go templates.
 | `{{.DomainSuffix}}` | `k3d.local` | Ingress domain suffix from the active runtime |
 | `{{.MonitoringNamespace}}` | `monitoring` | Where the monitoring stack lives |
 | `{{.ProjectRoot}}` | `/path/to/project` | Absolute path to the content root |
+| `{{.LokiRetentionPeriod}}` | `72h` | Loki's configured retention |
+| `{{.IngressClass}}` | `traefik` | Ingress class for scenario Ingress manifests |
+| `{{.WorkloadName}}` | `go-api` | The bound app's name, and its Deployment name |
+| `{{.WorkloadNamespace}}` | `go-api` | Where the bound app is deployed |
+| `{{.WorkloadService}}` | `go-api.go-api.svc.cluster.local` | Its in-cluster DNS name |
+| `{{.WorkloadPort}}` | `8080` | The port it serves HTTP on |
+| `{{.WorkloadMetric}}` | `http_server_request_duration_seconds` | The request-duration histogram it exposes |
 
 An unknown variable is a validation error, not an empty string.
+
+### The workload variables
+
+A scenario names the app it acts on through `{{.Workload*}}` rather than a
+literal, so the same scenario runs against a built-in app or one the user brings
+(see [ADR-0014](../adr/0014-workload-binding-and-app-contract.md)):
+
+```yaml
+checks:
+  - name: app-scaled-up
+    type: kubectl
+    resource: deployment/{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "3"
+
+  - name: latency-within-slo
+    type: promql
+    query: 'histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket[5m])) by (le))'
+    operator: "<"
+    value: "1.5"
+```
+
+`{{.WorkloadMetric}}` names the histogram rather than assuming it, because each
+language's instrumentation library picks its own. Derive a request rate from its
+`_count` series (`rate({{.WorkloadMetric}}_count[5m])`) — the OpenTelemetry
+semantic conventions the app contract mandates define no separate counter.
+
+The names are flat (`{{.WorkloadName}}`, not `{{.Workload.Name}}`). The expander
+matches a single dotted identifier on purpose, so it never rewrites the Helm,
+Prometheus and Grafana templating that shares these files; a nested reference
+would pass through unresolved and reach kubectl verbatim.
+
+### Templates in content, environment variables in scripts
+
+The engine resolves `{{.Workload*}}` in everything it reads itself — `scenario.yaml`,
+the manifests it applies, dashboard JSON, snippets and prose. It does **not**
+resolve a script: a script is executed as a file, so a `{{.WorkloadName}}` inside
+one reaches `kubectl` verbatim.
+
+Scripts read the binding from the environment instead. Every component script,
+check script and fault script is given:
+
+| Variable | Example |
+|---|---|
+| `WORKLOAD_NAME` | `go-api` |
+| `WORKLOAD_NAMESPACE` | `go-api` |
+| `WORKLOAD_PORT` | `8080` |
+| `WORKLOAD_METRIC` | `http_server_request_duration_seconds` |
+
+```sh
+NS="${WORKLOAD_NAMESPACE:-go-api}"
+APP="${WORKLOAD_NAME:-go-api}"
+kubectl -n "$NS" get deploy "$APP"
+```
+
+Keep the `:-` fallback so the script still runs standalone.
+
+> Incident scripts additionally receive `TARGET_NAMESPACE` and `TARGET_WORKLOAD`
+> from the fault's own `target:` block, which is what a fault pinned to one
+> application uses. See [incidents/README.md](../../incidents/README.md).
+
+### What not to template
+
+- **File paths.** `path: manifests/{{.WorkloadName}}-tls.yaml` looks for a file
+  that does not exist. Name the file for its role instead.
+- **Check names.** They are recorded against scores, so a templated name makes a
+  result history incomparable. Name the check for what it asserts —
+  `workload-healthy`, not `go-api-healthy`.
+- **Dashboard UIDs**, for the same reason: they are stable identities.
+
+> A threshold calibrated to one language grades the language, not the engineer.
+> A p99 SLO that a Go app clears easily is one a JVM app fails during warmup, so
+> a check with an absolute bound should become a parameter once the scenario is
+> expected to run against more than one stack.
 
 Everything `labctl scenario info` and the UI display is resolved before it is
 shown — component namespaces and charts included — using the scenario's

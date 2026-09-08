@@ -5,22 +5,22 @@ set -euo pipefail
 #
 # This is the operation a real on-call engineer performs for node maintenance
 # (kernel patch, hardware swap, scale-down). The PodDisruptionBudget applied by
-# the scenario baseline keeps go-api available while the node's pods are evicted
+# the scenario baseline keeps ${WORKLOAD_NAME:-go-api} available while the node's pods are evicted
 # and rescheduled elsewhere. The scenario's promql check grades the request
 # success rate through the operation.
 #
 # Env:
 #   NODE          node to drain (default: a non-control-plane node)
 #   DRAIN_TIMEOUT kubectl drain timeout (default: 120s)
-#   APP_NAMESPACE go-api namespace (default: go-api)
+#   APP_NAMESPACE ${WORKLOAD_NAME:-go-api} namespace (default: ${WORKLOAD_NAME:-go-api})
 
 DRAIN_TIMEOUT="${DRAIN_TIMEOUT:-120s}"
-APP_NAMESPACE="${APP_NAMESPACE:-go-api}"
+APP_NAMESPACE="${APP_NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
 
-# Ensure go-api has enough replicas for the PDB to protect availability.
-echo "==> Ensuring go-api has HA replicas (>=3) before the drain"
-kubectl -n "$APP_NAMESPACE" scale deployment go-api --replicas=3
-kubectl -n "$APP_NAMESPACE" rollout status deployment go-api --timeout=120s
+# Ensure ${WORKLOAD_NAME:-go-api} has enough replicas for the PDB to protect availability.
+echo "==> Ensuring ${WORKLOAD_NAME:-go-api} has HA replicas (>=3) before the drain"
+kubectl -n "$APP_NAMESPACE" scale deployment ${WORKLOAD_NAME:-go-api} --replicas=3
+kubectl -n "$APP_NAMESPACE" rollout status deployment ${WORKLOAD_NAME:-go-api} --timeout=120s
 
 # Pick a worker node to drain: prefer a node WITHOUT the control-plane role so
 # we never evict the API server. Fall back to any node if roles are unlabeled.
@@ -66,8 +66,8 @@ kubectl drain "$NODE" \
   --delete-emptydir-data \
   --timeout="$DRAIN_TIMEOUT"
 
-echo "==> Waiting for go-api to settle on the remaining nodes"
-kubectl -n "$APP_NAMESPACE" rollout status deployment go-api --timeout=120s
+echo "==> Waiting for ${WORKLOAD_NAME:-go-api} to settle on the remaining nodes"
+kubectl -n "$APP_NAMESPACE" rollout status deployment ${WORKLOAD_NAME:-go-api} --timeout=120s
 
 echo ""
 echo "Drain complete. The node will be uncordoned now."

@@ -133,6 +133,10 @@ export interface AppInfo {
   namespace?: string
   /** Ingress URL (http://<app>.<domainSuffix>), set once deployed. */
   url?: string
+  /** In-cluster base URL from the app's declared contract — the traffic target. */
+  serviceUrl?: string
+  /** Capabilities the app declares (ADR-0014). */
+  capabilities?: string[]
   /** Autoscaler state, present only when an HPA targets the app. */
   hpa?: HPAStatus
 }
@@ -149,6 +153,8 @@ export interface StatusResponse {
 export interface ScenarioPrerequisites {
   platform?: string[]
   apps?: string[]
+  /** Capabilities the bound workload must declare, e.g. prometheus-metrics. */
+  capabilities?: string[]
 }
 
 export interface ExploreURL {
@@ -490,7 +496,7 @@ export interface Fault {
   category: string          // workload | network | resources | storage | config
   severity: string          // low | medium | high
   expectAlert?: string
-  prerequisites?: { platform?: string[]; apps?: string[] }
+  prerequisites?: { platform?: string[]; apps?: string[]; capabilities?: string[] }
   references?: ContentReference[]
   snippets?: ContentSnippet[]
 }

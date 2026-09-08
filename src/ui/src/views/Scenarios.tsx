@@ -362,6 +362,7 @@ function ScenarioDetailTabs({ detail, verifyResult, onCopy }: {
   const objectives = detail.objectives ?? []
   const prereqPlatform = detail.prerequisites?.platform ?? []
   const prereqApps = detail.prerequisites?.apps ?? []
+  const prereqCaps = detail.prerequisites?.capabilities ?? []
   const urls = detail.explore?.urls ?? []
   const commands = detail.explore?.commands ?? []
   const tips = detail.explore?.tips ?? []
@@ -388,17 +389,18 @@ function ScenarioDetailTabs({ detail, verifyResult, onCopy }: {
           </div>
         )}
 
-        {(prereqPlatform.length > 0 || prereqApps.length > 0) && (
+        {(prereqPlatform.length > 0 || prereqApps.length > 0 || prereqCaps.length > 0) && (
           <div className="modal-section">
             <h3>Prerequisites</h3>
             <div className="prereq-chips">
               {prereqPlatform.map(p => <Badge key={`p-${p}`} variant="category">Platform: {p}</Badge>)}
               {prereqApps.map(a => <Badge key={`a-${a}`} variant="category">App: {a}</Badge>)}
+              {prereqCaps.map(c => <Badge key={`c-${c}`} variant="category">Needs: {c}</Badge>)}
             </div>
           </div>
         )}
 
-        {!detail.description && objectives.length === 0 && prereqPlatform.length === 0 && prereqApps.length === 0 && (
+        {!detail.description && objectives.length === 0 && prereqPlatform.length === 0 && prereqApps.length === 0 && prereqCaps.length === 0 && (
           <div className="empty-state"><div>This scenario has no description yet.</div></div>
         )}
       </>

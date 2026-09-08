@@ -8,17 +8,17 @@
   "links": [],
   "panels": [
     {
-      "title": "go-api: Replicas vs Request Rate",
+      "title": "{{.WorkloadName}}: Replicas vs Request Rate",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 18, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{app=\"go-api\"}[1m]))",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\"}[1m]))",
           "legendFormat": "RPS"
         },
         {
-          "expr": "kube_deployment_status_replicas{deployment=\"go-api\"}",
+          "expr": "kube_deployment_status_replicas{deployment=\"{{.WorkloadName}}\"}",
           "legendFormat": "Replicas"
         }
       ],
@@ -56,7 +56,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "kube_deployment_status_replicas{deployment=\"go-api\"}",
+          "expr": "kube_deployment_status_replicas{deployment=\"{{.WorkloadName}}\"}",
           "legendFormat": "Replicas"
         }
       ],
@@ -76,13 +76,13 @@
       }
     },
     {
-      "title": "go-api: p99 Latency (SLO < 1.5s)",
+      "title": "{{.WorkloadName}}: p99 Latency (SLO < 1.5s)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 9 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le))",
           "legendFormat": "p99"
         }
       ],
@@ -99,7 +99,7 @@
     }
   ],
   "schemaVersion": 39,
-  "tags": ["autoscaling", "keda", "go-api"],
+  "tags": ["autoscaling", "keda", "{{.WorkloadName}}"],
   "templating": { "list": [] },
   "time": { "from": "now-15m", "to": "now" },
   "title": "Autoscaling Under Load",

@@ -1,6 +1,6 @@
 # Deliberately over-provisioned resource requests for the cost-right-sizing scenario.
 # These values represent the 'before' state: 40x the CPU and 32x the memory
-# that go-api actually needs at idle (2000m vs the 50m baseline; 1Gi vs 32Mi).
+# that {{.WorkloadName}} actually needs at idle (2000m vs the 50m baseline; 1Gi vs 32Mi).
 # In a real cluster this wastes node capacity
 # and inflates the per-namespace cost visible in OpenCost.
 #
@@ -10,13 +10,13 @@
 
 namespace:
   create: true
-  name: go-api
+  name: "{{.WorkloadName}}"
 
 deployment:
   replicaCount: 1
 
 image:
-  repository: go-api
+  repository: "{{.WorkloadName}}"
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -35,7 +35,7 @@ ingress:
   enabled: true
   className: traefik
   hosts:
-    - host: go-api.k3d.local
+    - host: "{{.WorkloadName}}.{{.DomainSuffix}}"
       paths:
         - path: /
           pathType: Prefix

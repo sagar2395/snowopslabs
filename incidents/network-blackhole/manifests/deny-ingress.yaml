@@ -4,7 +4,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: labfault-network-blackhole
-  namespace: go-api
+  namespace: ${TARGET_NAMESPACE}
   labels:
     labfault: network-blackhole
 spec:

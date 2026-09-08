@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# inflate.sh — put go-api into the deliberately over-provisioned 'before' state
+# inflate.sh — put ${WORKLOAD_NAME:-go-api} into the deliberately over-provisioned 'before' state
 # (40x CPU / 32x memory) so the waste is visible in OpenCost before you right-size.
 #
 # We mutate the running Deployment in place with `kubectl set resources` — the
 # exact inverse of the fix the learner performs (`kubectl set resources ...
 # --requests=cpu=50m,memory=32Mi`). This is deliberately symmetric and robust:
-# it works regardless of how go-api was deployed (helm release, `kubectl apply`,
+# it works regardless of how ${WORKLOAD_NAME:-go-api} was deployed (helm release, `kubectl apply`,
 # or the kind-e2e bootstrap) and regardless of which field-manager owns the
 # resource fields. An earlier `helm upgrade` approach failed with server-side
-# apply conflicts ("conflicts with kubectl") whenever go-api was not owned by
+# apply conflicts ("conflicts with kubectl") whenever ${WORKLOAD_NAME:-go-api} was not owned by
 # helm — `kubectl set resources` sidesteps that entirely.
 
-NAMESPACE="${NAMESPACE:-go-api}"
-APP="${APP:-go-api}"
+NAMESPACE="${NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
+APP="${APP:-${WORKLOAD_NAME:-go-api}}"
 
 # The inflated 'before' values. Requests drive scheduling and node billing;
 # limits are matched to requests here so the pod is a single fat, wasteful slot.

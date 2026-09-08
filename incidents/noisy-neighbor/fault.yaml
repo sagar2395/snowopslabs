@@ -1,6 +1,6 @@
 name: noisy-neighbor
 displayName: "Noisy neighbor: CPU-hungry tenant"
-description: "Latency on go-api crept up and node CPU is pegged, but go-api itself didn't change. Someone else moved in — a workload with big CPU requests, no limits, and a hot loop."
+description: "Latency on {{.WorkloadName}} crept up and node CPU is pegged, but {{.WorkloadName}} itself didn't change. Someone else moved in — a workload with big CPU requests, no limits, and a hot loop."
 category: resources
 severity: low
 target:
@@ -8,7 +8,7 @@ target:
   workload: noisy-neighbor
 prerequisites:
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
 detection:
   name: neighbor-evicted
   type: script

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# check-cpu-request.sh — exit 0 only if go-api's CPU request is <= 100m.
+# check-cpu-request.sh — exit 0 only if ${WORKLOAD_NAME:-go-api}'s CPU request is <= 100m.
 #
 # kubectl returns Kubernetes quantity strings like "50m", "100m", "4000m", "4"
 # (= 4000m). This script converts them to millicores for numeric comparison.
 # Target: <= 100m (the production-realistic baseline for this API at low traffic).
 
-NAMESPACE="${NAMESPACE:-go-api}"
-APP="${APP:-go-api}"
+NAMESPACE="${NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
+APP="${APP:-${WORKLOAD_NAME:-go-api}}"
 CONTAINER="${CONTAINER:-$APP}" # container to inspect (defaults to the app name)
 MAX_CPU_MILLICORES=100 # threshold in millicores
 

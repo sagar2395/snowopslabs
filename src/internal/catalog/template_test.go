@@ -6,24 +6,26 @@ import (
 	"testing"
 )
 
-func TestResolve(t *testing.T) {
-	ctx := DefaultTemplateContext("/proj")
+func TestValidate(t *testing.T) {
 	tests := []struct {
 		name    string
 		in      string
-		want    string
 		wantErr string
 	}{
-		{"no template", "plain string", "plain string", ""},
-		{"domain suffix", "http://x.{{.DomainSuffix}}/y", "http://x.k3d.local/y", ""},
-		{"monitoring ns", "{{.MonitoringNamespace}}", "monitoring", ""},
-		{"project root", "{{.ProjectRoot}}/bin", "/proj/bin", ""},
-		{"unknown key", "{{.Bogus}}", "", "Bogus"},
-		{"malformed", "{{.DomainSuffix", "", "malformed template"},
+		{name: "no template", in: "plain string"},
+		{name: "domain suffix", in: "http://x.{{.DomainSuffix}}/y"},
+		{name: "monitoring ns", in: "{{.MonitoringNamespace}}"},
+		{name: "project root", in: "{{.ProjectRoot}}/bin"},
+		{name: "ingress class", in: "{{.IngressClass}}"},
+		{name: "workload name", in: "deployment/{{.WorkloadName}}"},
+		// Foreign templating shares these files; validation must not claim it.
+		{name: "loki line_format", in: `line_format "{{.method}} {{.status}}"`},
+		{name: "prometheus annotation", in: "value {{ $value }}"},
+		{name: "unknown key", in: "{{.Bogus}}", wantErr: "Bogus"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := Resolve(tt.in, ctx)
+			err := Validate(tt.in)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("err = %v, want it to contain %q", err, tt.wantErr)
@@ -31,58 +33,19 @@ func TestResolve(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tt.want {
-				t.Errorf("Resolve(%q) = %q, want %q", tt.in, got, tt.want)
+				t.Errorf("Validate(%q) = %v, want nil", tt.in, err)
 			}
 		})
 	}
 }
 
-func TestProblemString(t *testing.T) {
-	tests := []struct {
-		name string
-		p    Problem
-		want string
-	}{
-		{
-			"with line",
-			Problem{Kind: KindPath, Name: "p1", File: "learn/p1/path.yaml", Line: 7, Message: "boom"},
-			"learn/p1/path.yaml:7: [path/p1] boom",
-		},
-		{
-			"without line",
-			Problem{Kind: KindScenario, Name: "s1", File: "s.yaml", Message: "bad"},
-			"s.yaml: [scenario/s1] bad",
-		},
-		{
-			"without name",
-			Problem{Kind: KindIncident, File: "f.yaml", Message: "x"},
-			"f.yaml: [incident] x",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.p.String(); got != tt.want {
-				t.Errorf("String() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestProblemsSorted(t *testing.T) {
-	c := newCatalog(nil)
-	c.problems = []Problem{
-		{File: "b.yaml", Line: 2, Message: "z"},
-		{File: "a.yaml", Line: 5, Message: "a"},
-		{File: "a.yaml", Line: 1, Message: "a"},
-	}
-	got := c.Problems()
-	if got[0].File != "a.yaml" || got[0].Line != 1 {
-		t.Errorf("first = %v, want a.yaml:1", got[0])
-	}
-	if got[2].File != "b.yaml" {
-		t.Errorf("last = %v, want b.yaml", got[2])
+// The defaults exist so validation has a populated context to describe; every
+// field must be set or a caller reading them gets a misleading blank.
+func TestDefaultTemplateContextIsPopulated(t *testing.T) {
+	ctx := DefaultTemplateContext("/proj")
+	for name, val := range ctx.Vars() {
+		if val == "" {
+			t.Errorf("DefaultTemplateContext leaves %q empty", name)
+		}
 	}
 }

@@ -27,7 +27,7 @@ modules:
       type: command
       ref: "labctl app deploy go-api"
     check:
-      name: go-api-healthy
+      name: workload-healthy
       type: http
       url: "http://go-api.${DOMAIN_SUFFIX:-k3d.local}/health"
       expectStatus: 200

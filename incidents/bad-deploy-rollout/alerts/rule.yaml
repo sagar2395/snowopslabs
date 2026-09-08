@@ -13,11 +13,11 @@ spec:
     - name: labfault-bad-deploy-rollout
       rules:
         - alert: LabFaultImagePullBackOff
-          expr: max(kube_pod_container_status_waiting_reason{reason=~"ImagePullBackOff|ErrImagePull", namespace="go-api"}) > 0
+          expr: max(kube_pod_container_status_waiting_reason{reason=~"ImagePullBackOff|ErrImagePull", namespace="${TARGET_NAMESPACE}"}) > 0
           for: 1m
           labels:
             labfault: "true"
             severity: warning
           annotations:
-            summary: "go-api pods cannot pull their image"
-            description: "Pods in namespace go-api are stuck in ImagePullBackOff — the rollout will not complete. Check the deployment's image tag."
+            summary: "${TARGET_WORKLOAD} pods cannot pull their image"
+            description: "Pods in namespace ${TARGET_NAMESPACE} are stuck in ImagePullBackOff — the rollout will not complete. Check the deployment's image tag."

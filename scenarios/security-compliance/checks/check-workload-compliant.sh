@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Grades the remediation half of the drill: the go-api Deployment must satisfy
+# Grades the remediation half of the drill: the ${WORKLOAD_NAME:-go-api} Deployment must satisfy
 # all four ClusterPolicies at the source — in the Deployment's pod template,
 # not by being excluded from the policy.
 #
@@ -9,8 +9,8 @@ set -euo pipefail
 # sidecar injected by a webhook is not the learner's workload and is not what a
 # real remediation would change; the Deployment is the file a team edits.
 
-NS="go-api"
-DEPLOY="go-api"
+NS="${WORKLOAD_NAME:-go-api}"
+DEPLOY="${WORKLOAD_NAME:-go-api}"
 NOTES=""
 
 note() { NOTES="${NOTES}  - $1
@@ -20,7 +20,7 @@ tpl() { kubectl -n "$NS" get deployment "$DEPLOY" -o jsonpath="$1" 2>/dev/null |
 
 if ! kubectl -n "$NS" get deployment "$DEPLOY" >/dev/null 2>&1; then
   echo "FAIL: deployment/$DEPLOY not found in $NS." >&2
-  echo "      Deploy it: labctl app build go-api && labctl app deploy go-api" >&2
+  echo "      Deploy it: labctl app build ${WORKLOAD_NAME:-go-api} && labctl app deploy ${WORKLOAD_NAME:-go-api}" >&2
   exit 1
 fi
 

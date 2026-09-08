@@ -10,14 +10,14 @@ set -euo pipefail
 # CN=TRAEFIK DEFAULT CERT when no route matches, or with the lab-signed leaf
 # once the Ingress references the Secret. Only the second one passes.
 
-NS="go-api"
-INGRESS="go-api"
-HOST="go-api.${DOMAIN_SUFFIX:-k3d.local}"
-SECRET="go-api-tls-secret"
+NS="${WORKLOAD_NAME:-go-api}"
+INGRESS="${WORKLOAD_NAME:-go-api}"
+HOST="${WORKLOAD_NAME:-go-api}.${DOMAIN_SUFFIX:-k3d.local}"
+SECRET="${WORKLOAD_NAME:-go-api}-tls-secret"
 
 if ! kubectl -n "$NS" get ingress "$INGRESS" >/dev/null 2>&1; then
   echo "FAIL: ingress/$INGRESS not found in $NS." >&2
-  echo "      Deploy the app: labctl app deploy go-api" >&2
+  echo "      Deploy the app: labctl app deploy ${WORKLOAD_NAME:-go-api}" >&2
   exit 1
 fi
 

@@ -11,12 +11,35 @@ import (
 	"github.com/sagar2395/snowopslabs/pkg/scenario"
 )
 
+// identityResolve stands in for an engine's resolver where the test's content
+// carries no template variables.
+func identityResolve(in string) string { return in }
+
+// A reference names the bound workload in its label, URL and note, so all three
+// are resolved — a note reading "{{.WorkloadName}}" is an authoring bug on show.
+func TestRenderReferencesResolvesEveryField(t *testing.T) {
+	var buf bytes.Buffer
+	upper := func(in string) string { return strings.ReplaceAll(in, "{{.WorkloadName}}", "go-api") }
+	renderReferences(&buf, []scenario.Reference{
+		{Label: "{{.WorkloadName}} spec", URL: "https://x.test/{{.WorkloadName}}", Note: "about {{.WorkloadName}}"},
+	}, upper)
+	got := buf.String()
+	if strings.Contains(got, "{{") {
+		t.Errorf("unresolved template in output: %q", got)
+	}
+	for _, want := range []string{"go-api spec", "https://x.test/go-api", "about go-api"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output %q missing %q", got, want)
+		}
+	}
+}
+
 func TestRenderReferences(t *testing.T) {
 	var buf bytes.Buffer
 	renderReferences(&buf, []scenario.Reference{
 		{Label: "KEDA — spec", URL: "https://keda.sh/docs/", Note: "the fields"},
 		{Label: "no note", URL: "https://example.test"},
-	})
+	}, identityResolve)
 	got := buf.String()
 	want := "\nReferences:\n" +
 		"  - KEDA — spec\n    https://keda.sh/docs/\n    the fields\n" +
@@ -28,7 +51,7 @@ func TestRenderReferences(t *testing.T) {
 
 func TestRenderReferences_EmptyWritesNothing(t *testing.T) {
 	var buf bytes.Buffer
-	renderReferences(&buf, nil)
+	renderReferences(&buf, nil, identityResolve)
 	if buf.Len() != 0 {
 		t.Fatalf("expected no output for empty refs, got %q", buf.String())
 	}
@@ -77,7 +100,7 @@ func TestRenderSnippets_InlineAndPathWithTemplate(t *testing.T) {
 
 func TestRenderSnippets_MissingFileReportedInline(t *testing.T) {
 	var buf bytes.Buffer
-	renderSnippets(&buf, []scenario.Snippet{{Label: "gone", Path: "nope.yaml"}}, t.TempDir(), nil)
+	renderSnippets(&buf, []scenario.Snippet{{Label: "gone", Path: "nope.yaml"}}, t.TempDir(), identityResolve)
 	if !strings.Contains(buf.String(), "unavailable:") {
 		t.Fatalf("expected an inline unavailable notice, got %q", buf.String())
 	}

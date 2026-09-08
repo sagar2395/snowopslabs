@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "workload.name" . }}
+  namespace: {{ include "workload.namespace" . }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "workload.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        {{- if .Values.metrics.enabled }}
+        # The lab's Prometheus scrapes by pod annotation (the "kubernetes-pods"
+        # job), so this is what puts the app's metrics in front of every
+        # metric-driven scenario.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.port | quote }}
+        prometheus.io/path: {{ .Values.metrics.path | quote }}
+        {{- end }}
+      labels:
+        {{- include "workload.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ include "workload.name" . }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- /* An if, not `default`: the template engine evaluates default's
+                 argument eagerly, so a `required` inside it fires even when
+                 reference is set. */}}
+          {{- if .Values.image.reference }}
+          image: {{ .Values.image.reference | quote }}
+          {{- else }}
+          image: "{{ required "set image.reference or image.repository" .Values.image.repository }}:{{ .Values.image.tag }}"
+          {{- end }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+              protocol: TCP
+          # Probe paths come from the contract, so `labctl app verify` compares
+          # the declaration against a pod that was built from it.
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.healthPath }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readyPath }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.failureThreshold }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- with .Values.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.writablePaths }}
+          volumeMounts:
+            {{- range $i, $path := . }}
+            - name: writable-{{ $i }}
+              mountPath: {{ $path }}
+            {{- end }}
+          {{- end }}
+      {{- with .Values.writablePaths }}
+      volumes:
+        {{- range $i, $path := . }}
+        - name: writable-{{ $i }}
+          emptyDir: {}
+        {{- end }}
+      {{- end }}

@@ -14,74 +14,74 @@ spec:
         - alert: HighErrorRate
           expr: |
             (
-              sum(rate(http_requests_total{code=~"5..",app="go-api"}[5m]))
+              sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",app="{{.WorkloadName}}"}[5m]))
               /
-              sum(rate(http_requests_total{app="go-api"}[5m]))
+              sum(rate(http_server_request_duration_seconds_count{app="{{.WorkloadName}}"}[5m]))
             ) > 0.05
           for: 2m
           labels:
             severity: critical
             scenario: observability-sre
           annotations:
-            summary: "High error rate on go-api"
+            summary: "High error rate on {{.WorkloadName}}"
             description: "Error rate is above 5% for the last 2 minutes (current: {{ $value | humanizePercentage }})"
 
         - alert: HighLatency
           expr: |
-            histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{app="go-api"}[5m])) by (le))
+            histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{app="{{.WorkloadName}}"}[5m])) by (le))
             > 1.0
           for: 2m
           labels:
             severity: warning
             scenario: observability-sre
           annotations:
-            summary: "High p99 latency on go-api"
+            summary: "High p99 latency on {{.WorkloadName}}"
             description: "p99 latency is above 1s for the last 2 minutes (current: {{ $value }}s)"
 
     - name: sre.saturation
       rules:
         - alert: PodMemoryHigh
           expr: |
-            (container_memory_working_set_bytes{namespace="go-api"}
+            (container_memory_working_set_bytes{namespace="{{.WorkloadNamespace}}"}
             /
-            container_spec_memory_limit_bytes{namespace="go-api"}) > 0.85
+            container_spec_memory_limit_bytes{namespace="{{.WorkloadNamespace}}"}) > 0.85
           for: 5m
           labels:
             severity: warning
             scenario: observability-sre
           annotations:
             summary: "Pod memory usage above 85%"
-            description: "go-api pod memory usage is {{ $value | humanizePercentage }}"
+            description: "{{.WorkloadName}} pod memory usage is {{ $value | humanizePercentage }}"
 
         - alert: PodCPUThrottled
           expr: |
-            rate(container_cpu_cfs_throttled_seconds_total{namespace="go-api"}[5m]) > 0.1
+            rate(container_cpu_cfs_throttled_seconds_total{namespace="{{.WorkloadNamespace}}"}[5m]) > 0.1
           for: 5m
           labels:
             severity: warning
             scenario: observability-sre
           annotations:
             summary: "Pod CPU throttling detected"
-            description: "go-api is being CPU throttled"
+            description: "{{.WorkloadName}} is being CPU throttled"
 
     - name: sre.readiness
       rules:
         - alert: PodNotReady
           expr: |
-            kube_pod_status_ready{namespace="go-api", condition="true"} == 0
+            kube_pod_status_ready{namespace="{{.WorkloadNamespace}}", condition="true"} == 0
           for: 1m
           labels:
             severity: critical
             scenario: observability-sre
           annotations:
-            summary: "go-api pod not ready"
+            summary: "{{.WorkloadName}} pod not ready"
             description: "Pod {{ $labels.pod }} has been not ready for 1 minute"
 
         - alert: DeploymentReplicasMismatch
           expr: |
-            kube_deployment_spec_replicas{namespace="go-api"}
+            kube_deployment_spec_replicas{namespace="{{.WorkloadNamespace}}"}
             !=
-            kube_deployment_status_ready_replicas{namespace="go-api"}
+            kube_deployment_status_ready_replicas{namespace="{{.WorkloadNamespace}}"}
           for: 3m
           labels:
             severity: warning

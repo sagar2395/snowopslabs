@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Grades the isolation POSTURE of the go-api namespace, not the presence of a
+# Grades the isolation POSTURE of the ${WORKLOAD_NAME:-go-api} namespace, not the presence of a
 # NetworkPolicy object.
 #
 # The distinction matters: NetworkPolicies are additive, so `default-deny-all`
@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # Everything here is kubectl and POSIX shell — no jq, no python.
 
-NS="go-api"
+NS="${WORKLOAD_NAME:-go-api}"
 MON="${MONITORING_NAMESPACE:-monitoring}"
 NOTES=""
 

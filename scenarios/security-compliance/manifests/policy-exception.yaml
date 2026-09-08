@@ -5,7 +5,7 @@
 # to Audit — turns off enforcement for everyone to accommodate one workload.
 #
 # Scope is the whole point, and it is what the grading checks: this matches a
-# LABEL, not a namespace and not a name. Anything in go-api without
+# LABEL, not a namespace and not a name. Anything in {{.WorkloadName}} without
 # compliance.snowops.net/exempt=vendor-image is still rejected. Widen this to
 # the namespace and you have quietly re-opened the hole you just closed.
 #
@@ -17,7 +17,7 @@ apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:
   name: legacy-reporter-exemption
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   exceptions:
     - policyName: require-non-root-user
@@ -40,7 +40,7 @@ spec:
             - Deployment
             - ReplicaSet
           namespaces:
-            - go-api
+            - "{{.WorkloadName}}"
           selector:
             matchLabels:
               compliance.snowops.net/exempt: vendor-image

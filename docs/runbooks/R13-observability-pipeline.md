@@ -96,7 +96,7 @@ served but never counted.
 ```bash
 kubectl -n go-api exec deploy/go-api -- wget -qO- localhost:8080/ >/dev/null
 kubectl -n go-api exec deploy/go-api -- wget -qO- localhost:8080/version >/dev/null
-kubectl -n go-api exec deploy/go-api -- wget -qO- localhost:8080/metrics | grep '^http_requests_total'
+kubectl -n go-api exec deploy/go-api -- wget -qO- localhost:8080/metrics | grep '^http_server_request_duration_seconds_count'
 ```
 
 **Expect:** a series for `path="/"` *and* `path="/version"`, each with

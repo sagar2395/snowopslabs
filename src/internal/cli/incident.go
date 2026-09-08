@@ -111,7 +111,7 @@ a reproducible pick across a team.`,
 		if err := incEng.Preflight(f); err != nil {
 			return err
 		}
-		target := incsvc.Target{Namespace: f.Target.Namespace, Workload: f.Target.Workload}
+		target := incsvc.Target(incEng.ResolvedTarget(f))
 		if err := runIncidentOp(cmd, "inject", name, target, func(ctx context.Context, svc *incsvc.Service) (string, error) {
 			return svc.Inject(ctx, name, target)
 		}); err != nil {
@@ -212,7 +212,7 @@ var incidentResolveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		target := incsvc.Target{Namespace: f.Target.Namespace, Workload: f.Target.Workload}
+		target := incsvc.Target(incEng.ResolvedTarget(f))
 		if err := runIncidentOp(cmd, "resolve", name, target, func(ctx context.Context, svc *incsvc.Service) (string, error) {
 			return svc.Resolve(ctx, name, target)
 		}); err != nil {
@@ -314,11 +314,14 @@ var incidentInfoCmd = &cobra.Command{
 		fmt.Printf("Display:     %s\n", f.DisplayName)
 		fmt.Printf("Category:    %s\n", f.Category)
 		fmt.Printf("Severity:    %s\n", f.Severity)
-		fmt.Printf("Target:      %s/%s\n", f.Target.Namespace, f.Target.Workload)
+		// Resolved, not raw: a target printed as {{.WorkloadNamespace}} sends the
+		// reader looking for a namespace that does not exist.
+		rt := incEng.ResolvedTarget(f)
+		fmt.Printf("Target:      %s/%s\n", rt.Namespace, rt.Workload)
 		if f.Description != "" {
 			fmt.Printf("Description: %s\n", f.Description)
 		}
-		renderReferences(os.Stdout, f.References)
+		renderReferences(os.Stdout, f.References, incEng.ResolveTemplate)
 		renderSnippets(os.Stdout, f.Snippets, f.Dir, incEng.ResolveTemplate)
 		return nil
 	},

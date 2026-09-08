@@ -1,7 +1,7 @@
 # Hints — noisy-neighbor
 
 ## Hint 1
-go-api didn't change, but the *node* it runs on did. Look at cluster-level
+{{.WorkloadName}} didn't change, but the *node* it runs on did. Look at cluster-level
 resource usage: `kubectl top nodes` (or the node CPU panel in Grafana).
 Who is using all that CPU?
 

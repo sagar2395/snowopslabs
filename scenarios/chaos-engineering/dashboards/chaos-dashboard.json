@@ -124,7 +124,7 @@
       },
       "targets": [
         {
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"go-api\"}[15m])) or vector(0)",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=~\"{{.WorkloadName}}\"}[15m])) or vector(0)",
           "legendFormat": "Restarts"
         }
       ],
@@ -168,7 +168,7 @@
       },
       "targets": [
         {
-          "expr": "sum(kube_deployment_status_replicas_unavailable{namespace=~\"go-api\"}) or vector(0)",
+          "expr": "sum(kube_deployment_status_replicas_unavailable{namespace=~\"{{.WorkloadName}}\"}) or vector(0)",
           "legendFormat": "Unavailable"
         }
       ],
@@ -198,9 +198,9 @@
       }
     },
     {
-      "title": "PDB Disruptions Allowed (go-api)",
+      "title": "PDB Disruptions Allowed ({{.WorkloadName}})",
       "type": "stat",
-      "description": "How many go-api pods the PodDisruptionBudget will let a drain evict. 0 means a node drain blocks forever \u2014 scale the Deployment out until this is at least 1.",
+      "description": "How many {{.WorkloadName}} pods the PodDisruptionBudget will let a drain evict. 0 means a node drain blocks forever \u2014 scale the Deployment out until this is at least 1.",
       "gridPos": {
         "h": 4,
         "w": 4,
@@ -213,7 +213,7 @@
       },
       "targets": [
         {
-          "expr": "max(kube_poddisruptionbudget_status_pod_disruptions_allowed{namespace=\"go-api\"}) or vector(0)",
+          "expr": "max(kube_poddisruptionbudget_status_pod_disruptions_allowed{namespace=\"{{.WorkloadNamespace}}\"}) or vector(0)",
           "legendFormat": "allowed"
         }
       ],
@@ -239,7 +239,7 @@
       }
     },
     {
-      "title": "HTTP Request Rate (go-api)",
+      "title": "HTTP Request Rate ({{.WorkloadName}})",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -253,7 +253,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{app=\"go-api\"}[1m])) by (code)",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\"}[1m])) by (http_response_status_code)",
           "legendFormat": "{{code}}"
         }
       ],
@@ -305,7 +305,7 @@
       }
     },
     {
-      "title": "HTTP Request Latency p99 (go-api)",
+      "title": "HTTP Request Latency p99 ({{.WorkloadName}})",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -319,15 +319,15 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{app=\"go-api\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_request_duration_seconds_bucket{app=\"{{.WorkloadName}}\"}[5m])))",
           "legendFormat": "p99"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{app=\"go-api\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{app=\"{{.WorkloadName}}\"}[5m])))",
           "legendFormat": "p95"
         },
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{app=\"go-api\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_server_request_duration_seconds_bucket{app=\"{{.WorkloadName}}\"}[5m])))",
           "legendFormat": "p50"
         }
       ],
@@ -358,7 +358,7 @@
           }
         }
       },
-      "description": "go-api's own handler timings. This is SERVER-side latency: it is blind to network faults, so a NetworkChaos delay leaves it flat. Measure those client-side with curl's time_starttransfer through the ingress."
+      "description": "{{.WorkloadName}}'s own handler timings. This is SERVER-side latency: it is blind to network faults, so a NetworkChaos delay leaves it flat. Measure those client-side with curl's time_starttransfer through the ingress."
     },
     {
       "title": "Pod Restart Timeline",
@@ -375,7 +375,7 @@
       },
       "targets": [
         {
-          "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"go-api\"}[1m])",
+          "expr": "increase(kube_pod_container_status_restarts_total{namespace=~\"{{.WorkloadName}}\"}[1m])",
           "legendFormat": "{{namespace}}/{{pod}}"
         }
       ],
@@ -410,11 +410,11 @@
       },
       "targets": [
         {
-          "expr": "kube_deployment_status_replicas_ready{namespace=~\"go-api\"}",
+          "expr": "kube_deployment_status_replicas_ready{namespace=~\"{{.WorkloadName}}\"}",
           "legendFormat": "{{deployment}} ready"
         },
         {
-          "expr": "kube_deployment_spec_replicas{namespace=~\"go-api\"}",
+          "expr": "kube_deployment_spec_replicas{namespace=~\"{{.WorkloadName}}\"}",
           "legendFormat": "{{deployment}} desired"
         }
       ],
@@ -463,11 +463,11 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"go-api\", container!=\"\"}[5m])) by (namespace, pod)",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~\"{{.WorkloadName}}\", container!=\"\"}[5m])) by (namespace, pod)",
           "legendFormat": "{{namespace}}/{{pod}}"
         },
         {
-          "expr": "sum(kube_pod_container_resource_limits{namespace=~\"go-api\", resource=\"cpu\"}) by (namespace, pod)",
+          "expr": "sum(kube_pod_container_resource_limits{namespace=~\"{{.WorkloadName}}\", resource=\"cpu\"}) by (namespace, pod)",
           "legendFormat": "{{namespace}}/{{pod}} limit"
         }
       ],
@@ -524,11 +524,11 @@
       },
       "targets": [
         {
-          "expr": "sum(container_memory_working_set_bytes{namespace=~\"go-api\", container!=\"\"}) by (namespace, pod) / 1024 / 1024",
+          "expr": "sum(container_memory_working_set_bytes{namespace=~\"{{.WorkloadName}}\", container!=\"\"}) by (namespace, pod) / 1024 / 1024",
           "legendFormat": "{{namespace}}/{{pod}}"
         },
         {
-          "expr": "sum(kube_pod_container_resource_limits{namespace=~\"go-api\", resource=\"memory\"}) by (namespace, pod) / 1024 / 1024",
+          "expr": "sum(kube_pod_container_resource_limits{namespace=~\"{{.WorkloadName}}\", resource=\"memory\"}) by (namespace, pod) / 1024 / 1024",
           "legendFormat": "{{namespace}}/{{pod}} limit"
         }
       ],
@@ -585,7 +585,7 @@
       },
       "targets": [
         {
-          "expr": "increase(kube_pod_container_status_last_terminated_reason{namespace=~\"go-api\", reason=\"OOMKilled\"}[5m])",
+          "expr": "increase(kube_pod_container_status_last_terminated_reason{namespace=~\"{{.WorkloadName}}\", reason=\"OOMKilled\"}[5m])",
           "legendFormat": "{{namespace}}/{{pod}} ({{container}})"
         }
       ],

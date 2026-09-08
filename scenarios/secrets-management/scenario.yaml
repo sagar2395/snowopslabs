@@ -10,7 +10,7 @@ prerequisites:
     - secrets/external-secrets
     - monitoring/metrics
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
 runtimes:
   - k3d
   - kind
@@ -29,7 +29,7 @@ stages:
       - name: secret-consumers
         type: manifest
         path: manifests/consumer.yaml
-        namespace: go-api
+        namespace: "{{.WorkloadNamespace}}"
 
       - name: seed-baseline
         type: script
@@ -53,16 +53,16 @@ checks:
 
   - name: externalsecret-ready
     type: kubectl
-    resource: externalsecret/go-api-secret
-    namespace: go-api
+    resource: externalsecret/{{.WorkloadName}}-secret
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: '{.status.conditions[?(@.type=="Ready")].status}'
     operator: "=="
     value: "True"
-    remediation: "ESO cannot sync from Vault. Check the reason: kubectl -n go-api describe externalsecret go-api-secret — a SecretSyncedError usually means the vault-token secret is wrong or Vault is sealed."
+    remediation: "ESO cannot sync from Vault. Check the reason: kubectl -n {{.WorkloadNamespace}} describe externalsecret {{.WorkloadName}}-secret — a SecretSyncedError usually means the vault-token secret is wrong or Vault is sealed."
 
   - name: eso-metrics-scraped
     type: promql
-    query: 'count(externalsecret_status_condition{name="go-api-secret"})'
+    query: 'count(externalsecret_status_condition{name="{{.WorkloadName}}-secret"})'
     operator: ">="
     value: "1"
     remediation: "Prometheus is not scraping ESO, so the Secret Rotation dashboard will be empty. Re-apply the platform values with: labctl platform up secrets/external-secrets"
@@ -70,7 +70,7 @@ checks:
   - name: consumers-running
     type: kubectl
     resource: deployment/env-consumer
-    namespace: go-api
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
@@ -79,7 +79,7 @@ checks:
   - name: consumer-mounted
     type: kubectl
     resource: deployment/secret-consumer
-    namespace: go-api
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
@@ -89,14 +89,14 @@ checks:
     type: script
     script: checks/check-rotation-performed.sh
     pending: true
-    remediation: "You have not rotated the secret yet. Rotate it in Vault: kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/go-api api-key=rotated-v2'"
+    remediation: "You have not rotated the secret yet. Rotate it in Vault: kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/{{.WorkloadName}} api-key=rotated-v2'"
 
   - name: rotation-reached-pod
     type: script
     script: checks/check-propagated-to-pod.sh
     timeoutSeconds: 60
     pending: true
-    remediation: "The rotation has not reached the container's file yet. ESO refreshes every 15s and the kubelet updates the mounted file on its own cycle, so allow ~90s, then re-run verify. Watch it land with: kubectl -n go-api logs -l app=secret-consumer -f"
+    remediation: "The rotation has not reached the container's file yet. ESO refreshes every 15s and the kubelet updates the mounted file on its own cycle, so allow ~90s, then re-run verify. Watch it land with: kubectl -n {{.WorkloadNamespace}} logs -l app=secret-consumer -f"
 
   - name: no-redeploy-needed
     type: script
@@ -122,19 +122,19 @@ explore:
       url: "http://vault.{{.DomainSuffix}}"
   commands:
     - label: "1. Watch the file-mounted consumer read the secret from disk (leave this running)"
-      command: "kubectl -n go-api logs -l app=secret-consumer -f"
+      command: "kubectl -n {{.WorkloadNamespace}} logs -l app=secret-consumer -f"
     - label: "2. Confirm the baseline the stage seeded"
-      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv get secret/go-api'"
+      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv get secret/{{.WorkloadName}}'"
     - label: "3. Rotate the secret in Vault — this is the drill; pick any new value"
-      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/go-api api-key=rotated-v2'"
+      command: "kubectl -n vault exec vault-0 -- sh -c 'VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=root vault kv put secret/{{.WorkloadName}} api-key=rotated-v2'"
     - label: "4. Watch the new value appear in terminal 1 — no restart, no redeploy (~90s)"
-      command: "kubectl -n go-api get pod -l app=secret-consumer -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}{\"\\n\"}'"
+      command: "kubectl -n {{.WorkloadNamespace}} get pod -l app=secret-consumer -o jsonpath='{.items[0].status.containerStatuses[0].restartCount}{\"\\n\"}'"
     - label: "5. Compare the two consumers — the file moved, the environment did not"
-      command: "kubectl -n go-api exec deploy/secret-consumer -- cat /etc/api/api-key; kubectl -n go-api exec deploy/env-consumer -- sh -c 'echo $API_KEY'"
+      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/secret-consumer -- cat /etc/api/api-key; kubectl -n {{.WorkloadNamespace}} exec deploy/env-consumer -- sh -c 'echo $API_KEY'"
     - label: "6. Grade the rotation"
       command: "labctl scenario verify secrets-management"
     - label: "Inspect the sync contract ESO is honouring"
-      command: "kubectl -n go-api describe externalsecret go-api-secret"
+      command: "kubectl -n {{.WorkloadNamespace}} describe externalsecret {{.WorkloadName}}-secret"
   tips:
     - "Rotate in Vault, never in Kubernetes. Editing the Secret directly is undone at ESO's next refresh — that is the operator doing its job, and it is the habit this scenario is trying to build."
     - "Propagation is two hops, not one: ESO refreshes the Secret every 15s, then the kubelet refreshes the mounted file on its own cycle. End to end it can take ~90s, so 'rotation-reached-pod' showing PENDING for a minute is normal, not broken."

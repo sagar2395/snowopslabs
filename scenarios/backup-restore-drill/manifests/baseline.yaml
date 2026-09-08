@@ -1,12 +1,12 @@
 # Restore marker for the backup/restore drill. This ConfigMap is the canary the
 # drill backs up, deletes, and restores — its presence and value prove the
-# round-trip worked. It lives in the go-api namespace alongside the app so the
+# round-trip worked. It lives in the {{.WorkloadName}} namespace alongside the app so the
 # backup captures a realistic mix of resources.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: restore-marker
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: backup-restore-drill
 data:

@@ -1,16 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NS="${TARGET_NAMESPACE:-echo-server}"
-DEPLOY="${TARGET_WORKLOAD:-echo-server}"
+NS="${TARGET_NAMESPACE:-go-api}"
+DEPLOY="${TARGET_WORKLOAD:-go-api}"
 MARK="labfault-oom-kill"
 
-# Idle echo-server sits near 3Mi; under load it needs about 10Mi. A limit
-# between the two reproduces the failure that actually happens in production —
-# healthy at rest, OOMKilled once real traffic arrives — rather than a pod that
-# never starts. The traffic below is what makes the limit bite.
-FAULT_LIMIT="${FAULT_LIMIT:-8Mi}"
-FAULT_REQUEST="${FAULT_REQUEST:-4Mi}"
+# The limit must sit between what the app uses at rest and what it needs under
+# load, so the failure is the one that actually happens in production — healthy
+# at rest, OOMKilled once real traffic arrives — rather than a pod that never
+# starts. The traffic below is what makes it bite.
+#
+# Derive it from the workload's own memory request rather than hardcoding a
+# number, because the fault follows a binding now and an absolute value
+# calibrated for one application is simply wrong for the next: 8Mi reproduces
+# this for a small Go service and would stop a JVM from ever starting.
+# A quarter of the request lands in that window for a well-sized workload.
+mem_to_mib() {
+  # Kubernetes quantities: "32Mi", "1Gi", "512M", or plain bytes.
+  awk -v q="$1" 'BEGIN {
+    if (q ~ /Gi$/)      { sub(/Gi$/, "", q); printf "%d", q * 1024 }
+    else if (q ~ /Mi$/) { sub(/Mi$/, "", q); printf "%d", q }
+    else if (q ~ /G$/)  { sub(/G$/, "", q);  printf "%d", q * 1000000000 / 1048576 }
+    else if (q ~ /M$/)  { sub(/M$/, "", q);  printf "%d", q * 1000000 / 1048576 }
+    else if (q ~ /^[0-9]+$/) { printf "%d", q / 1048576 }
+    else { printf "0" }
+  }'
+}
+
+REQUEST_RAW="$(kubectl -n "$NS" get deploy "$DEPLOY" \
+  -o 'jsonpath={.spec.template.spec.containers[0].resources.requests.memory}' 2>/dev/null || true)"
+REQUEST_MIB="$(mem_to_mib "${REQUEST_RAW:-0}")"
+if [ "${REQUEST_MIB:-0}" -ge 8 ]; then
+  DERIVED_LIMIT_MIB=$((REQUEST_MIB / 4))
+else
+  # No usable request to scale from: fall back to the value calibrated for the
+  # repo's own small Go services.
+  DERIVED_LIMIT_MIB=8
+fi
+FAULT_LIMIT="${FAULT_LIMIT:-${DERIVED_LIMIT_MIB}Mi}"
+FAULT_REQUEST="${FAULT_REQUEST:-$((DERIVED_LIMIT_MIB / 2))Mi}"
+echo "Memory request is ${REQUEST_RAW:-unset}; squeezing the limit to $FAULT_LIMIT."
 
 # Trust the cluster, not just the marker. An annotation left behind by a partial
 # resolve, or a limit someone restored by hand, makes the marker alone claim the
@@ -29,7 +58,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Arm the paging rule first so the on-call drill measures real detection.
 # Tolerate a missing prometheus operator — the fault still works unpaged.
 MON_NS="${MONITORING_NAMESPACE:-monitoring}"
-kubectl apply -n "$MON_NS" -f "$SCRIPT_DIR/alerts/rule.yaml" 2>/dev/null ||
+# shellcheck source=/dev/null
+. "$(cd "$(dirname "$0")/../_lib" && pwd)/render.sh"
+render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - 2>/dev/null ||
   echo "Note: alert rule not installed (monitoring stack missing?) — continuing without paging."
 
 ORIG_LIMIT="$(kubectl -n "$NS" get deploy "$DEPLOY" -o 'jsonpath={.spec.template.spec.containers[0].resources.limits.memory}' 2>/dev/null || true)"

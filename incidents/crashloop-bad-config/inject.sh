@@ -14,7 +14,9 @@ fi
 # Tolerate a missing prometheus operator — the fault still works unpaged.
 MON_NS="${MONITORING_NAMESPACE:-monitoring}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-kubectl apply -n "$MON_NS" -f "$SCRIPT_DIR/alerts/rule.yaml" 2>/dev/null ||
+# shellcheck source=/dev/null
+. "$(cd "$(dirname "$0")/../_lib" && pwd)/render.sh"
+render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - 2>/dev/null ||
   echo "Note: alert rule not installed (monitoring stack missing?) — continuing without paging."
 
 echo "Injecting: replacing $DEPLOY's container command with one that exits immediately..."

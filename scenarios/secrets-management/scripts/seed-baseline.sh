@@ -8,19 +8,19 @@ set -eu
 #
 # Config (env, never committed):
 #   VAULT_DEV_ROOT_TOKEN   dev root token (default: root)
-#   SECRETS_BASELINE_VALUE baseline written to secret/go-api (default below)
+#   SECRETS_BASELINE_VALUE baseline written to secret/${WORKLOAD_NAME:-go-api} (default below)
 
 ROOT_TOKEN="${VAULT_DEV_ROOT_TOKEN:-root}"
 BASELINE="${SECRETS_BASELINE_VALUE:-baseline-v1}"
 
-echo "Seeding baseline secret/go-api api-key=${BASELINE} in Vault..."
+echo "Seeding baseline secret/${WORKLOAD_NAME:-go-api} api-key=${BASELINE} in Vault..."
 kubectl exec -n vault vault-0 -- sh -c \
-  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv put secret/go-api api-key='${BASELINE}'" >/dev/null
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv put secret/${WORKLOAD_NAME:-go-api} api-key='${BASELINE}'" >/dev/null
 
-echo "Waiting for External Secrets to sync the baseline into go-api/go-api-secrets..."
+echo "Waiting for External Secrets to sync the baseline into go-api/${WORKLOAD_NAME:-go-api}-secrets..."
 deadline=$(($(date +%s) + 120))
 while [ "$(date +%s)" -lt "$deadline" ]; do
-  got="$(kubectl -n go-api get secret go-api-secrets \
+  got="$(kubectl -n ${WORKLOAD_NAMESPACE:-go-api} get secret ${WORKLOAD_NAME:-go-api}-secrets \
     -o go-template='{{index .data "api-key" | base64decode}}' 2>/dev/null || true)"
   if [ "$got" = "$BASELINE" ]; then
     echo "Baseline synced. The consumer pod now reads '${BASELINE}' from /etc/api/api-key."
@@ -29,5 +29,5 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   sleep 5
 done
 
-echo "Baseline did not sync within 120s. Check: kubectl -n go-api describe externalsecret go-api-secret" >&2
+echo "Baseline did not sync within 120s. Check: kubectl -n ${WORKLOAD_NAMESPACE:-go-api} describe externalsecret ${WORKLOAD_NAME:-go-api}-secret" >&2
 exit 1

@@ -11,6 +11,7 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/challenge"
 	"github.com/sagar2395/snowopslabs/internal/incident"
 	"github.com/sagar2395/snowopslabs/internal/learn"
+	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/scenario"
 )
 
@@ -104,6 +105,16 @@ func (c *Catalog) loadScenario(dirName, file string, doc *yaml.Node) {
 	c.checkName(KindScenario, dirName, s.Name, file, doc)
 	if err := s.Validate(); err != nil {
 		c.problems = append(c.problems, Problem{Kind: KindScenario, Name: nameOr(s.Name, dirName), File: file, Message: err.Error()})
+	}
+	// The capability vocabulary is closed, so a typo here would otherwise mean
+	// "never satisfied" and only surface as a puzzling preflight failure.
+	for _, name := range s.Prerequisites.Capabilities {
+		if _, err := workload.ParseCapability(name); err != nil {
+			c.problems = append(c.problems, Problem{
+				Kind: KindScenario, Name: nameOr(s.Name, dirName), File: file,
+				Line: lineOfValue(doc, name), Message: "prerequisite capability: " + err.Error(),
+			})
+		}
 	}
 	c.index(KindScenario, dirName, file, doc, func() {
 		s.Source = ""

@@ -1,28 +1,28 @@
 apiVersion: scenario.snowops.net/v2
 name: cluster-upgrade-drill
 displayName: "Day-2 Drill: Rolling Cluster Upgrade Under Load"
-description: "Roll the cluster's worker nodes onto a new Kubernetes version one at a time while go-api serves live traffic. You write the PodDisruptionBudget, you cordon and drain each node, and you watch the PDB block the eviction that would have taken the app down. The grade is the measured request success rate across the upgrade window and a cluster left with no node behind."
+description: "Roll the cluster's worker nodes onto a new Kubernetes version one at a time while {{.WorkloadName}} serves live traffic. You write the PodDisruptionBudget, you cordon and drain each node, and you watch the PDB block the eviction that would have taken the app down. The grade is the measured request success rate across the upgrade window and a cluster left with no node behind."
 category: operations
 prerequisites:
   platform:
     - ingress
     - monitoring/metrics
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
 runtimes:
   - k3d
 
 objectives:
-  - "Write and apply a PodDisruptionBudget that keeps go-api serving while nodes are evicted"
+  - "Write and apply a PodDisruptionBudget that keeps {{.WorkloadName}} serving while nodes are evicted"
   - "Cordon and drain a worker node with kubectl, and read the PDB blocking the eviction"
   - "Replace each drained node with one on the target k3s version, one node at a time"
   - "Prove the request success rate held across the upgrade window, from Prometheus"
 
 stages:
   - name: baseline
-    description: Scale go-api to three replicas so a PodDisruptionBudget has something to protect. The PDB itself is yours to write.
+    description: Scale {{.WorkloadName}} to three replicas so a PodDisruptionBudget has something to protect. The PDB itself is yours to write.
     components:
-      - name: go-api-ha-replicas
+      - name: workload-ha-replicas
         type: script
         script: scripts/stage-ha.sh
         uninstallScript: scripts/unstage-ha.sh
@@ -33,27 +33,27 @@ stages:
 checks:
   - name: pdb-present
     type: kubectl
-    resource: pdb/go-api-upgrade-pdb
-    namespace: go-api
+    resource: pdb/{{.WorkloadName}}-upgrade-pdb
+    namespace: "{{.WorkloadNamespace}}"
     remediation: "You have not applied the PodDisruptionBudget yet. Copy the snippet from 'labctl scenario info cluster-upgrade-drill' and apply it: kubectl apply -f scenarios/cluster-upgrade-drill/manifests/baseline.yaml"
 
-  - name: pdb-protects-go-api
+  - name: pdb-protects-workload
     type: kubectl
-    resource: pdb/go-api-upgrade-pdb
-    namespace: go-api
+    resource: pdb/{{.WorkloadName}}-upgrade-pdb
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: "{.status.currentHealthy}"
     operator: ">="
     value: "2"
-    remediation: "The PDB exists but is tracking fewer than 2 healthy pods, so it will not block an eviction. A PDB whose selector matches nothing reports currentHealthy: 0 — check 'kubectl -n go-api get pdb go-api-upgrade-pdb -o yaml' against the pod labels from 'kubectl -n go-api get pods --show-labels'."
+    remediation: "The PDB exists but is tracking fewer than 2 healthy pods, so it will not block an eviction. A PDB whose selector matches nothing reports currentHealthy: 0 — check 'kubectl -n {{.WorkloadNamespace}} get pdb {{.WorkloadName}}-upgrade-pdb -o yaml' against the pod labels from 'kubectl -n {{.WorkloadNamespace}} get pods --show-labels'."
 
-  - name: go-api-highly-available
+  - name: workload-highly-available
     type: kubectl
-    resource: deployment/go-api
-    namespace: go-api
+    resource: deployment/{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "2"
-    remediation: "go-api is below the HA floor the drill needs. Scale it back up: kubectl -n go-api scale deployment go-api --replicas=3"
+    remediation: "{{.WorkloadName}} is below the HA floor the drill needs. Scale it back up: kubectl -n {{.WorkloadNamespace}} scale deployment {{.WorkloadName}} --replicas=3"
 
   - name: all-nodes-ready
     type: script
@@ -68,32 +68,32 @@ checks:
   - name: workload-survived-the-roll
     type: script
     script: checks/check-workload-healthy.sh
-    remediation: "go-api is unhealthy or has collapsed onto a single node. If pods are in ImagePullBackOff the replacement node has an empty image store — re-import the lab images with 'k3d image import go-api:v1.2.0 -c snowops'."
+    remediation: "{{.WorkloadName}} is unhealthy or has collapsed onto a single node. If pods are in ImagePullBackOff the replacement node has an empty image store — re-import the lab images with 'k3d image import {{.WorkloadName}}:v1.2.0 -c snowops'."
 
   - name: traffic-is-flowing
     type: promql
-    query: 'sum(rate(http_requests_total{app="go-api"}[10m]))'
+    query: 'sum(rate(http_server_request_duration_seconds_count{app="{{.WorkloadName}}"}[10m]))'
     operator: ">"
     value: "0.5"
-    remediation: "Prometheus sees almost no requests to go-api, so the availability grade below would be meaningless. The usual cause is that a drain evicted the k6 Job — check 'labctl traffic status', then restart it and let it run a couple of minutes: labctl traffic start --profile steady --rps 20"
+    remediation: "Prometheus sees almost no requests to {{.WorkloadName}}, so the availability grade below would be meaningless. The usual cause is that a drain evicted the k6 Job — check 'labctl traffic status', then restart it and let it run a couple of minutes: labctl traffic start --profile steady --rps 20"
 
   - name: availability-held-during-upgrade
     type: promql
-    query: 'sum(rate(http_requests_total{app="go-api",code!~"5.."}[10m])) / sum(rate(http_requests_total{app="go-api"}[10m]))'
+    query: 'sum(rate(http_server_request_duration_seconds_count{app="{{.WorkloadName}}",http_response_status_code!~"5.."}[10m])) / sum(rate(http_server_request_duration_seconds_count{app="{{.WorkloadName}}"}[10m]))'
     operator: ">="
     value: "0.99"
-    remediation: "More than 1% of requests failed across the upgrade window. The usual cause is draining a node while the PDB allowed the last healthy replica to be evicted — check that go-api had 3 replicas and the PDB was applied BEFORE the first drain. If this reports a Prometheus error rather than a low number, Prometheus itself lost its volume to the roll: run scripts/reclaim-stranded-pvcs.sh."
+    remediation: "More than 1% of requests failed across the upgrade window. The usual cause is draining a node while the PDB allowed the last healthy replica to be evicted — check that {{.WorkloadName}} had 3 replicas and the PDB was applied BEFORE the first drain. If this reports a Prometheus error rather than a low number, Prometheus itself lost its volume to the roll: run scripts/reclaim-stranded-pvcs.sh."
 
 snippets:
-  - label: "PodDisruptionBudget that keeps go-api up across the node roll"
-    description: "Apply this before the first drain. maxUnavailable: 1 makes each drain block until go-api has a Ready replica elsewhere — the mechanism that keeps the success rate up. Without it, a drain evicts every replica on the node at once."
+  - label: "PodDisruptionBudget that keeps {{.WorkloadName}} up across the node roll"
+    description: "Apply this before the first drain. maxUnavailable: 1 makes each drain block until {{.WorkloadName}} has a Ready replica elsewhere — the mechanism that keeps the success rate up. Without it, a drain evicts every replica on the node at once."
     path: manifests/baseline.yaml
 
 explore:
   urls:
     - label: "Grafana — the roll itself: node versions, pod spread, PDB and success rate"
       url: "http://grafana.{{.DomainSuffix}}/d/cluster-upgrade-drill"
-    - label: "Grafana — go-api request metrics in detail"
+    - label: "Grafana — {{.WorkloadName}} request metrics in detail"
       url: "http://grafana.{{.DomainSuffix}}/d/app-requests"
   commands:
     - label: "1. Start steady background traffic (leave it running)"
@@ -109,7 +109,7 @@ explore:
     - label: "6. Replace the drained node with one on the target version"
       command: "TARGET_K3S_VERSION=v1.33.6-k3s1 bash {{.ProjectRoot}}/scenarios/cluster-upgrade-drill/scripts/roll-node.sh \"${NODE}\""
     - label: "7. Confirm the workload came back before rolling the next node"
-      command: "kubectl -n go-api get pods -o wide"
+      command: "kubectl -n {{.WorkloadNamespace}} get pods -o wide"
     - label: "8. Repeat steps 4-7 for each remaining worker"
       command: "kubectl get nodes -o wide"
     - label: "9. Recover anything left Pending on storage that died with a node"
@@ -117,12 +117,12 @@ explore:
     - label: "10. Restart traffic if the roll evicted it, let it run ~2 minutes, then grade"
       command: "labctl traffic start --profile steady --rps 20 && labctl scenario verify cluster-upgrade-drill"
   tips:
-    - "Start traffic FIRST. The availability grade reads http_requests_total from Prometheus over a 10m window, and the 'traffic-is-flowing' check fails the drill if there was no load to measure — an upgrade nobody was using proves nothing."
+    - "Start traffic FIRST. The availability grade reads http_server_request_duration_seconds_count from Prometheus over a 10m window, and the 'traffic-is-flowing' check fails the drill if there was no load to measure — an upgrade nobody was using proves nothing."
     - "Apply the PDB BEFORE the first drain. Applying it afterwards grades green while teaching the opposite lesson: the eviction it was meant to block has already happened."
-    - "Open the 'Cluster Upgrade Drill' dashboard before you start and leave it up. 'Nodes by kubelet version' shows a second version appear and take over as you roll; 'go-api pods per node' must never collapse to one node; and 'disruptions allowed' dropping to 0 is the PDB blocking an eviction in real time."
+    - "Open the 'Cluster Upgrade Drill' dashboard before you start and leave it up. 'Nodes by kubelet version' shows a second version appear and take over as you roll; '{{.WorkloadName}} pods per node' must never collapse to one node; and 'disruptions allowed' dropping to 0 is the PDB blocking an eviction in real time."
     - "Watch the drain. With maxUnavailable: 1 you should see 'evicting pod ...' pause and retry while a replacement pod goes Ready elsewhere. That pause IS the PodDisruptionBudget working — it is the single most important thing to observe in this drill."
     - "Node names change when you roll them: k3d cannot reuse a name in place, so k3d-snowops-agent-0 comes back as k3d-snowops-agent-0-0. Re-read 'kubectl get nodes' between rolls rather than reusing a name you typed earlier — the explore commands capture the name into $NODE for exactly this reason."
-    - "Roll ONE node at a time and wait for go-api to be Running on the replacement before starting the next. Draining both workers together leaves nowhere to run the app and tanks availability — the anti-pattern this drill teaches against."
+    - "Roll ONE node at a time and wait for {{.WorkloadName}} to be Running on the replacement before starting the next. Draining both workers together leaves nowhere to run the app and tanks availability — the anti-pattern this drill teaches against."
     - "HONEST SCOPE: k3d cannot upgrade a node in place, so roll-node.sh deletes the drained node and creates a replacement on the target k3s image. That is a faithful simulation of a rolling WORKER upgrade, which is exactly how managed node groups roll. The server/control-plane node is left alone; on EKS/AKS/GKE the provider upgrades the control plane first, then the nodes."
     - "Pick a target that is the same as, or newer than, the control plane — never older. roll-node.sh refuses a downgrade and refuses a kubelet more than three minor versions behind the API server, because both are real outages. If the lab is already on the newest k3s the drill still works: rolling a node onto the same version is node rotation, which is the same operation with the same risks."
     - "Node replacement destroys local-path storage. Any PersistentVolume pinned to the node you replace is gone, and its claim sits Pending forever. roll-node.sh warns you before it deletes such a node. This is why stateful workloads need replicated storage before you roll a cluster."
@@ -130,7 +130,7 @@ explore:
     - "Draining a node evicts the k6 traffic generator too, and its Job does not restart itself. Check 'labctl traffic status' after each roll and restart it if it Failed — then let it run a couple of minutes before grading, because the availability check averages over a 10m window."
     - "A drain can also block on someone else's PodDisruptionBudget. Single-replica platform components (istiod, for one) have PDBs that forbid the last pod being evicted, and the drain retries 'Cannot evict pod as it would violate the pod's disruption budget' forever. That is the drain working correctly, and it is the most common reason a real node roll stalls. Find the culprit with 'kubectl get pdb -A -o wide' and look for ALLOWED DISRUPTIONS 0, then either scale that component up ('kubectl -n <ns> scale deploy/<name> --replicas=2') or accept the disruption and delete its pod so it reschedules elsewhere."
     - "If Prometheus, Loki or Alertmanager come back Pending after a roll, their local-path volumes died with the node. Run scripts/reclaim-stranded-pvcs.sh (DRY_RUN=true first) to release the dead claims so their StatefulSets rebind. Grading needs Prometheus, so do this before you verify."
-    - "Tear down with 'labctl scenario down cluster-upgrade-drill' — removes the PDB and scales go-api back down. go-api itself stays running."
+    - "Tear down with 'labctl scenario down cluster-upgrade-drill' — removes the PDB and scales {{.WorkloadName}} back down. {{.WorkloadName}} itself stays running."
 
 references:
   - label: "Kubernetes — Safely Drain a Node"

@@ -26,13 +26,13 @@
       }
     },
     {
-      "title": "go-api Logs",
+      "title": "{{.WorkloadName}} Logs",
       "type": "logs",
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 8 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
         {
-          "expr": "{namespace=\"go-api\"}",
+          "expr": "{namespace=\"{{.WorkloadNamespace}}\"}",
           "refId": "A"
         }
       ],

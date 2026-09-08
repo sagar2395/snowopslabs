@@ -13,9 +13,9 @@ if ! kubectl get pod vault-0 -n vault >/dev/null 2>&1; then
   exit 0
 fi
 
-echo "Restoring the platform's demo value at secret/go-api..."
+echo "Restoring the platform's demo value at secret/${WORKLOAD_NAME:-go-api}..."
 kubectl exec -n vault vault-0 -- sh -c \
-  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv put secret/go-api api-key='${DEMO_SECRET}'" >/dev/null 2>&1 ||
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv put secret/${WORKLOAD_NAME:-go-api} api-key='${DEMO_SECRET}'" >/dev/null 2>&1 ||
   echo "Could not restore the demo value (Vault may be sealed or restarted); harmless."
 
 echo "Vault restored to the platform baseline."

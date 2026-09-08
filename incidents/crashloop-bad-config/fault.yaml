@@ -1,15 +1,15 @@
 name: crashloop-bad-config
 verified: true
 displayName: "CrashLoop: broken container command"
-description: "Users report the latest go-api deploy never finished. New pods start, die instantly, and start again — classic CrashLoopBackOff. The old pods are still serving, so traffic mostly works… for now."
+description: "Users report the latest {{.WorkloadName}} deploy never finished. New pods start, die instantly, and start again — classic CrashLoopBackOff. The old pods are still serving, so traffic mostly works… for now."
 category: workload
 severity: medium
 target:
-  namespace: go-api
-  workload: go-api
+  namespace: "{{.WorkloadNamespace}}"
+  workload: "{{.WorkloadName}}"
 prerequisites:
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
 detection:
   name: rollout-healthy
   type: script

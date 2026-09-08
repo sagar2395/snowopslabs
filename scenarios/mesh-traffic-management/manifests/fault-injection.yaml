@@ -5,11 +5,11 @@
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
-  name: go-api-canary
-  namespace: go-api
+  name: "{{.WorkloadName}}-canary"
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   hosts:
-    - go-api-canary.go-api.svc.cluster.local
+    - "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
   http:
     - match:
         - sourceLabels:
@@ -21,14 +21,14 @@ spec:
           fixedDelay: 2s
       route:
         - destination:
-            host: go-api-canary.go-api.svc.cluster.local
+            host: "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
             subset: v2
     - route:
         - destination:
-            host: go-api-canary.go-api.svc.cluster.local
+            host: "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
             subset: v1
           weight: 90
         - destination:
-            host: go-api-canary.go-api.svc.cluster.local
+            host: "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
             subset: v2
           weight: 10

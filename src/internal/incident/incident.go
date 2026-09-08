@@ -13,12 +13,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"text/template"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/sagar2395/snowopslabs/internal/tmpl"
+	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 	"github.com/sagar2395/snowopslabs/pkg/scenario"
 )
@@ -142,19 +143,28 @@ type Engine struct {
 	// AlertmanagerURL is where Status queries fired alerts.
 	// Callers set it from ALERTMANAGER_URL or the ingress default.
 	AlertmanagerURL string
-	faults          map[string]*Fault
-	loadErrors      map[string]error
-	stateDir        string
+	// MonitoringNamespace is where the monitoring stack lives. Faults may name it
+	// as {{.MonitoringNamespace}}; before ADR-0014 the incident engine did not
+	// carry it and such a reference rendered as "<no value>".
+	MonitoringNamespace string
+	// Workload is the app faults are injected against. It seeds the target a
+	// fault does not pin itself, so one fault can break go-api or a user's app.
+	Workload   workload.Workload
+	faults     map[string]*Fault
+	loadErrors map[string]error
+	stateDir   string
 }
 
 // NewEngine scans incidents/ under the project root.
 func NewEngine(projectRoot, domainSuffix string) *Engine {
 	e := &Engine{
-		ProjectRoot:  projectRoot,
-		DomainSuffix: domainSuffix,
-		faults:       make(map[string]*Fault),
-		loadErrors:   make(map[string]error),
-		stateDir:     filepath.Join(projectRoot, ".labctl", "incidents"),
+		ProjectRoot:         projectRoot,
+		DomainSuffix:        domainSuffix,
+		MonitoringNamespace: "monitoring",
+		Workload:            workload.Default(workload.DefaultApp),
+		faults:              make(map[string]*Fault),
+		loadErrors:          make(map[string]error),
+		stateDir:            filepath.Join(projectRoot, ".labctl", "incidents"),
 	}
 	e.scan()
 	return e
@@ -167,7 +177,10 @@ func (e *Engine) scan() {
 		return
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		// A leading underscore marks a directory that is not content — shared
+		// script libraries live alongside the faults, as they do under platform/
+		// and apps/. Without this they are reported as faults missing a fault.yaml.
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") {
 			continue
 		}
 		faultDir := filepath.Join(dir, entry.Name())
@@ -324,7 +337,10 @@ func (e *Engine) RecordScriptResolved(name, user string) {
 // preflight checks the fault's prerequisites before injection.
 func (e *Engine) preflight(f *Fault) error {
 	var errs []string
-	for _, app := range f.Prerequisites.Apps {
+	for _, declared := range f.Prerequisites.Apps {
+		// Resolved, so a fault that follows the binding states its app
+		// prerequisite as {{.WorkloadName}} rather than pinning one.
+		app := e.resolveTemplate(declared)
 		appEnv := filepath.Join(e.ProjectRoot, "apps", app, "app.env")
 		if _, err := os.Stat(appEnv); err != nil {
 			errs = append(errs, fmt.Sprintf("prerequisite app %q not found (expected %s)", app, appEnv))
@@ -336,16 +352,33 @@ func (e *Engine) preflight(f *Fault) error {
 	return nil
 }
 
-// targetEnv exports the fault's target to its scripts.
-func (f *Fault) targetEnv() map[string]string {
+// ResolvedTarget is the fault's target with its templates expanded against the
+// current workload binding. A fault that pins a literal namespace keeps breaking
+// that one; a fault whose target reads {{.WorkloadNamespace}} follows whatever
+// app the lab is bound to, which is what lets one fault be injected against a
+// user's own application.
+//
+// Every path that reaches a fault script must go through this — the scripts, the
+// durable service, and anything that displays the target — or one of them sends
+// a raw "{{.WorkloadNamespace}}" to kubectl.
+func (e *Engine) ResolvedTarget(f *Fault) Target {
+	return Target{
+		Namespace: e.resolveTemplate(f.Target.Namespace),
+		Workload:  e.resolveTemplate(f.Target.Workload),
+	}
+}
+
+// targetEnv exports the fault's resolved target to its scripts.
+func (e *Engine) targetEnv(f *Fault) map[string]string {
+	t := e.ResolvedTarget(f)
 	return map[string]string{
-		"TARGET_NAMESPACE": f.Target.Namespace,
-		"TARGET_WORKLOAD":  f.Target.Workload,
+		"TARGET_NAMESPACE": t.Namespace,
+		"TARGET_WORKLOAD":  t.Workload,
 	}
 }
 
 func (e *Engine) runFaultScript(f *Fault, script, label string, exec *executor.Executor) error {
-	for k, v := range f.targetEnv() {
+	for k, v := range e.targetEnv(f) {
 		exec.SetEnv(k, v)
 	}
 	rel, err := filepath.Rel(e.ProjectRoot, filepath.Join(f.Dir, script))
@@ -457,7 +490,7 @@ func (e *Engine) Status(ctx context.Context, runner *checks.Runner, user string)
 	}
 
 	runner.ScriptDir = f.Dir
-	for k, v := range f.targetEnv() {
+	for k, v := range e.targetEnv(f) {
 		runner.Env = append(runner.Env, k+"="+v)
 	}
 	result := runner.Run(ctx, e.resolveCheck(f.Detection))
@@ -529,19 +562,23 @@ func (e *Engine) ResolveTemplate(input string) string {
 }
 
 func (e *Engine) resolveTemplate(input string) string {
-	if input == "" || !strings.Contains(input, "{{") {
-		return input
+	return tmpl.Expand(input, e.templateContext(), nil)
+}
+
+// templateContext is the engine's binding of the shared variable set, so a fault
+// may reference exactly the variables a scenario may — and exactly the ones the
+// catalog validator accepts.
+func (e *Engine) templateContext() tmpl.Context {
+	w := e.Workload.WithDefaults()
+	return tmpl.Context{
+		DomainSuffix:        e.DomainSuffix,
+		MonitoringNamespace: e.MonitoringNamespace,
+		ProjectRoot:         e.ProjectRoot,
+		IngressClass:        "traefik",
+		WorkloadName:        w.Name,
+		WorkloadNamespace:   w.Namespace,
+		WorkloadService:     w.Service(),
+		WorkloadPort:        w.Port,
+		WorkloadMetric:      w.Metric,
 	}
-	tmpl, err := template.New("fault").Parse(input)
-	if err != nil {
-		return input
-	}
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, map[string]string{
-		"DomainSuffix": e.DomainSuffix,
-		"ProjectRoot":  e.ProjectRoot,
-	}); err != nil {
-		return input
-	}
-	return buf.String()
 }

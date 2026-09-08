@@ -109,6 +109,12 @@ type Stage struct {
 type Prerequisites struct {
 	Platform []string `yaml:"platform" json:"platform"`
 	Apps     []string `yaml:"apps" json:"apps"`
+	// Capabilities the bound workload must declare, e.g. prometheus-metrics.
+	// They are what let a scenario run against an application it was not written
+	// for: it states what it needs of the app rather than naming one. The
+	// vocabulary is closed and lives in internal/workload; preflight rejects an
+	// unknown name so a typo cannot silently mean "never satisfied".
+	Capabilities []string `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 }
 
 // Component defines a single deployable unit within a scenario.

@@ -12,7 +12,7 @@ prerequisites:
     - monitoring/metrics
     - monitoring/grafana
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
 runtimes:
   - k3d
   - kind

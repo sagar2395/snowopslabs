@@ -219,7 +219,7 @@ a minute; the same experiment at three replicas causes no dip at all.
   experiment's own namespace arrives as `exported_namespace` because the scrape
   target's `namespace` label wins. See
   [R13](runbooks/R13-observability-pipeline.md).
-- go-api's `http_request_duration_seconds` is **handler** time, so it stays flat
+- go-api's `http_server_request_duration_seconds` is **handler** time, so it stays flat
   at ~4ms under a 300ms `NetworkChaos` delay. Network faults are only visible
   client-side (`curl -w time_starttransfer` through the ingress).
 - A `network-partition` leaves the pod `1/1 Ready` with perfect pod metrics

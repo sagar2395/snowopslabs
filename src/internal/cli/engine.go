@@ -80,6 +80,14 @@ func scriptEnv() map[string]string {
 		"STORAGE_CLASS":        cfg.StorageClass,
 		"PROFILE":              cfg.Profile,
 		"MONITORING_NAMESPACE": cfg.MonitoringNamespace,
+
+		// The workload a scenario or fault is bound to, so a component script
+		// acts on the chosen application instead of hardcoding one (ADR-0014).
+		// Incident scripts additionally get TARGET_* from the fault's own target.
+		"WORKLOAD_NAME":      scenes.Workload.Name,
+		"WORKLOAD_NAMESPACE": scenes.Workload.Namespace,
+		"WORKLOAD_PORT":      scenes.Workload.Port,
+		"WORKLOAD_METRIC":    scenes.Workload.Metric,
 	}
 }
 

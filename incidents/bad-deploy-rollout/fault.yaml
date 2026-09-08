@@ -5,11 +5,11 @@ description: "A release went out referencing an image tag that was never pushed.
 category: workload
 severity: medium
 target:
-  namespace: go-api
-  workload: go-api
+  namespace: "{{.WorkloadNamespace}}"
+  workload: "{{.WorkloadName}}"
 prerequisites:
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
 detection:
   name: rollout-healthy
   type: script

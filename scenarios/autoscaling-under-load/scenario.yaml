@@ -2,7 +2,7 @@ apiVersion: scenario.snowops.net/v2
 name: autoscaling-under-load
 verified: true
 displayName: "Autoscaling Under Load"
-description: "Watch KEDA scale go-api on Prometheus RPS: a spike drives it from 1 to several replicas, then cooldown brings it back. The flagship 'autoscaling actually works' demo, verified under traffic from the load generator."
+description: "Watch KEDA scale {{.WorkloadName}} on Prometheus RPS: a spike drives it from 1 to several replicas, then cooldown brings it back. The flagship 'autoscaling actually works' demo, verified under traffic from the load generator."
 category: scalability
 prerequisites:
   platform:
@@ -11,13 +11,17 @@ prerequisites:
     - monitoring/grafana
     - autoscaling/keda
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
+  # What this scenario needs of whatever app it is bound to. KEDA scales on the
+  # app's own request rate, so an app with no request histogram cannot drive it.
+  capabilities:
+    - prometheus-metrics
 runtimes:
   - k3d
   - kind
 
 objectives:
-  - "Declare metric-driven autoscaling for go-api with a KEDA ScaledObject"
+  - "Declare metric-driven autoscaling for {{.WorkloadName}} with a KEDA ScaledObject"
   - "Drive a traffic spike and watch replicas scale up on Prometheus RPS"
   - "Confirm latency stays within SLO while scaled, then scales back on cooldown"
 
@@ -51,10 +55,10 @@ stages:
   - name: autoscaler
     description: Declare the ScaledObject and the replicas-vs-RPS dashboard
     components:
-      - name: go-api-scaledobject
+      - name: workload-scaledobject
         type: manifest
         path: manifests/scaledobject.yaml
-        namespace: go-api
+        namespace: "{{.WorkloadNamespace}}"
 
       - name: autoscaling-dashboard
         type: grafana-dashboard
@@ -72,25 +76,25 @@ checks:
 
   - name: scaledobject-present
     type: kubectl
-    resource: scaledobject/go-api
-    namespace: go-api
+    resource: scaledobject/{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
 
   - name: keda-hpa-created
     type: kubectl
-    resource: hpa/keda-hpa-go-api
-    namespace: go-api
+    resource: hpa/keda-hpa-{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
 
-  - name: go-api-scaled-up
+  - name: workload-scaled-up
     type: kubectl
-    resource: deployment/go-api
-    namespace: go-api
+    resource: deployment/{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "3"
 
   - name: latency-within-slo
     type: promql
-    query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))'
+    query: 'histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le))'
     operator: "<"
     value: "1.5"
 
@@ -105,13 +109,13 @@ references:
     url: "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/"
 
 snippets:
-  - label: "KEDA ScaledObject for go-api (the autoscaler this scenario installs)"
-    description: "The autoscaler this scenario installs. It scales go-api on its Prometheus request rate: desiredReplicas = ceil(total RPS ÷ threshold), clamped between minReplicaCount and maxReplicaCount. The defaults scale 1→6 at 25 RPS per replica — override the parameters at activation to change how aggressively it reacts."
+  - label: "KEDA ScaledObject for {{.WorkloadName}} (the autoscaler this scenario installs)"
+    description: "The autoscaler this scenario installs. It scales {{.WorkloadName}} on its Prometheus request rate: desiredReplicas = ceil(total RPS ÷ threshold), clamped between minReplicaCount and maxReplicaCount. The defaults scale 1→6 at 25 RPS per replica — override the parameters at activation to change how aggressively it reacts."
     path: manifests/scaledobject.yaml
   - label: "Inspect the HPA KEDA created"
     description: "Not a manifest to apply — a quick way to watch the desired/current replica maths live."
     yaml: |
-      # kubectl -n go-api get hpa keda-hpa-go-api \
+      # kubectl -n {{.WorkloadNamespace}} get hpa keda-hpa-{{.WorkloadName}} \
       #   -o custom-columns=NAME:.metadata.name,MIN:.spec.minReplicas,MAX:.spec.maxReplicas,CUR:.status.currentReplicas,TARGET:.status.currentMetrics
 
 explore:
@@ -123,17 +127,17 @@ explore:
   commands:
     - label: "1. Drive the spike (baseline 10 RPS -> 10x spike for ~2m)"
       command: "labctl traffic start --profile spike --rps 10"
-    - label: "2. Watch KEDA scale go-api up"
-      command: "kubectl -n go-api get hpa keda-hpa-go-api -w"
+    - label: "2. Watch KEDA scale {{.WorkloadName}} up"
+      command: "kubectl -n {{.WorkloadNamespace}} get hpa keda-hpa-{{.WorkloadName}} -w"
     - label: "3. Watch replicas change"
-      command: "kubectl -n go-api get deploy go-api -w"
+      command: "kubectl -n {{.WorkloadNamespace}} get deploy {{.WorkloadName}} -w"
     - label: "4. Verify the scaled-up state (run during the 2m spike hold)"
       command: "labctl scenario verify autoscaling-under-load"
     - label: "5. After ~3-4m cooldown, confirm it scaled back to 1"
-      command: "kubectl -n go-api get deploy go-api"
+      command: "kubectl -n {{.WorkloadNamespace}} get deploy {{.WorkloadName}}"
   tips:
-    - "KEDA targets ~25 RPS/replica (ScaledObject threshold); the ~100 RPS spike pushes go-api to ~4 replicas (max 6)."
+    - "KEDA targets ~25 RPS/replica (ScaledObject threshold); the ~100 RPS spike pushes {{.WorkloadName}} to ~4 replicas (max 6)."
     - "Replicas vs RPS is the dashboard story: the replica line should track the RPS line with a short lag."
     - "cooldownPeriod is 60s — after the spike ends KEDA waits, then scales back to minReplicaCount (1)."
-    - "If go-api stays at 1, check the ScaledObject status: kubectl -n go-api describe scaledobject go-api"
-    - "The promql latency check reads http_request_duration_seconds from the go-api /metrics endpoint."
+    - "If {{.WorkloadName}} stays at 1, check the ScaledObject status: kubectl -n {{.WorkloadNamespace}} describe scaledobject {{.WorkloadName}}"
+    - "The promql latency check reads http_server_request_duration_seconds from the {{.WorkloadName}} /metrics endpoint."

@@ -14,7 +14,7 @@ set -euo pipefail
 #
 # This is the point of the drill: the ConfigMap round-trips, the PV data does not.
 
-NS="${1:-go-api}"
+NS="${1:-${WORKLOAD_NAMESPACE:-go-api}}"
 
 if ! kubectl -n "$NS" get deploy data-writer >/dev/null 2>&1; then
   echo "data-writer is not deployed in '${NS}'." >&2

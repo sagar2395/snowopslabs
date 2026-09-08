@@ -13,11 +13,11 @@ spec:
     - name: labfault-crashloop-bad-config
       rules:
         - alert: LabFaultCrashLoop
-          expr: max(increase(kube_pod_container_status_restarts_total{namespace="go-api"}[5m])) > 2
+          expr: max(increase(kube_pod_container_status_restarts_total{namespace="${TARGET_NAMESPACE}"}[5m])) > 2
           for: 1m
           labels:
             labfault: "true"
             severity: warning
           annotations:
-            summary: "go-api pods are restarting repeatedly"
-            description: "Containers in namespace go-api restarted more than twice in 5 minutes — classic crash loop. Check pod Last State and the deployment spec."
+            summary: "${TARGET_WORKLOAD} pods are restarting repeatedly"
+            description: "Containers in namespace ${TARGET_NAMESPACE} restarted more than twice in 5 minutes — classic crash loop. Check pod Last State and the deployment spec."

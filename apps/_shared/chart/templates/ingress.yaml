@@ -1,0 +1,22 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "workload.name" . }}
+  namespace: {{ include "workload.namespace" . }}
+  labels:
+    {{- include "workload.labels" . | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host | default (printf "%s.k3d.local" (include "workload.name" .)) }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "workload.name" . }}
+                port:
+                  name: http
+{{- end }}

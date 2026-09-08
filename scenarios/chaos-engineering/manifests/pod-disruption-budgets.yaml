@@ -2,12 +2,12 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: go-api-pdb
-  namespace: go-api
+  name: "{{.WorkloadName}}-pdb"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: chaos-engineering
 spec:
   minAvailable: 1
   selector:
     matchLabels:
-      app: go-api
+      app: "{{.WorkloadName}}"

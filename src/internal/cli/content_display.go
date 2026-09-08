@@ -18,15 +18,15 @@ type resolveFunc func(string) string
 
 // renderReferences writes the upstream doc/tool links for a scenario or
 // incident. It writes nothing when there are none, so callers need no guard.
-func renderReferences(w io.Writer, refs []scenario.Reference) {
+func renderReferences(w io.Writer, refs []scenario.Reference, resolve resolveFunc) {
 	if len(refs) == 0 {
 		return
 	}
 	fmt.Fprintf(w, "\nReferences:\n")
 	for _, r := range refs {
-		fmt.Fprintf(w, "  - %s\n    %s\n", r.Label, r.URL)
+		fmt.Fprintf(w, "  - %s\n    %s\n", resolve(r.Label), resolve(r.URL))
 		if r.Note != "" {
-			fmt.Fprintf(w, "    %s\n", r.Note)
+			fmt.Fprintf(w, "    %s\n", resolve(r.Note))
 		}
 	}
 }
@@ -60,13 +60,16 @@ func renderSnippets(w io.Writer, snips []scenario.Snippet, dir string, resolve r
 	}
 	fmt.Fprintf(w, "\nSnippets:\n")
 	for _, s := range snips {
-		apply := s.Apply
+		apply := resolve(s.Apply)
 		if apply == "" {
 			apply = "kubectl apply -f -"
 		}
-		fmt.Fprintf(w, "\n  # %s", s.Label)
+		// The label and description name the workload too, so they are resolved
+		// alongside the body — a snippet titled "{{.WorkloadName}}" reads as an
+		// authoring bug to the learner.
+		fmt.Fprintf(w, "\n  # %s", resolve(s.Label))
 		if s.Description != "" {
-			fmt.Fprintf(w, " — %s", s.Description)
+			fmt.Fprintf(w, " — %s", resolve(s.Description))
 		}
 		fmt.Fprintln(w)
 		fmt.Fprintf(w, "  # apply with: %s\n", apply)

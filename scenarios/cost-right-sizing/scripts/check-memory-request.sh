@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# check-memory-request.sh — exit 0 only if go-api's memory request is <= 256Mi.
+# check-memory-request.sh — exit 0 only if ${WORKLOAD_NAME:-go-api}'s memory request is <= 256Mi.
 #
 # kubectl returns Kubernetes quantity strings like "32Mi", "256Mi", "1Gi".
 # This script converts them to MiB for numeric comparison.
-# Target: <= 256Mi (generous for a go-api at steady load; baseline is 32Mi).
+# Target: <= 256Mi (generous for a ${WORKLOAD_NAME:-go-api} at steady load; baseline is 32Mi).
 
-NAMESPACE="${NAMESPACE:-go-api}"
-APP="${APP:-go-api}"
+NAMESPACE="${NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
+APP="${APP:-${WORKLOAD_NAME:-go-api}}"
 CONTAINER="${CONTAINER:-$APP}" # container to inspect (defaults to the app name)
 MAX_MEMORY_MIB=256 # threshold in MiB
 

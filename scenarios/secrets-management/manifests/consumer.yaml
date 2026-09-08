@@ -9,7 +9,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: secret-consumer
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app: secret-consumer
 spec:
@@ -44,7 +44,7 @@ spec:
       volumes:
         - name: api-secret
           secret:
-            secretName: go-api-secrets
+            secretName: "{{.WorkloadName}}-secrets"
 ---
 # The control group. Same secret, consumed as an ENV VAR instead of a file.
 # The kubelet cannot rewrite a process's environment, so this container keeps
@@ -57,7 +57,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: env-consumer
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app: env-consumer
 spec:
@@ -81,7 +81,7 @@ spec:
             - name: API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: go-api-secrets
+                  name: "{{.WorkloadName}}-secrets"
                   key: api-key
           resources:
             requests:

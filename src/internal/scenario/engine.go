@@ -15,6 +15,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/sagar2395/snowopslabs/internal/tmpl"
+	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 	"github.com/sagar2395/snowopslabs/pkg/extension"
 	schema "github.com/sagar2395/snowopslabs/pkg/scenario"
@@ -60,6 +63,15 @@ type Engine struct {
 	MonitoringNamespace string // namespace for monitoring/logging/tracing (default: "monitoring")
 	IngressClass        string // ingress class for scenario Ingress manifests (default: "traefik")
 
+	// Workload is the app this engine's scenarios are bound to. Content names it
+	// through {{.WorkloadName}} and friends rather than a literal, so the same
+	// scenario runs against a built-in app or one the user brings (ADR-0014).
+	Workload workload.Workload
+	// Contract is that app's declared capabilities, which Preflight grades a
+	// scenario's prerequisites against. Callers set it from the same AppConfig as
+	// Workload, so the two describe one application.
+	Contract workload.Contract
+
 	// Extension seam (ADR-0008). Defaults to the open no-op implementation, so
 	// the engine behaves identically unless a build injects custom hooks.
 	Hooks extension.Hooks
@@ -104,11 +116,21 @@ func NewEngine(projectRoot, domainSuffix, profile string, monitoringNamespace ..
 	if len(monitoringNamespace) > 0 && monitoringNamespace[0] != "" {
 		ns = monitoringNamespace[0]
 	}
+	// Bind to the default app up front. An engine that knows its project root can
+	// read that app's declared contract, so no caller has to remember to set it —
+	// one that forgot would fail the capability gate for every scenario.
+	bound := workload.Default(workload.DefaultApp)
+	var contract workload.Contract
+	if appCfg, err := config.LoadAppConfig(projectRoot, workload.DefaultApp); err == nil {
+		bound, contract = appCfg.Workload(), appCfg.Contract
+	}
 	e := &Engine{
 		ProjectRoot:         projectRoot,
 		DomainSuffix:        domainSuffix,
 		Profile:             profile,
 		MonitoringNamespace: ns,
+		Workload:            bound,
+		Contract:            contract,
 		Hooks:               extension.DefaultHooks(),
 		scenarios:           make(map[string]*Scenario),
 		loadErrors:          make(map[string]error),
@@ -176,8 +198,11 @@ func (e *Engine) Preflight(s *Scenario) error {
 		}
 	}
 
-	// 2. Prerequisite apps — check apps/<name>/app.env exists.
-	for _, app := range s.Prerequisites.Apps {
+	// 2. Prerequisite apps — check apps/<name>/app.env exists. Resolved, so a
+	// scenario states its app prerequisite as {{.WorkloadName}} rather than
+	// pinning one.
+	for _, declared := range s.Prerequisites.Apps {
+		app := e.resolveTemplate(declared)
 		appEnv := filepath.Join(e.ProjectRoot, "apps", app, "app.env")
 		if _, err := os.Stat(appEnv); err != nil {
 			errs = append(errs, fmt.Sprintf(
@@ -186,7 +211,29 @@ func (e *Engine) Preflight(s *Scenario) error {
 		}
 	}
 
-	// 3. Prerequisite platform components — check platform/<category>/ directory exists.
+	// 3. Workload capabilities — the bound app must promise what the scenario
+	// needs. Checked before anything installs, so a mismatch reads as "this app
+	// cannot run this scenario" instead of a red check half an hour later.
+	var required []workload.Capability
+	for _, name := range s.Prerequisites.Capabilities {
+		c, err := workload.ParseCapability(name)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("prerequisite capability: %v", err))
+			continue
+		}
+		required = append(required, c)
+	}
+	if missing := e.Contract.Missing(required); len(missing) > 0 {
+		names := make([]string, len(missing))
+		for i, m := range missing {
+			names[i] = string(m)
+		}
+		errs = append(errs, fmt.Sprintf(
+			"workload %q does not declare: %s — either bind an app that does (APP_NAME=<app>, see 'labctl app list') or add the capability to apps/%s/app.env once the app truly provides it",
+			e.Workload.Name, strings.Join(names, ", "), e.Workload.Name))
+	}
+
+	// 4. Prerequisite platform components — check platform/<category>/ directory exists.
 	for _, p := range s.Prerequisites.Platform {
 		platformDir := filepath.Join(e.ProjectRoot, "platform", p)
 		if _, err := os.Stat(platformDir); err != nil {
@@ -196,7 +243,7 @@ func (e *Engine) Preflight(s *Scenario) error {
 		}
 	}
 
-	// 4. Component asset files.
+	// 5. Component asset files.
 	for _, comp := range s.AllComponents() {
 		if comp.ValuesFile != "" {
 			p := filepath.Join(s.Dir, comp.ValuesFile)
@@ -218,7 +265,7 @@ func (e *Engine) Preflight(s *Scenario) error {
 		}
 	}
 
-	// 5. Check script files.
+	// 6. Check script files.
 	for _, c := range s.Checks {
 		if c.Type == checks.TypeScript && c.Script != "" && !filepath.IsAbs(c.Script) {
 			p := filepath.Join(s.Dir, c.Script)
@@ -821,10 +868,14 @@ func (e *Engine) installGrafanaDashboard(s *Scenario, comp *Component, exec Comm
 			continue
 		}
 
-		data, err := os.ReadFile(filepath.Join(dashDir, entry.Name()))
+		raw, err := os.ReadFile(filepath.Join(dashDir, entry.Name()))
 		if err != nil {
 			return fmt.Errorf("reading dashboard %s: %w", entry.Name(), err)
 		}
+		// Resolved like any other content, so a panel can query the bound
+		// workload. Grafana's own syntax is untouched: its legend formats carry
+		// no leading dot ({{namespace}}) and its variables are $-prefixed.
+		data := e.resolveTemplate(string(raw))
 
 		cmName := fmt.Sprintf("scenario-%s-%s", s.Name, strings.TrimSuffix(entry.Name(), ".json"))
 
@@ -839,7 +890,7 @@ metadata:
 data:
   %s: |
 %s`,
-			cmName, ns, entry.Name(), indentJSON(string(data), "    "))
+			cmName, ns, entry.Name(), indentJSON(data, "    "))
 
 		tmpPath, cleanup, err := writeTempManifest(cm)
 		if err != nil {
@@ -938,17 +989,6 @@ func (e *Engine) ResolveTemplate(input string) string {
 	return e.resolveTemplate(input)
 }
 
-// labctlVar matches labctl's own template placeholders: a single dotted
-// identifier like {{.DomainSuffix}} or {{ .MonitoringNamespace }}. It is
-// deliberately narrow so it never touches the OTHER templating languages that
-// legitimately share the file: Prometheus rule annotations ({{ $value }},
-// {{ $labels.pod }}), Grafana legends ({{namespace}}), and Helm/sprig
-// expressions ({{ index .data "x" | base64decode }}). Parsing the whole
-// document as one Go template used to choke on those and silently return the
-// input unrendered, so a manifest's {{.MonitoringNamespace}} reached kubectl
-// verbatim and the apply failed.
-var labctlVar = regexp.MustCompile(`{{\s*\.(\w+)\s*}}`)
-
 // effectiveParams resolves each declared parameter to its default or user
 // override, validated for type, bounds, and NotGreaterThan. An unknown override
 // key is an error so a typo'd name fails loudly instead of being ignored.
@@ -1017,29 +1057,35 @@ func (e *Engine) ResolveTemplateWithParams(input string, params map[string]strin
 // then the active activation's resolvedParams, then extra — so a parameter can
 // never shadow a built-in, and live activation values win over display defaults.
 func (e *Engine) resolveTemplateWith(input string, extra map[string]string) string {
-	data := map[string]string{
-		"DomainSuffix":        e.DomainSuffix,
-		"ProjectRoot":         e.ProjectRoot,
-		"MonitoringNamespace": e.MonitoringNamespace,
-		"LokiRetentionPeriod": lokiRetentionPeriod(),
-		"IngressClass":        ingressClassOr(e.IngressClass),
+	overlay := make(map[string]string, len(e.resolvedParams)+len(extra))
+	for k, v := range e.resolvedParams {
+		overlay[k] = v
 	}
-	overlay := func(src map[string]string) {
-		for k, v := range src {
-			if _, taken := data[k]; !taken {
-				data[k] = v
-			}
+	for k, v := range extra {
+		if _, taken := overlay[k]; !taken {
+			overlay[k] = v
 		}
 	}
-	overlay(e.resolvedParams)
-	overlay(extra)
-	return labctlVar.ReplaceAllStringFunc(input, func(match string) string {
-		key := labctlVar.FindStringSubmatch(match)[1]
-		if v, ok := data[key]; ok {
-			return v
-		}
-		return match // unknown {{.Var}} — leave it for whoever else consumes it
-	})
+	return tmpl.Expand(input, e.templateContext(), overlay)
+}
+
+// templateContext is the engine's binding of the shared variable set. Every
+// run-time expansion goes through it, so the variables content may use are the
+// same ones the catalog validator accepts.
+func (e *Engine) templateContext() tmpl.Context {
+	w := e.Workload.WithDefaults()
+	return tmpl.Context{
+		DomainSuffix:        e.DomainSuffix,
+		MonitoringNamespace: e.MonitoringNamespace,
+		ProjectRoot:         e.ProjectRoot,
+		LokiRetentionPeriod: lokiRetentionPeriod(),
+		IngressClass:        ingressClassOr(e.IngressClass),
+		WorkloadName:        w.Name,
+		WorkloadNamespace:   w.Namespace,
+		WorkloadService:     w.Service(),
+		WorkloadPort:        w.Port,
+		WorkloadMetric:      w.Metric,
+	}
 }
 
 // ParamDefaults maps each declared parameter to its default value, or nil when

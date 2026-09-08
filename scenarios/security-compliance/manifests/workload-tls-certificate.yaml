@@ -6,21 +6,21 @@
 # cert-manager watches the Certificate, asks lab-ca-issuer to sign a leaf, and
 # writes the result into the Secret named by secretName. Nothing else is needed:
 # the Secret is the deliverable, and an Ingress references it under tls[].
-# Watch it happen:  kubectl -n go-api describe certificate go-api-tls
+# Watch it happen:  kubectl -n {{.WorkloadNamespace}} describe certificate {{.WorkloadName}}-tls
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: go-api-tls
-  namespace: go-api
+  name: "{{.WorkloadName}}-tls"
+  namespace: "{{.WorkloadNamespace}}"
 spec:
-  secretName: go-api-tls-secret
+  secretName: "{{.WorkloadName}}-tls-secret"
   duration: 2160h # 90d — the shape a real leaf certificate has
   renewBefore: 360h # 15d — cert-manager rotates it before it expires
-  commonName: go-api.{{.DomainSuffix}}
+  commonName: "{{.WorkloadName}}.{{.DomainSuffix}}"
   dnsNames:
-    - go-api.{{.DomainSuffix}}
-    - go-api.go-api.svc.cluster.local
+    - "{{.WorkloadName}}.{{.DomainSuffix}}"
+    - "{{.WorkloadService}}"
   issuerRef:
     name: lab-ca-issuer
     kind: ClusterIssuer

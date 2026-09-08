@@ -66,8 +66,9 @@ var appListCmd = &cobra.Command{
 				fmt.Printf("  %-20s (error reading config)\n", app)
 				continue
 			}
-			fmt.Printf("  %-20s build=%-10s deploy=%-10s\n",
-				app, appCfg.BuildStrategy, appCfg.DeployStrategy)
+			fmt.Printf("  %-20s build=%-8s deploy=%-6s port=%-6s capabilities=%s\n",
+				app, appCfg.BuildStrategy, appCfg.DeployStrategy,
+				appCfg.Contract.Port, orNoneCaps(appCfg.Contract.Capabilities))
 		}
 		return nil
 	},
@@ -78,5 +79,7 @@ func init() {
 	appCmd.AddCommand(appDeployCmd)
 	appCmd.AddCommand(appDestroyCmd)
 	appCmd.AddCommand(appListCmd)
+	appCmd.AddCommand(appVerifyCmd)
+	appCmd.AddCommand(appCapabilitiesCmd)
 	rootCmd.AddCommand(appCmd)
 }

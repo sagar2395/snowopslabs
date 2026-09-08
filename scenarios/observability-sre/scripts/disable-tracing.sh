@@ -5,8 +5,8 @@ set -euo pipefail
 # exporting when the scenario is torn down and Alloy goes away. Without this the
 # app retries every export against a Service that no longer exists.
 
-NAMESPACE="${GO_API_NAMESPACE:-go-api}"
-DEPLOYMENT="go-api"
+NAMESPACE="${WORKLOAD_NAMESPACE:-go-api}"
+DEPLOYMENT="${WORKLOAD_NAME:-go-api}"
 
 if ! kubectl get deployment "$DEPLOYMENT" -n "$NAMESPACE" >/dev/null 2>&1; then
   echo "Deployment ${DEPLOYMENT} not found in ${NAMESPACE}; nothing to unset."

@@ -29,9 +29,9 @@ displayName: "CrashLoop: broken container command"
 description: "What the victim experiences, not how it's injected"
 category: workload                # workload | network | resources | storage | config
 severity: medium                  # low | medium | high
-target:
-  namespace: go-api
-  workload: go-api
+target:                           # templatable — see "Targeting a workload"
+  namespace: "{{.WorkloadNamespace}}"
+  workload: "{{.WorkloadName}}"
 prerequisites:
   apps: [go-api]                  # gated before injection
 detection:                        # same schema as scenario checks
@@ -56,6 +56,57 @@ snippets:                         # optional: applyable diagnose/remediate manif
               - name: go-api
                 command: null
 ```
+
+### Targeting a workload
+
+`target` names what the fault breaks. The engine exports it to `inject.sh`,
+`resolve.sh` and the detection check as `TARGET_NAMESPACE` and `TARGET_WORKLOAD`,
+which every script reads instead of hardcoding a name:
+
+```sh
+NS="${TARGET_NAMESPACE:-go-api}"
+DEPLOY="${TARGET_WORKLOAD:-go-api}"
+```
+
+Both fields are template-resolved. A fault whose target reads
+`{{.WorkloadNamespace}}` / `{{.WorkloadName}}` follows whatever app the lab is
+bound to, so the same fault can be injected against a built-in app or a user's
+own (see [ADR-0014](../docs/adr/0014-workload-binding-and-app-contract.md)). A
+fault that pins a literal keeps breaking exactly the workload it names — correct
+when the fault only makes sense for that one app.
+
+### Scripts, and the shared library
+
+`inject.sh`, `resolve.sh` and the detection check are executed as files, so the
+engine does not template them. They read the target from the environment:
+
+```sh
+NS="${TARGET_NAMESPACE:-go-api}"
+DEPLOY="${TARGET_WORKLOAD:-go-api}"
+```
+
+A fault's own manifests (an alert rule, a NetworkPolicy) are applied by the
+script rather than by the engine, so they carry shell-style placeholders and are
+rendered through the shared helper before `kubectl` sees them:
+
+```sh
+# shellcheck source=/dev/null
+. "$(cd "$SCRIPT_DIR/../_lib" && pwd)/render.sh"
+render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f -
+```
+
+```yaml
+expr: max(kube_pod_container_status_last_terminated_reason{namespace="${TARGET_NAMESPACE}"}) > 0
+```
+
+Directories under `incidents/` beginning with `_` are not faults — `_lib` holds
+these shared helpers.
+
+**Calibrate against the binding, not a fixed app.** A fault that hardcodes an
+absolute number is wrong for the next application: `oom-kill` derives its memory
+limit from the workload's own request rather than naming 8Mi, because a value
+that reproduces the failure for a small Go service would stop a JVM from ever
+starting.
 
 `references` and `snippets` use the same shape as scenarios (see
 [scenario schema → References and snippets](../docs/reference/scenario-schema.md#references-and-snippets)):

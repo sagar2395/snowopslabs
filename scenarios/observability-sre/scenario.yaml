@@ -9,7 +9,14 @@ prerequisites:
     - monitoring/metrics
     - monitoring/grafana
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
+  # Three signals means the app must produce all three: metrics to graph, traces
+  # to correlate, and a way to break readiness so the alerts have something to
+  # fire on.
+  capabilities:
+    - prometheus-metrics
+    - otlp-tracing
+    - readiness-toggle
 runtimes:
   - k3d
   - kind
@@ -128,20 +135,20 @@ checks:
   # trace panels look broken rather than unconfigured.
   - name: app-exports-traces-to-collector
     type: kubectl
-    resource: deployment/go-api
-    namespace: go-api
+    resource: deployment/{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: '{.spec.template.spec.containers[0].env[?(@.name=="OTEL_EXPORTER_OTLP_ENDPOINT")].value}'
     operator: "contains"
     value: "alloy"
-    remediation: "go-api is not exporting traces. Wire it to the collector: bash scenarios/observability-sre/scripts/enable-tracing.sh (or kubectl -n go-api set env deployment/go-api OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy.{{.MonitoringNamespace}}.svc.cluster.local:4318)."
+    remediation: "{{.WorkloadName}} is not exporting traces. Wire it to the collector: bash scenarios/observability-sre/scripts/enable-tracing.sh (or kubectl -n {{.WorkloadNamespace}} set env deployment/{{.WorkloadName}} OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy.{{.MonitoringNamespace}}.svc.cluster.local:4318)."
 
   # Traffic must be flowing for any of the SLO panels to mean anything.
   - name: app-request-metrics-present
     type: promql
-    query: 'count(http_requests_total{app="go-api"})'
+    query: 'count(http_server_request_duration_seconds_count{app="{{.WorkloadName}}"})'
     operator: ">="
     value: "1"
-    remediation: "No request metrics for go-api. Generate load with 'labctl traffic start --profile steady --rps 25', then confirm Prometheus is scraping the pod: kubectl -n go-api get pod -o jsonpath='{.items[0].metadata.annotations}' should contain prometheus.io/scrape=true."
+    remediation: "No request metrics for {{.WorkloadName}}. Generate load with 'labctl traffic start --profile steady --rps 25', then confirm Prometheus is scraping the pod: kubectl -n {{.WorkloadNamespace}} get pod -o jsonpath='{.items[0].metadata.annotations}' should contain prometheus.io/scrape=true."
 
   # Name the rule this scenario installs. A bare "prometheusrules" existence
   # check passes on kube-prometheus-stack's own rules and grades nothing.
@@ -182,26 +189,26 @@ explore:
     - label: "2. Watch the generator itself — this is a plain Kubernetes Job"
       command: "kubectl -n traffic get job,pod -l app=traffic-k6 && kubectl -n traffic logs -f job/traffic-k6"
     - label: "3. See the same requests arrive in the app's logs"
-      command: "kubectl -n go-api logs -f deploy/go-api | grep request"
+      command: "kubectl -n {{.WorkloadNamespace}} logs -f deploy/{{.WorkloadName}} | grep request"
     - label: "4. Confirm the app is counting them (server-side truth)"
-      command: "kubectl -n go-api exec deploy/go-api -- wget -qO- localhost:8080/metrics | grep '^http_requests_total'"
+      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:8080/metrics | grep '^http_server_request_duration_seconds_count'"
     - label: "5. Compare client-side vs server-side in Grafana"
       command: "open http://grafana.{{.DomainSuffix}}/d/app-requests  # k6 sent vs app handled — the two lines should overlap"
-    - label: "6. Query go-api logs in Loki"
-      command: "Open Grafana > Explore > Loki > {namespace=\"go-api\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\""
+    - label: "6. Query {{.WorkloadName}} logs in Loki"
+      command: "Open Grafana > Explore > Loki > {namespace=\"{{.WorkloadNamespace}}\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\""
     - label: "7. Jump from a log line to its trace"
       command: "In that same Loki result, expand a line and click the trace_id link — Grafana opens the trace in Tempo."
     - label: "8. Find slow requests in Tempo directly"
-      command: "Open Grafana > Explore > Tempo > Search: service.name=go-api, min duration 100ms"
+      command: "Open Grafana > Explore > Tempo > Search: service.name={{.WorkloadName}}, min duration 100ms"
     - label: "Stop the load"
       command: "labctl traffic stop"
     - label: "Break it on purpose: make the app fail readiness and watch every signal react"
-      command: "kubectl -n go-api exec deploy/go-api -- wget -qO- localhost:8080/toggle-failure"
+      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:8080/toggle-failure"
   tips:
     - "Check the alert rules actually loaded: kubectl -n {{.MonitoringNamespace}} get prometheusrules, then Prometheus > Alerts. A PrometheusRule whose 'release' label does not match the kube-prometheus-stack release is silently ignored — it exists in the cluster and Prometheus never reads it."
     - "SLO dashboards appear in Grafana automatically via the sidecar ConfigMap loader."
     - "The app exports to Alloy, not to Tempo. That indirection is the point: the collector owns batching, retry and sampling, and the trace backend can be replaced without touching a single application."
-    - "Three signals, one request. Metrics say a request was slow, logs say what it did, traces say where the time went. The link between them is the trace_id go-api writes on every access-log line — Grafana's Loki datasource turns it into a clickable link to the trace."
+    - "Three signals, one request. Metrics say a request was slow, logs say what it did, traces say where the time went. The link between them is the trace_id {{.WorkloadName}} writes on every access-log line — Grafana's Loki datasource turns it into a clickable link to the trace."
     - "Tempo's HTTP API listens on 3200, not 3100. A Grafana datasource pointing at 3100 fails every trace query with a connection error and looks exactly like 'no traces were recorded'."
     - "Use k6, not a curl loop: 'labctl traffic start --profile steady --rps 25'. k6 holds a constant ARRIVAL rate, so latency changes show up as queueing rather than as fewer requests. Its client-side metrics are remote-written to Prometheus and graphed next to the app's own counters on the Application Request Metrics dashboard."
     - "If a dashboard panel is empty, check the pipeline before the query: is Prometheus scraping the target (Status > Targets), is Promtail attaching the label your query filters on, is the app actually exporting? 'labctl scenario verify observability-sre' now checks each of those."

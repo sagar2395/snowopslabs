@@ -1,6 +1,6 @@
 {
   "annotations": {"list": []},
-  "description": "The rolling worker upgrade as it happens: which versions the nodes are on, where go-api is running, which node is cordoned, and whether availability held.",
+  "description": "The rolling worker upgrade as it happens: which versions the nodes are on, where {{.WorkloadName}} is running, which node is cordoned, and whether availability held.",
   "editable": true,
   "graphTooltip": 1,
   "links": [],
@@ -12,7 +12,7 @@
       "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
       "options": {
         "mode": "markdown",
-        "content": "Roll one worker at a time. **Nodes by kubelet version** should show a second version appear and then take over as each node is replaced — if two versions persist, the roll is unfinished. **go-api pods per node** must never collapse to a single node: that means the next drain takes the whole app down. **Success rate** is the grade."
+        "content": "Roll one worker at a time. **Nodes by kubelet version** should show a second version appear and then take over as each node is replaced — if two versions persist, the roll is unfinished. **{{.WorkloadName}} pods per node** must never collapse to a single node: that means the next drain takes the whole app down. **Success rate** is the grade."
       }
     },
     {
@@ -33,7 +33,7 @@
     {
       "id": 3,
       "type": "timeseries",
-      "title": "go-api pods per node (spread must survive the roll)",
+      "title": "{{.WorkloadName}} pods per node (spread must survive the roll)",
       "description": "If this drops to a single node, the PodDisruptionBudget is the only thing standing between the next drain and a full outage.",
       "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
@@ -42,7 +42,7 @@
         "overrides": []
       },
       "targets": [
-        {"refId": "A", "expr": "count by (node) (kube_pod_info{namespace=\"go-api\", created_by_kind=\"ReplicaSet\"})", "legendFormat": "{{node}}"}
+        {"refId": "A", "expr": "count by (node) (kube_pod_info{namespace=\"{{.WorkloadNamespace}}\", created_by_kind=\"ReplicaSet\"})", "legendFormat": "{{node}}"}
       ]
     },
     {
@@ -72,14 +72,14 @@
         "overrides": []
       },
       "targets": [
-        {"refId": "A", "expr": "kube_poddisruptionbudget_status_current_healthy{namespace=\"go-api\", poddisruptionbudget=\"go-api-upgrade-pdb\"}", "legendFormat": "healthy pods"},
-        {"refId": "B", "expr": "kube_poddisruptionbudget_status_pod_disruptions_allowed{namespace=\"go-api\", poddisruptionbudget=\"go-api-upgrade-pdb\"}", "legendFormat": "disruptions allowed"}
+        {"refId": "A", "expr": "kube_poddisruptionbudget_status_current_healthy{namespace=\"{{.WorkloadNamespace}}\", poddisruptionbudget=\"{{.WorkloadName}}-upgrade-pdb\"}", "legendFormat": "healthy pods"},
+        {"refId": "B", "expr": "kube_poddisruptionbudget_status_pod_disruptions_allowed{namespace=\"{{.WorkloadNamespace}}\", poddisruptionbudget=\"{{.WorkloadName}}-upgrade-pdb\"}", "legendFormat": "disruptions allowed"}
       ]
     },
     {
       "id": 6,
       "type": "timeseries",
-      "title": "go-api success rate across the upgrade (the grade)",
+      "title": "{{.WorkloadName}} success rate across the upgrade (the grade)",
       "description": "The scenario passes at >= 0.99 over a 10m window. Brief dips as a node cycles are expected; a sustained drop means a drain took the last healthy replica.",
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
@@ -89,13 +89,13 @@
         "overrides": []
       },
       "targets": [
-        {"refId": "A", "expr": "sum(rate(http_requests_total{app=\"go-api\",code!~\"5..\"}[5m])) / sum(rate(http_requests_total{app=\"go-api\"}[5m]))", "legendFormat": "success rate"}
+        {"refId": "A", "expr": "sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\",http_response_status_code!~\"5..\"}[5m])) / sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\"}[5m]))", "legendFormat": "success rate"}
       ]
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Request rate reaching go-api (the grade is meaningless without load)",
+      "title": "Request rate reaching {{.WorkloadName}} (the grade is meaningless without load)",
       "description": "A drain evicts the k6 traffic Job and it does not restart itself. If this flatlines, restart traffic before grading.",
       "gridPos": {"h": 7, "w": 24, "x": 0, "y": 20},
       "datasource": {"type": "prometheus", "uid": "prometheus"},
@@ -104,7 +104,7 @@
         "overrides": []
       },
       "targets": [
-        {"refId": "A", "expr": "sum(rate(http_requests_total{app=\"go-api\"}[1m]))", "legendFormat": "requests/sec"}
+        {"refId": "A", "expr": "sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\"}[1m]))", "legendFormat": "requests/sec"}
       ]
     }
   ],

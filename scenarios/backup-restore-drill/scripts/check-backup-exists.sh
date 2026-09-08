@@ -7,10 +7,10 @@ set -euo pipefail
 #
 # Env:
 #   BACKUP_DIR  where archives live (default: .labctl/backups)
-#   NAMESPACE   namespace to check a backup for (default: go-api)
+#   NAMESPACE   namespace to check a backup for (default: ${WORKLOAD_NAME:-go-api})
 
 BACKUP_DIR="${BACKUP_DIR:-.labctl/backups}"
-NAMESPACE="${NAMESPACE:-go-api}"
+NAMESPACE="${NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
 LATEST="${BACKUP_DIR}/${NAMESPACE}-latest.json"
 
 if [ ! -f "$LATEST" ]; then

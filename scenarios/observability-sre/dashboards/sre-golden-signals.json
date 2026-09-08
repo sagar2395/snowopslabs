@@ -6,13 +6,13 @@
   "links": [],
   "panels": [
     {
-      "title": "go-api: Request Rate by Status Code",
+      "title": "{{.WorkloadName}}: Request Rate by Status Code",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 16, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{app=\"go-api\"}[1m])) by (code)",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\"}[1m])) by (http_response_status_code)",
           "legendFormat": "{{code}}"
         }
       ],
@@ -30,7 +30,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(rate(http_requests_total{code=~\"5..\",app=\"go-api\"}[5m])) / clamp_min(sum(rate(http_requests_total{app=\"go-api\"}[5m])), 0.001)",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~\"5..\",app=\"{{.WorkloadName}}\"}[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\"}[5m])), 0.001)",
           "legendFormat": "5xx rate"
         }
       ],
@@ -49,17 +49,17 @@
       }
     },
     {
-      "title": "go-api: p99 Latency (SLO < 1s)",
+      "title": "{{.WorkloadName}}: p99 Latency (SLO < 1s)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 16, "x": 0, "y": 8 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{app=\"go-api\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le))",
           "legendFormat": "p99"
         },
         {
-          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{app=\"go-api\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_seconds_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le))",
           "legendFormat": "p50"
         }
       ],
@@ -83,7 +83,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "sum(kube_pod_status_ready{namespace=\"go-api\", condition=\"true\"})",
+          "expr": "sum(kube_pod_status_ready{namespace=\"{{.WorkloadNamespace}}\", condition=\"true\"})",
           "legendFormat": "ready"
         }
       ],
@@ -108,7 +108,7 @@
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
         {
-          "expr": "max(container_memory_working_set_bytes{namespace=\"go-api\",container!=\"\"} / container_spec_memory_limit_bytes{namespace=\"go-api\",container!=\"\"})",
+          "expr": "max(container_memory_working_set_bytes{namespace=\"{{.WorkloadNamespace}}\",container!=\"\"} / container_spec_memory_limit_bytes{namespace=\"{{.WorkloadNamespace}}\",container!=\"\"})",
           "legendFormat": "mem used / limit"
         }
       ],
@@ -129,7 +129,7 @@
     }
   ],
   "schemaVersion": 39,
-  "tags": ["observability", "sre", "golden-signals", "go-api"],
+  "tags": ["observability", "sre", "golden-signals", "{{.WorkloadName}}"],
   "templating": { "list": [] },
   "time": { "from": "now-30m", "to": "now" },
   "title": "Observability & SRE — Golden Signals",

@@ -5,16 +5,16 @@ set -eu
 # If the consumer ever restarted, the file could have been re-read at startup and
 # the drill would prove nothing about in-place propagation.
 
-POD="$(kubectl -n go-api get pod -l app=secret-consumer \
+POD="$(kubectl -n ${WORKLOAD_NAMESPACE:-go-api} get pod -l app=secret-consumer \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
 if [ -z "$POD" ]; then
-  echo "FAIL: no secret-consumer pod found in namespace go-api." >&2
+  echo "FAIL: no secret-consumer pod found in namespace ${WORKLOAD_NAMESPACE:-go-api}." >&2
   exit 1
 fi
 
-RESTARTS="$(kubectl -n go-api get pod "$POD" \
+RESTARTS="$(kubectl -n ${WORKLOAD_NAMESPACE:-go-api} get pod "$POD" \
   -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo "")"
-GENERATION="$(kubectl -n go-api get deploy secret-consumer \
+GENERATION="$(kubectl -n ${WORKLOAD_NAMESPACE:-go-api} get deploy secret-consumer \
   -o jsonpath='{.status.observedGeneration}' 2>/dev/null || echo "")"
 
 if [ "${RESTARTS:-1}" != "0" ]; then

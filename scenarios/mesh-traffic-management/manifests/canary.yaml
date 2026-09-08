@@ -1,31 +1,31 @@
-# Canary workload: two go-api versions behind one Service, split 90/10 by an
+# Canary workload: two {{.WorkloadName}} versions behind one Service, split 90/10 by an
 # Istio VirtualService, with STRICT mTLS enforced on the canary pods.
-# Both deployments use the existing go-api image; the "version" label is what
+# Both deployments use the existing {{.WorkloadName}} image; the "version" label is what
 # the mesh splits on (a realistic canary shape without needing two real builds).
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: go-api-v1
-  namespace: go-api
+  name: "{{.WorkloadName}}-v1"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
-    app: go-api-canary
+    app: "{{.WorkloadName}}-canary"
     version: v1
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: go-api-canary
+      app: "{{.WorkloadName}}-canary"
       version: v1
   template:
     metadata:
       labels:
-        app: go-api-canary
+        app: "{{.WorkloadName}}-canary"
         version: v1
     spec:
       containers:
-        - name: go-api
-          image: go-api:latest
+        - name: "{{.WorkloadName}}"
+          image: "{{.WorkloadName}}:latest"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -43,26 +43,26 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: go-api-v2
-  namespace: go-api
+  name: "{{.WorkloadName}}-v2"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
-    app: go-api-canary
+    app: "{{.WorkloadName}}-canary"
     version: v2
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: go-api-canary
+      app: "{{.WorkloadName}}-canary"
       version: v2
   template:
     metadata:
       labels:
-        app: go-api-canary
+        app: "{{.WorkloadName}}-canary"
         version: v2
     spec:
       containers:
-        - name: go-api
-          image: go-api:latest
+        - name: "{{.WorkloadName}}"
+          image: "{{.WorkloadName}}:latest"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -80,13 +80,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: go-api-canary
-  namespace: go-api
+  name: "{{.WorkloadName}}-canary"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
-    app: go-api-canary
+    app: "{{.WorkloadName}}-canary"
 spec:
   selector:
-    app: go-api-canary
+    app: "{{.WorkloadName}}-canary"
   ports:
     - name: http
       port: 80
@@ -95,10 +95,10 @@ spec:
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
-  name: go-api-canary
-  namespace: go-api
+  name: "{{.WorkloadName}}-canary"
+  namespace: "{{.WorkloadNamespace}}"
 spec:
-  host: go-api-canary.go-api.svc.cluster.local
+  host: "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
   subsets:
     - name: v1
       labels:
@@ -110,30 +110,30 @@ spec:
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
-  name: go-api-canary
-  namespace: go-api
+  name: "{{.WorkloadName}}-canary"
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   hosts:
-    - go-api-canary.go-api.svc.cluster.local
+    - "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
   http:
     - route:
         - destination:
-            host: go-api-canary.go-api.svc.cluster.local
+            host: "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
             subset: v1
           weight: 90
         - destination:
-            host: go-api-canary.go-api.svc.cluster.local
+            host: "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
             subset: v2
           weight: 10
 ---
 apiVersion: security.istio.io/v1beta1
 kind: PeerAuthentication
 metadata:
-  name: go-api-mtls
-  namespace: go-api
+  name: "{{.WorkloadName}}-mtls"
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   selector:
     matchLabels:
-      app: go-api-canary
+      app: "{{.WorkloadName}}-canary"
   mtls:
     mode: STRICT

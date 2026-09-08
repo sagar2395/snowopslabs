@@ -11,20 +11,20 @@ case "$TAG" in
     ;;
 esac
 
-echo "Building go-api:${TAG} and loading it into the cluster..."
+echo "Building ${WORKLOAD_NAME:-go-api}:${TAG} and loading it into the cluster..."
 echo "  (this is 'docker build' + import — read src/engine/build/docker.sh)"
 echo ""
 
-DOCKER_IMAGE_TAG="${TAG}" bash src/engine/build/docker.sh go-api --import
+DOCKER_IMAGE_TAG="${TAG}" bash src/engine/build/docker.sh ${WORKLOAD_NAME:-go-api} --import
 
 echo ""
-echo "✓ go-api:${TAG} is now available in the cluster."
+echo "✓ ${WORKLOAD_NAME:-go-api}:${TAG} is now available in the cluster."
 echo ""
 echo "Deploy it to dev and watch the rollout:"
-echo "  kubectl -n env-dev set image deployment/go-api go-api=go-api:${TAG}"
-echo "  kubectl -n env-dev rollout status deployment/go-api"
+echo "  kubectl -n env-dev set image deployment/${WORKLOAD_NAME:-go-api} ${WORKLOAD_NAME:-go-api}=${WORKLOAD_NAME:-go-api}:${TAG}"
+echo "  kubectl -n env-dev rollout status deployment/${WORKLOAD_NAME:-go-api}"
 echo "  kubectl -n env-dev patch cm env-metadata --type=merge -p '{\"data\":{\"declared_tag\":\"${TAG}\"}}'"
 echo ""
 echo "Then compare environments:"
-echo "  curl -s go-api-dev.<domain>/version      # new ${TAG}"
-echo "  curl -s go-api-staging.<domain>/version  # still the old version"
+echo "  curl -s ${WORKLOAD_NAME:-go-api}-dev.<domain>/version      # new ${TAG}"
+echo "  curl -s ${WORKLOAD_NAME:-go-api}-staging.<domain>/version  # still the old version"

@@ -5,7 +5,7 @@
 A deployment of CPU-burning pods (busybox hot loops) landed in the
 `labfault-noisy-neighbor` namespace with `requests.cpu: 500m` each and no
 CPU limit. The requests reserve scheduler capacity; the missing limit lets
-the pods consume every spare cycle. Co-located workloads — go-api included
+the pods consume every spare cycle. Co-located workloads — {{.WorkloadName}} included
 — see higher latency under load even though nothing about them changed.
 
 ## Diagnosis path
@@ -17,7 +17,7 @@ kubectl get deploy -n labfault-noisy-neighbor noisy-neighbor -o yaml
 # requests but no limits, and a `while true` loop as the command
 ```
 
-In Grafana: node CPU saturated, go-api p99 latency elevated while its own
+In Grafana: node CPU saturated, {{.WorkloadName}} p99 latency elevated while its own
 CPU usage is throttled by competition.
 
 ## Fix

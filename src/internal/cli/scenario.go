@@ -13,6 +13,7 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/scaffold"
 	scenariopkg "github.com/sagar2395/snowopslabs/internal/scenario"
 	scnsvc "github.com/sagar2395/snowopslabs/internal/service/scenario"
+	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 	"github.com/spf13/cobra"
 )
@@ -388,10 +389,16 @@ var scenarioInfoCmd = &cobra.Command{
 			return err
 		}
 
+		// Resolve with the scenario's parameter defaults, exactly as the HTTP API
+		// does for the UI. Without them the CLI printed a raw "{{.MinReplicas}}"
+		// for the same snippet the UI rendered as a real number.
+		defaults := scenes.ParamDefaults(s)
+		resolve := func(in string) string { return scenes.ResolveTemplateWithParams(in, defaults) }
+
 		fmt.Printf("Name:        %s\n", s.Name)
 		fmt.Printf("Display:     %s\n", s.DisplayName)
 		fmt.Printf("Category:    %s\n", s.Category)
-		fmt.Printf("Description: %s\n", s.Description)
+		fmt.Printf("Description: %s\n", resolve(s.Description))
 
 		status := "inactive"
 		if s.Active {
@@ -408,22 +415,28 @@ var scenarioInfoCmd = &cobra.Command{
 		if len(s.Prerequisites.Apps) > 0 {
 			fmt.Printf("\nPrerequisites (apps):\n")
 			for _, a := range s.Prerequisites.Apps {
-				fmt.Printf("  - %s\n", a)
+				fmt.Printf("  - %s\n", resolve(a))
+			}
+		}
+		// Show the requirement against the app actually bound, so a reader sees
+		// whether THIS lab can run the scenario, not just what it asks for.
+		if len(s.Prerequisites.Capabilities) > 0 {
+			fmt.Printf("\nPrerequisites (workload capabilities), bound to %q:\n", scenes.Workload.Name)
+			for _, name := range s.Prerequisites.Capabilities {
+				mark := "missing"
+				if c, err := workload.ParseCapability(name); err == nil && scenes.Contract.Has(c) {
+					mark = "ok"
+				}
+				fmt.Printf("  - %-22s %s\n", name, mark)
 			}
 		}
 
 		if len(s.Objectives) > 0 {
 			fmt.Printf("\nObjectives:\n")
 			for _, o := range s.Objectives {
-				fmt.Printf("  - %s\n", o)
+				fmt.Printf("  - %s\n", resolve(o))
 			}
 		}
-
-		// Resolve with the scenario's parameter defaults, exactly as the HTTP API
-		// does for the UI. Without them the CLI printed a raw "{{.MinReplicas}}"
-		// for the same snippet the UI rendered as a real number.
-		defaults := scenes.ParamDefaults(s)
-		resolve := func(in string) string { return scenes.ResolveTemplateWithParams(in, defaults) }
 
 		printComponent := func(c scenariopkg.Component, indent string) {
 			renderComponent(os.Stdout, c, indent, resolve)
@@ -464,7 +477,7 @@ var scenarioInfoCmd = &cobra.Command{
 			}
 		}
 
-		renderReferences(os.Stdout, s.References)
+		renderReferences(os.Stdout, s.References, resolve)
 		renderSnippets(os.Stdout, s.Snippets, s.Dir, resolve)
 
 		return nil

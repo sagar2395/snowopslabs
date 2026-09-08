@@ -74,7 +74,11 @@ func (e *Engine) NextHint() (*Hint, error) {
 	if err := e.saveActive(active); err != nil {
 		return nil, fmt.Errorf("recording hint reveal: %w", err)
 	}
-	return &Hint{Index: active.HintsRevealed, Total: len(hints), Text: hints[active.HintsRevealed-1]}, nil
+	// Resolved, not raw: a hint that names {{.WorkloadName}} must read as the app
+	// the learner is actually looking at, or it sends them hunting for a
+	// deployment that does not exist.
+	text := e.resolveTemplate(hints[active.HintsRevealed-1])
+	return &Hint{Index: active.HintsRevealed, Total: len(hints), Text: text}, nil
 }
 
 // Solution returns the full walkthrough for the active incident (or a named
@@ -99,5 +103,5 @@ func (e *Engine) Solution(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	return e.resolveTemplate(string(data)), nil
 }
