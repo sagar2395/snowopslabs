@@ -30,6 +30,24 @@ labctl scenario up autoscaling-under-load --set threshold=15 --set maxReplicas=4
 Parameters a scenario accepts are declared in its `parameters` block — see the
 [schema](../scenario-schema.md#parameters).
 
+## Which application it runs against
+
+A scenario names its workload through `{{.WorkloadName}}` rather than an app
+([ADR-0014](../../adr/0014-workload-binding-and-app-contract.md)), so the same
+scenario runs against any app that meets the contract:
+
+```bash
+labctl scenario up autoscaling-under-load --app java-api
+```
+
+The app is **recorded with the activation**. `verify` and `down` read it back, so
+a scenario brought up against `java-api` is graded and torn down against
+`java-api` — not against whatever `APP_NAME` happens to say in the shell you come
+back to an hour later.
+
+The UI asks the same question in its activation dialog, and marks any app that
+does not declare a capability the scenario needs.
+
 ## `labctl scenario reset`
 
 Fast retry without a lab teardown: deactivate the scenario and re-activate it,

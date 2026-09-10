@@ -17,6 +17,23 @@ labctl incident resolve                       # escape hatch: undo the active fa
 labctl incident resolve oom-kill              # works even if active state was lost
 ```
 
+## Which application gets broken
+
+A fault names its workload through `{{.WorkloadName}}` rather than an app
+([ADR-0014](../../adr/0014-workload-binding-and-app-contract.md)), so any fault
+can be injected into any app in the lab:
+
+```bash
+labctl incident inject oom-kill --app java-api
+```
+
+The app is **recorded with the incident**. `status`, `hint` and `resolve` read it
+back, so they act on the workload that was broken rather than on whatever
+`APP_NAME` says — a detection check pointed at the wrong namespace passes, and a
+passing check clears the incident and scores it solved.
+
+The UI asks the same question in its inject dialog.
+
 ## Game-day mode
 
 ```bash

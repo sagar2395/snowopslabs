@@ -137,6 +137,24 @@ requirement rather than a detail: identical traffic profile, an explicit warmup
 window excluded from measurement, fixed duration, results persisted per
 (scenario, workload) pair.
 
+**6a. The binding is chosen per activation and recorded with it.** `scenario up`
+and `incident inject` take the app; `verify`, `down`, `status` and `resolve` read
+it back from the activation marker and the active-incident record rather than
+from ambient config.
+
+They have to. Those commands run minutes later and in a different process: a
+scenario brought up against `java-api` was otherwise graded and torn down against
+whatever `APP_NAME` happened to say, and a fault injected into `java-api` was
+detected against `go-api`'s namespace — where the detection check *passes*, which
+clears the incident and scores it solved.
+
+The UI offers the same choice in the activation and injection dialogs, so the
+binding is not a CLI-only feature. Its engines are never rebound in place: a
+mutating request works on a clone, because the API serves many requests from one
+engine and an injection that rebound the shared one would be observed by every
+concurrent read — and a read that waited for the binding lock would hang the UI
+for the length of the injection it was displaying.
+
 **7. Thresholds become workload-relative.** Absolute values calibrated to Go —
 `latency-within-slo < 1.5`, `readyReplicas >= 3` at 25 RPS/replica — grade the
 language, not the engineer, once a JVM app is bound. Each check with an absolute
@@ -155,9 +173,9 @@ becomes a parameter.
 
 ## Consequences
 
-- **Easier:** a user runs any scenario against their own app; comparing stacks
-  under an identical fault becomes a supported operation rather than a manual
-  re-run.
+- **Easier:** a user runs any scenario against their own app, from the CLI or the
+  UI; comparing stacks under an identical fault becomes a supported operation
+  rather than a manual re-run.
 - **Harder:** content authors must write `{{.WorkloadName}}` instead of a
   literal, and must think about whether a threshold is workload-relative.
 - **Migration (done):** the semconv rename touched 13 content and platform files

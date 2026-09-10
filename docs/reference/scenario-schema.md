@@ -224,6 +224,17 @@ the default and any override.
 | `apps` | Apps whose `apps/<name>/app.env` must exist |
 | `capabilities` | What the **bound workload** must declare |
 
+### `apps` is for a pinned app, not for the one you are bound to
+
+Write `apps: ["{{.WorkloadName}}"]` and the entry means "the bound workload must
+exist" — not "this scenario requires go-api". Every shipped scenario is written
+this way, and the UI treats the two differently: a templated entry is shown as
+**Runs against**, with a picker offering every app in the lab; a literal one is
+shown as a requirement the user has to satisfy, and it disables the picker.
+
+Prefer `capabilities` over a literal app. Pinning one is a restriction that
+cannot be lifted at activation time.
+
 ### `capabilities` — stating what you need, not who provides it
 
 A scenario that names an app can only ever run against that app. One that states
@@ -350,10 +361,52 @@ Keep the `:-` fallback so the script still runs standalone.
   `workload-healthy`, not `go-api-healthy`.
 - **Dashboard UIDs**, for the same reason: they are stable identities.
 
-> A threshold calibrated to one language grades the language, not the engineer.
-> A p99 SLO that a Go app clears easily is one a JVM app fails during warmup, so
-> a check with an absolute bound should become a parameter once the scenario is
-> expected to run against more than one stack.
+### Writing a check that does not grade the language
+
+A threshold calibrated against one application grades that application's runtime,
+not the engineer's work. A p99 bound a Go service clears easily is one a JVM
+fails on warmup alone — and a user's own application has no calibration at all,
+so it would fail a check it has no way to satisfy.
+
+Per-application baselines do not fix this: a conforming app still arrives without
+one, and a *declared* baseline can simply be set generously enough to pass. Write
+the assertion so it needs no calibration instead.
+
+| Instead of | Assert | Why it travels |
+|---|---|---|
+| `p99 < 1.5` | `p99 / p50 < N` | Tail amplification is the same question for a 2ms service and a 200ms one — it measures degradation, not speed |
+| `readyReplicas >= 3` | `readyReplicas > {{.MinReplicas}}` | "It scaled" is the lesson; a fixed count encodes one runtime's throughput per replica |
+| a latency bound | error ratio `< 0.01` | Saturation shows up as errors in every runtime |
+
+Most checks need no thought here: `readyReplicas >= 1`, `deployment exists`, and
+`the metric is being scraped` already grade configuration rather than speed.
+
+**When an absolute number really is the lesson** — an availability SLO in a
+drill — make it a parameter so it reads as a deliberate choice, and say in its
+description what a failure means:
+
+```yaml
+parameters:
+  - name: AvailabilitySLO
+    displayName: "Availability SLO across the drain"
+    description: "Lower it if your workload is slower to become Ready than the
+      drill allows — a slow-starting runtime failing this is a real finding about
+      replica count and readiness gating, not a defect in the application."
+    default: "0.995"
+    type: string
+
+checks:
+  - name: availability-held-during-drain
+    type: promql
+    query: '...'
+    operator: ">="
+    value: "{{.AvailabilitySLO}}"
+```
+
+A check is graded against the values the scenario was **activated** with, so
+`--set AvailabilitySLO=0.99` changes what `verify` requires. Parameters declared
+by the scenario are legal template variables anywhere in it, and `labctl validate`
+rejects a reference to one that is not declared.
 
 Everything `labctl scenario info` and the UI display is resolved before it is
 shown — component namespaces and charts included — using the scenario's
@@ -390,7 +443,7 @@ snippets:
         name: demo
         namespace: "{{.MonitoringNamespace}}"
   - label: "Helm values, not a kubectl manifest"
-    path: values/overprovisioned.yaml
+    path: values/alloy.yaml
     apply: "helm upgrade -f -"
 ```
 
