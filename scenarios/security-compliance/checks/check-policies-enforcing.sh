@@ -13,7 +13,7 @@ set -euo pipefail
 #      A policy object that exists but does not bite cannot pass this.
 
 POLICIES="deny-privilege-escalation require-non-root-user"
-NS="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE:-go-api}"
 fail=0
 
 for p in $POLICIES; do

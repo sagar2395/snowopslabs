@@ -40,7 +40,7 @@ spec:
             - Deployment
             - ReplicaSet
           namespaces:
-            - "{{.WorkloadName}}"
+            - "{{.WorkloadNamespace}}"
           selector:
             matchLabels:
               compliance.snowops.net/exempt: vendor-image

@@ -22,7 +22,7 @@ objectives:
   - "Promote a policy from Audit to Enforce with 'kubectl patch', the change that turns a report into a rejection"
   - "Prove enforcement is real: 'kubectl apply --dry-run=server' a root Pod and watch the admission webhook refuse it"
   - "Issue a TLS certificate for {{.WorkloadName}} from the lab CA, wire it onto the Ingress, and prove the lab-signed leaf is what answers the TLS handshake"
-  - "Confirm the {{.WorkloadName}} namespace is default-deny in both directions, and that the allow rules re-open exactly what the workload needs — no more, no less"
+  - "Prove the {{.WorkloadName}} namespace is really default-deny — get refused from a pod outside it — and read why the ingress and Prometheus allow rules cannot be proven the same way on k3d"
 
 stages:
   - name: policy-engine
@@ -68,6 +68,14 @@ stages:
       - name: legacy-workload
         type: manifest
         path: manifests/legacy-workload.yaml
+
+      # Records the shared workload's security posture so teardown restores it,
+      # and removes the objects the learner applies from snippets — a snippet
+      # belongs to no component, so nothing else ever cleans them up.
+      - name: workload-baseline
+        type: script
+        script: scripts/stage-workload-baseline.sh
+        uninstallScript: scripts/unstage-workload-baseline.sh
 
   - name: observability
     description: The security dashboard that plots violations, certificates and admission latency
@@ -168,7 +176,7 @@ snippets:
     description: "Read validate.failureAction on each rule: that single field is the difference between a report and a rejection. failureAction is per-rule (spec.validationFailureAction is deprecated), so a policy can be promoted one rule at a time — which is how a real team rolls enforcement out. Note the exclude list: platform namespaces legitimately need root and host paths, and enforcing pod-security on them would wedge the cluster."
     path: manifests/kyverno-policies.yaml
   - label: "Default-deny NetworkPolicies with explicit allow rules"
-    description: "Locks the {{.WorkloadName}} namespace to default-deny in BOTH directions, then re-opens exactly what it needs: DNS egress, ingress from Traefik, ingress from Prometheus. NetworkPolicies are additive and there is no 'deny' rule — so a single allow-all policy added later cancels the whole baseline without touching it. That is what 'namespace-isolation-enforced' grades."
+    description: "Locks the {{.WorkloadName}} namespace to default-deny in BOTH directions, then re-opens exactly what it needs: DNS egress, pod-to-pod inside the namespace, the mesh control plane, ingress from Traefik, ingress from Prometheus. NetworkPolicies are additive and there is no 'deny' rule — so a single allow-all policy added later cancels the whole baseline without touching it. That is what 'namespace-isolation-enforced' grades, and why it is not an existence check."
     path: manifests/network-policies.yaml
   - label: "legacy-reporter — the workload you are not allowed to fix"
     description: "A stand-in for the vendor image every Audit rollout turns up: a fixed manifest the team does not own, violating three of the four policies. It is what makes the policy report a triage exercise instead of a one-line fix. Note the compliance.snowops.net/exempt label — an exemption should match an intent, so it survives a rename and reads as a decision."
@@ -238,6 +246,8 @@ explore:
     - label: "14. Grade the whole drill"
       command: "labctl scenario verify security-compliance --watch --timeout 5m"
   tips:
+    - "MEASURED ON K3D, and worth knowing before you trust any of this: default-deny is genuinely enforced for ordinary pod-to-pod traffic — a pod in another namespace gets curl exit 000 — but traffic from the ingress controller and from Prometheus reaches the workload whether or not a rule admits them. Those paths do not traverse the policy on this runtime. The allow-ingress-traffic and allow-monitoring-scrape rules are correct Kubernetes and belong in the manifest; their EFFECT is simply not demonstrable here, so do not conclude from a working dashboard that your rule is what made it work."
+    - "'namespace-isolation-enforced' now ends by actually opening a connection that must be refused, from a pod outside the namespace. Reading the YAML proves the policies are written correctly and nothing about whether the CNI enforces them — and a cluster whose CNI ignores NetworkPolicy silently turns this whole scenario into theatre while every YAML assertion still passes."
     - "Order matters: remediate FIRST, promote SECOND. Flipping to Enforce while {{.WorkloadName}} still violates a policy means its next rollout is rejected — which is exactly how teams take themselves down with policy, and why Audit exists."
     - "Audit vs Enforce is one field: validate.failureAction on each rule. Audit writes a PolicyReport entry; Enforce makes the admission webhook return 'denied'. Nothing else about the policy changes."
     - "The policy asks for runAsNonRoot on the CONTAINER securityContext. {{.WorkloadName}} already sets it at POD level — and Kyverno still fails it, because a 'pattern' asserts on the path you wrote. That mismatch is the single most common surprise when writing Kyverno patterns."

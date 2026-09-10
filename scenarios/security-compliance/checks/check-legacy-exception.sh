@@ -14,7 +14,7 @@ set -euo pipefail
 #      demoting the policy, or adding ${WORKLOAD_NAME:-go-api} to the policy's exclude list all
 #      satisfy (1) and (2) and fail here.
 
-NS="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE:-go-api}"
 DEPLOY="legacy-reporter"
 LABEL_KEY="compliance.snowops.net/exempt"
 LABEL_VAL="vendor-image"

@@ -9,7 +9,7 @@ set -euo pipefail
 # sidecar injected by a webhook is not the learner's workload and is not what a
 # real remediation would change; the Deployment is the file a team edits.
 
-NS="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE:-go-api}"
 DEPLOY="${WORKLOAD_NAME:-go-api}"
 NOTES=""
 

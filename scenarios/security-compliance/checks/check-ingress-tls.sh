@@ -10,7 +10,7 @@ set -euo pipefail
 # CN=TRAEFIK DEFAULT CERT when no route matches, or with the lab-signed leaf
 # once the Ingress references the Secret. Only the second one passes.
 
-NS="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE:-go-api}"
 INGRESS="${WORKLOAD_NAME:-go-api}"
 HOST="${WORKLOAD_NAME:-go-api}.${DOMAIN_SUFFIX:-k3d.local}"
 SECRET="${WORKLOAD_NAME:-go-api}-tls-secret"
