@@ -94,7 +94,11 @@ if [ -n "$stranded" ]; then
   sleep 5
 fi
 
-before="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort)"
+# Identify nodes by UID, not by name. k3d reuses the name whenever it can — a
+# node already called agent-1-0 comes back as agent-1-0 — so a name diff finds
+# nothing and concludes the replacement never registered, when in fact it
+# registered perfectly. A recreated node always has a new UID.
+before="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.uid}{"\n"}{end}' | sort)"
 
 echo "==> Removing ${NODE} (${node_ver}) from the cluster"
 k3d node delete "$NODE" >/dev/null
@@ -106,11 +110,20 @@ kubectl delete node "$NODE" --ignore-not-found >/dev/null 2>&1 || true
 # each time, then diff the node list to learn what k3d actually called it.
 base="$(echo "$NODE" | sed "s/^k3d-//" | sed -E "s/-([0-9]+)-[0-9]+$/-\1/")"
 echo "==> Adding a replacement agent on rancher/k3s:${TARGET_K3S_VERSION}"
-k3d node create "${base}" \
+create_log="$(mktemp)"
+if ! k3d node create "${base}" \
   --cluster "$CLUSTER_NAME" \
   --role agent \
   --image "rancher/k3s:${TARGET_K3S_VERSION}" \
-  --wait >/dev/null 2>&1 || true
+  --wait >"$create_log" 2>&1; then
+  # Do not swallow this. The failure that follows — "the replacement node did
+  # not register" — describes a symptom, and the cause is in here.
+  echo "ERROR: k3d could not create the replacement node:" >&2
+  tail -5 "$create_log" >&2
+  rm -f "$create_log"
+  exit 1
+fi
+rm -f "$create_log"
 
 # The colima/Docker VM defaults fs.inotify.max_user_instances to 128, which is
 # too low for containerd's CNI watcher: the CRI plugin fails to load with "too
@@ -121,9 +134,20 @@ for n in $(docker ps --filter "label=k3d.cluster=${CLUSTER_NAME}" --format '{{.N
   docker exec "$n" sysctl -w fs.inotify.max_user_instances=512 >/dev/null 2>&1 || true
 done
 
-after="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' | sort)"
-NEW_NODE="$(comm -13 <(echo "$before") <(echo "$after") | head -1)"
-[ -n "$NEW_NODE" ] || die "the replacement node did not register with the API server."
+# Registration lags container creation by several seconds, so poll rather than
+# read once — the single read raced the kubelet and reported a failure that had
+# not happened.
+NEW_NODE=""
+for _ in $(seq 1 30); do
+  NEW_UID="$(kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.uid}{"\n"}{end}' 2>/dev/null |
+    sort | comm -13 <(echo "$before") - | head -1)"
+  if [ -n "$NEW_UID" ]; then
+    NEW_NODE="$(kubectl get nodes -o jsonpath="{range .items[?(@.metadata.uid=='${NEW_UID}')]}{.metadata.name}{end}" 2>/dev/null || true)"
+    [ -n "$NEW_NODE" ] && break
+  fi
+  sleep 2
+done
+[ -n "$NEW_NODE" ] || die "the replacement node did not register with the API server within 60s."
 
 # containerd may already have failed its CNI watcher before the sysctl landed;
 # a restart makes the new limit take effect.
@@ -148,13 +172,68 @@ echo "==> Re-importing locally built images onto the new node"
 LOCAL_IMAGES="$(kubectl get pods --all-namespaces \
   -o jsonpath='{range .items[*]}{range .spec.containers[*]}{.image}{"\n"}{end}{end}' 2>/dev/null |
   sort -u | grep -v '/' || true)"
+MISSING=""
 for img in $LOCAL_IMAGES; do
   if docker image inspect "$img" >/dev/null 2>&1; then
     echo "    importing ${img}"
     k3d image import "$img" -c "$CLUSTER_NAME" >/dev/null 2>&1 ||
       echo "    WARN: could not import ${img}" >&2
+  else
+    MISSING="${MISSING}${img} "
   fi
 done
+
+# Silence here is expensive: an image a running pod needs, that is not in the
+# local daemon, cannot be imported and is in no registry either — so the pod
+# lands in ImagePullBackOff on the replacement node and the cause is three steps
+# back. Say so now, while the node roll is still on screen.
+if [ -n "${MISSING// /}" ]; then
+  echo ""
+  echo "WARNING: these images are in use but are no longer in the local Docker daemon," >&2
+  echo "         so they could not be imported onto ${NEW_NODE}:" >&2
+  printf '           %s\n' ${MISSING} >&2
+  echo "         Any pod that needs one will land in ImagePullBackOff — they are lab" >&2
+  echo "         builds and exist in no registry. Rebuild before rescheduling, e.g.:" >&2
+  echo "           DOCKER_IMAGE_TAG=<tag> bash src/engine/build/docker.sh <app> --import" >&2
+fi
+
+# k3d's load balancer holds its nginx upstreams as a fixed list of node names,
+# captured when the cluster was created. Replacing a node changes that name, and
+# nothing updates the list — so the LB keeps pointing at a container that no
+# longer exists.
+#
+# It is invisible while the cluster keeps running, because nginx is already up.
+# On the next restart confd re-renders the config, nginx fails validation on the
+# missing host, and the load balancer never starts:
+#
+#   [emerg] host not found in upstream "k3d-snowops-agent-0:443"
+#
+# One dead upstream takes down the WHOLE listener set, including the 6443 mapping
+# the kubeconfig points at — so the entire lab, API server included, is
+# unreachable until someone repairs it by hand.
+LB="k3d-${CLUSTER_NAME}-serverlb"
+if docker inspect "$LB" >/dev/null 2>&1; then
+  echo "==> Repointing the cluster load balancer from ${NODE} to ${NEW_NODE}"
+  LB_VALUES="$(mktemp)"
+  if docker cp "${LB}:/etc/confd/values.yaml" "$LB_VALUES" >/dev/null 2>&1; then
+    # Whole-line match: node names are prefixes of one another
+    # (agent-0 vs agent-0-0), so a substring replace corrupts the list.
+    sed "s|^\( *- \)${NODE}\$|\1${NEW_NODE}|" "$LB_VALUES" >"${LB_VALUES}.new"
+    if ! cmp -s "$LB_VALUES" "${LB_VALUES}.new"; then
+      docker cp "${LB_VALUES}.new" "${LB}:/etc/confd/values.yaml" >/dev/null 2>&1 &&
+        docker restart "$LB" >/dev/null 2>&1 &&
+        echo "    load balancer updated and restarted"
+    else
+      # k3d reuses the name where it can, in which case the existing upstream
+      # entry is already correct and there is nothing to rewrite.
+      echo "    upstream list already names ${NEW_NODE}; nothing to change"
+    fi
+    rm -f "$LB_VALUES" "${LB_VALUES}.new"
+  else
+    echo "    WARN: could not read the load balancer's config; if the lab becomes" >&2
+    echo "          unreachable after a restart, see docs/scenarios.md." >&2
+  fi
+fi
 
 echo ""
 echo "${NODE} (${node_ver}) replaced by ${NEW_NODE} (${TARGET_K3S_VERSION})."

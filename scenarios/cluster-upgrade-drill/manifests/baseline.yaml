@@ -3,7 +3,7 @@
 # maxUnavailable: 1 forces the rolling upgrade to wait for a Ready replacement
 # before evicting the next pod — the mechanism that keeps the success rate up.
 #
-# {{.WorkloadName}} itself is deployed by the app prerequisite. upgrade.sh scales it to 3
+# {{.WorkloadName}} itself is deployed by the app prerequisite. the scenario's stage-ha.sh scales it to 3
 # replicas before the drill so the PDB has headroom across the node roll.
 apiVersion: policy/v1
 kind: PodDisruptionBudget

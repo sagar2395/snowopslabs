@@ -1,5 +1,6 @@
 apiVersion: scenario.snowops.net/v2
 name: cluster-upgrade-drill
+verified: true
 displayName: "Day-2 Drill: Rolling Cluster Upgrade Under Load"
 description: "Roll the cluster's worker nodes onto a new Kubernetes version one at a time while {{.WorkloadName}} serves live traffic. You write the PodDisruptionBudget, you cordon and drain each node, and you watch the PDB block the eviction that would have taken the app down. The grade is the measured request success rate across the upgrade window and a cluster left with no node behind."
 category: operations
@@ -17,6 +18,13 @@ objectives:
   - "Cordon and drain a worker node with kubectl, and read the PDB blocking the eviction"
   - "Replace each drained node with one on the target k3s version, one node at a time"
   - "Prove the request success rate held across the upgrade window, from Prometheus"
+
+parameters:
+  - name: AvailabilitySLO
+    displayName: "Availability SLO across the upgrade (fraction of non-5xx requests)"
+    description: "The share of requests that must keep succeeding across the node roll. A runtime that starts slowly needs either more replicas or a longer readiness gate to hold this — which is the lesson, not a reason to exempt it."
+    default: "0.99"
+    type: string
 
 stages:
   - name: baseline
@@ -63,26 +71,33 @@ checks:
   - name: no-node-left-behind
     type: script
     script: checks/check-node-versions.sh
-    remediation: "The cluster is running mixed kubelet versions, so the roll is unfinished. Roll the remaining node(s): see 'kubectl get nodes -o wide' and repeat the cordon/drain/replace sequence."
+    pending: true
+    remediation: "Roll every worker the drill started with — the check names the ones still outstanding. A cluster nobody has touched also has one version everywhere, which is why this is graded against the node names recorded at activation rather than against version uniformity alone."
 
   - name: workload-survived-the-roll
     type: script
     script: checks/check-workload-healthy.sh
+    pending: true
     remediation: "{{.WorkloadName}} is unhealthy or has collapsed onto a single node. If pods are in ImagePullBackOff the replacement node has an empty image store — re-import the lab images with 'k3d image import {{.WorkloadName}}:v1.2.0 -c snowops'."
 
   - name: traffic-is-flowing
     type: promql
-    query: 'sum(rate(http_server_request_duration_seconds_count{app="{{.WorkloadName}}"}[10m]))'
+    query: 'sum(rate({{.WorkloadMetric}}_count{app="{{.WorkloadName}}"}[10m]))'
     operator: ">"
     value: "0.5"
     remediation: "Prometheus sees almost no requests to {{.WorkloadName}}, so the availability grade below would be meaningless. The usual cause is that a drain evicted the k6 Job — check 'labctl traffic status', then restart it and let it run a couple of minutes: labctl traffic start --profile steady --rps 20"
 
+  # A ratio of two rates reports a perfect 1.00 on an idle cluster, so this was
+  # green before the drill began — next to a traffic check correctly reporting
+  # there was nothing to measure. It is now a script: it requires a roll to have
+  # started, requires real load, and measures from the roll rather than a fixed
+  # ten minutes back.
   - name: availability-held-during-upgrade
-    type: promql
-    query: 'sum(rate(http_server_request_duration_seconds_count{app="{{.WorkloadName}}",http_response_status_code!~"5.."}[10m])) / sum(rate(http_server_request_duration_seconds_count{app="{{.WorkloadName}}"}[10m]))'
-    operator: ">="
-    value: "0.99"
-    remediation: "More than 1% of requests failed across the upgrade window. The usual cause is draining a node while the PDB allowed the last healthy replica to be evicted — check that {{.WorkloadName}} had 3 replicas and the PDB was applied BEFORE the first drain. If this reports a Prometheus error rather than a low number, Prometheus itself lost its volume to the roll: run scripts/reclaim-stranded-pvcs.sh."
+    type: script
+    script: checks/check-availability.sh
+    timeoutSeconds: 90
+    pending: true
+    remediation: "The grade is the measured success rate across the upgrade window, so it needs load flowing while you roll: labctl traffic start --profile steady --rps 20. If it reports a low number rather than no data, the usual cause is draining while the PDB still allowed the last healthy replica to go — apply the PDB BEFORE the first drain. If Prometheus itself lost its volume to the roll, run scripts/reclaim-stranded-pvcs.sh first."
 
 snippets:
   - label: "PodDisruptionBudget that keeps {{.WorkloadName}} up across the node roll"
@@ -117,7 +132,7 @@ explore:
     - label: "10. Restart traffic if the roll evicted it, let it run ~2 minutes, then grade"
       command: "labctl traffic start --profile steady --rps 20 && labctl scenario verify cluster-upgrade-drill"
   tips:
-    - "Start traffic FIRST. The availability grade reads http_server_request_duration_seconds_count from Prometheus over a 10m window, and the 'traffic-is-flowing' check fails the drill if there was no load to measure — an upgrade nobody was using proves nothing."
+    - "Start traffic FIRST. The availability grade reads {{.WorkloadMetric}}_count from Prometheus over a 10m window, and the 'traffic-is-flowing' check fails the drill if there was no load to measure — an upgrade nobody was using proves nothing."
     - "Apply the PDB BEFORE the first drain. Applying it afterwards grades green while teaching the opposite lesson: the eviction it was meant to block has already happened."
     - "Open the 'Cluster Upgrade Drill' dashboard before you start and leave it up. 'Nodes by kubelet version' shows a second version appear and take over as you roll; '{{.WorkloadName}} pods per node' must never collapse to one node; and 'disruptions allowed' dropping to 0 is the PDB blocking an eviction in real time."
     - "Watch the drain. With maxUnavailable: 1 you should see 'evicting pod ...' pause and retry while a replacement pod goes Ready elsewhere. That pause IS the PodDisruptionBudget working — it is the single most important thing to observe in this drill."

@@ -3,6 +3,23 @@ set -euo pipefail
 
 APP_NAMESPACE="${APP_NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=checks/_drill.sh
+. "${SCRIPT_DIR}/_drill.sh"
+
+# "Survived the roll" is only a claim once a roll has happened. Before that this
+# grades the staging script's own work — three replicas spread across nodes,
+# which activation arranged — and says nothing about the drill.
+RECORDED="$(checkpoint worker-uids)"
+REMAINING="$(unrolled_workers)"
+recorded_n="$(printf '%s\n' $RECORDED | grep -c . || true)"
+remaining_n="$(printf '%s\n' $REMAINING | grep -c . || true)"
+if [ -n "$RECORDED" ] && [ "${remaining_n:-0}" -ge "${recorded_n:-0}" ]; then
+  echo "PENDING: no node has been rolled yet, so nothing has been survived." >&2
+  echo "  Roll a worker first; this then grades that ${WORKLOAD_NAME:-go-api} came back across nodes." >&2
+  exit 1
+fi
+
 PODS="$(kubectl -n "$APP_NAMESPACE" get pods -l app=${WORKLOAD_NAME:-go-api} \
   -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{" "}{.spec.nodeName}{"\n"}{end}' \
   2>/dev/null || true)"

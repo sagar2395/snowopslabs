@@ -1,121 +1,278 @@
 {
-  "annotations": {"list": []},
-  "description": "The rolling worker upgrade as it happens: which versions the nodes are on, where {{.WorkloadName}} is running, which node is cordoned, and whether availability held.",
-  "editable": true,
-  "graphTooltip": 1,
-  "links": [],
-  "panels": [
-    {
-      "id": 1,
-      "type": "text",
-      "title": "How to read this dashboard",
-      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
-      "options": {
-        "mode": "markdown",
-        "content": "Roll one worker at a time. **Nodes by kubelet version** should show a second version appear and then take over as each node is replaced — if two versions persist, the roll is unfinished. **{{.WorkloadName}} pods per node** must never collapse to a single node: that means the next drain takes the whole app down. **Success rate** is the grade."
-      }
+ "annotations": {
+  "list": []
+ },
+ "description": "The rolling worker upgrade as it happens: which versions the nodes are on, where {{.WorkloadName}} is running, which node is cordoned, and whether availability held.",
+ "editable": true,
+ "graphTooltip": 1,
+ "links": [],
+ "panels": [
+  {
+   "id": 1,
+   "type": "text",
+   "title": "How to read this dashboard",
+   "gridPos": {
+    "h": 4,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "options": {
+    "mode": "markdown",
+    "content": "Roll one worker at a time. **Nodes by kubelet version** should show a second version appear and then take over as each node is replaced \u2014 if two versions persist, the roll is unfinished. **{{.WorkloadName}} pods per node** must never collapse to a single node: that means the next drain takes the whole app down. **Success rate** is the grade."
+   }
+  },
+  {
+   "id": 2,
+   "type": "timeseries",
+   "title": "Nodes by kubelet version (the roll in progress)",
+   "description": "Each node replaced onto the target image moves from the old series to the new one. Two series at once is a roll mid-flight; one series is a finished roll.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineInterpolation": "stepAfter",
+      "fillOpacity": 20,
+      "lineWidth": 2
+     },
+     "min": 0,
+     "unit": "short"
     },
+    "overrides": []
+   },
+   "targets": [
     {
-      "id": 2,
-      "type": "timeseries",
-      "title": "Nodes by kubelet version (the roll in progress)",
-      "description": "Each node replaced onto the target image moves from the old series to the new one. Two series at once is a roll mid-flight; one series is a finished roll.",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {
-        "defaults": {"custom": {"drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 20, "lineWidth": 2}, "min": 0, "unit": "short"},
-        "overrides": []
-      },
-      "targets": [
-        {"refId": "A", "expr": "count by (kubelet_version) (kube_node_info)", "legendFormat": "{{kubelet_version}}"}
-      ]
-    },
-    {
-      "id": 3,
-      "type": "timeseries",
-      "title": "{{.WorkloadName}} pods per node (spread must survive the roll)",
-      "description": "If this drops to a single node, the PodDisruptionBudget is the only thing standing between the next drain and a full outage.",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {
-        "defaults": {"custom": {"drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 20, "lineWidth": 2}, "min": 0, "unit": "short"},
-        "overrides": []
-      },
-      "targets": [
-        {"refId": "A", "expr": "count by (node) (kube_pod_info{namespace=\"{{.WorkloadNamespace}}\", created_by_kind=\"ReplicaSet\"})", "legendFormat": "{{node}}"}
-      ]
-    },
-    {
-      "id": 4,
-      "type": "timeseries",
-      "title": "Cordoned nodes (1 = SchedulingDisabled)",
-      "description": "Should rise to 1 while you drain a node and return to 0 once its replacement joins. A node left at 1 is a roll you did not finish.",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 12},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {
-        "defaults": {"custom": {"drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 30, "lineWidth": 2}, "min": 0, "max": 1, "unit": "short"},
-        "overrides": []
-      },
-      "targets": [
-        {"refId": "A", "expr": "kube_node_spec_unschedulable", "legendFormat": "{{node}}"}
-      ]
-    },
-    {
-      "id": 5,
-      "type": "timeseries",
-      "title": "PodDisruptionBudget: healthy pods vs disruptions allowed",
-      "description": "When 'disruptions allowed' sits at 0 the PDB is actively blocking an eviction — that pause is the drill working.",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 12},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {
-        "defaults": {"custom": {"drawStyle": "line", "lineInterpolation": "stepAfter", "fillOpacity": 10, "lineWidth": 2}, "min": 0, "unit": "short"},
-        "overrides": []
-      },
-      "targets": [
-        {"refId": "A", "expr": "kube_poddisruptionbudget_status_current_healthy{namespace=\"{{.WorkloadNamespace}}\", poddisruptionbudget=\"{{.WorkloadName}}-upgrade-pdb\"}", "legendFormat": "healthy pods"},
-        {"refId": "B", "expr": "kube_poddisruptionbudget_status_pod_disruptions_allowed{namespace=\"{{.WorkloadNamespace}}\", poddisruptionbudget=\"{{.WorkloadName}}-upgrade-pdb\"}", "legendFormat": "disruptions allowed"}
-      ]
-    },
-    {
-      "id": 6,
-      "type": "timeseries",
-      "title": "{{.WorkloadName}} success rate across the upgrade (the grade)",
-      "description": "The scenario passes at >= 0.99 over a 10m window. Brief dips as a node cycles are expected; a sustained drop means a drain took the last healthy replica.",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 12},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {
-        "defaults": {"custom": {"drawStyle": "line", "fillOpacity": 10, "lineWidth": 2}, "min": 0, "max": 1, "unit": "percentunit",
-          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 0.99}]}},
-        "overrides": []
-      },
-      "targets": [
-        {"refId": "A", "expr": "sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\",http_response_status_code!~\"5..\"}[5m])) / sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\"}[5m]))", "legendFormat": "success rate"}
-      ]
-    },
-    {
-      "id": 7,
-      "type": "timeseries",
-      "title": "Request rate reaching {{.WorkloadName}} (the grade is meaningless without load)",
-      "description": "A drain evicts the k6 traffic Job and it does not restart itself. If this flatlines, restart traffic before grading.",
-      "gridPos": {"h": 7, "w": 24, "x": 0, "y": 20},
-      "datasource": {"type": "prometheus", "uid": "prometheus"},
-      "fieldConfig": {
-        "defaults": {"custom": {"drawStyle": "line", "fillOpacity": 20, "lineWidth": 2}, "min": 0, "unit": "reqps"},
-        "overrides": []
-      },
-      "targets": [
-        {"refId": "A", "expr": "sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\"}[1m]))", "legendFormat": "requests/sec"}
-      ]
+     "refId": "A",
+     "expr": "count by (kubelet_version) (kube_node_info)",
+     "legendFormat": "{{kubelet_version}}"
     }
-  ],
-  "refresh": "10s",
-  "schemaVersion": 39,
-  "tags": ["snowops", "cluster-upgrade-drill"],
-  "templating": {"list": []},
-  "time": {"from": "now-30m", "to": "now"},
-  "timepicker": {},
-  "timezone": "",
-  "title": "Cluster Upgrade Drill",
-  "uid": "cluster-upgrade-drill",
-  "version": 0
+   ]
+  },
+  {
+   "id": 3,
+   "type": "timeseries",
+   "title": "{{.WorkloadName}} pods per node (spread must survive the roll)",
+   "description": "Filtered to the bound workload's own ReplicaSets: the namespace is shared, and other scenarios add pods to it that have nothing to do with this roll. The line must never collapse onto one node \u2014 that is the state in which the next drain takes the whole app down.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineInterpolation": "stepAfter",
+      "fillOpacity": 20,
+      "lineWidth": 2
+     },
+     "min": 0,
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "count by (node) (kube_pod_info{namespace=\"{{.WorkloadNamespace}}\", created_by_kind=\"ReplicaSet\", created_by_name=~\"{{.WorkloadName}}-.*\"})",
+     "legendFormat": "{{node}}"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "type": "timeseries",
+   "title": "Cordoned nodes (1 = SchedulingDisabled)",
+   "description": "Should rise to 1 while you drain a node and return to 0 once its replacement joins. A node left at 1 is a roll you did not finish.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 0,
+    "y": 12
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineInterpolation": "stepAfter",
+      "fillOpacity": 30,
+      "lineWidth": 2
+     },
+     "min": 0,
+     "max": 1,
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "kube_node_spec_unschedulable",
+     "legendFormat": "{{node}}"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "type": "timeseries",
+   "title": "PodDisruptionBudget: healthy pods vs disruptions allowed",
+   "description": "When 'disruptions allowed' sits at 0 the PDB is actively blocking an eviction \u2014 that pause is the drill working.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 8,
+    "y": 12
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "lineInterpolation": "stepAfter",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "min": 0,
+     "unit": "short"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "kube_poddisruptionbudget_status_current_healthy{namespace=\"{{.WorkloadNamespace}}\", poddisruptionbudget=\"{{.WorkloadName}}-upgrade-pdb\"}",
+     "legendFormat": "healthy pods"
+    },
+    {
+     "refId": "B",
+     "expr": "kube_poddisruptionbudget_status_pod_disruptions_allowed{namespace=\"{{.WorkloadNamespace}}\", poddisruptionbudget=\"{{.WorkloadName}}-upgrade-pdb\"}",
+     "legendFormat": "disruptions allowed"
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "type": "timeseries",
+   "title": "{{.WorkloadName}} success rate across the upgrade (the grade)",
+   "description": "The scenario passes at the AvailabilitySLO parameter over a 10m window. Brief dips as a node cycles are expected; a sustained drop means a drain took the last healthy replica.",
+   "gridPos": {
+    "h": 8,
+    "w": 8,
+    "x": 16,
+    "y": 12
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 10,
+      "lineWidth": 2
+     },
+     "min": 0,
+     "max": 1,
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "green",
+        "value": 0.99
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\",http_response_status_code!~\"5..\"}[10m])) / sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[5m]))",
+     "legendFormat": "success rate"
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "type": "timeseries",
+   "title": "Request rate reaching {{.WorkloadName}} (the grade is meaningless without load)",
+   "description": "A drain evicts the k6 traffic Job and it does not restart itself. If this flatlines, restart traffic before grading.",
+   "gridPos": {
+    "h": 7,
+    "w": 24,
+    "x": 0,
+    "y": 20
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 20,
+      "lineWidth": 2
+     },
+     "min": 0,
+     "unit": "reqps"
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[1m]))",
+     "legendFormat": "requests/sec"
+    }
+   ]
+  }
+ ],
+ "refresh": "10s",
+ "schemaVersion": 39,
+ "tags": [
+  "snowops",
+  "cluster-upgrade-drill"
+ ],
+ "templating": {
+  "list": []
+ },
+ "time": {
+  "from": "now-30m",
+  "to": "now"
+ },
+ "timepicker": {},
+ "timezone": "",
+ "title": "Cluster Upgrade Drill",
+ "uid": "cluster-upgrade-drill",
+ "version": 0
 }
