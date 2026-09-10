@@ -60,12 +60,16 @@ checks:
     value: "True"
     remediation: "ESO cannot sync from Vault. Check the reason: kubectl -n {{.WorkloadNamespace}} describe externalsecret {{.WorkloadName}}-secret — a SecretSyncedError usually means the vault-token secret is wrong or Vault is sealed."
 
-  - name: eso-metrics-scraped
+  # Two failures in one probe: no series at all means Prometheus is not scraping
+  # ESO, and a series pinned at 0 means ESO is scraped and reporting that it
+  # cannot sync. The old form counted series, which stayed at 2 through a
+  # seven-hour outage.
+  - name: eso-reports-synced
     type: promql
-    query: 'count(externalsecret_status_condition{name="{{.WorkloadName}}-secret"})'
+    query: 'max(externalsecret_status_condition{name="{{.WorkloadName}}-secret",condition="Ready",status="True"})'
     operator: ">="
     value: "1"
-    remediation: "Prometheus is not scraping ESO, so the Secret Rotation dashboard will be empty. Re-apply the platform values with: labctl platform up secrets/external-secrets"
+    remediation: "ESO's own metrics say this ExternalSecret is not Ready — or Prometheus is not scraping ESO at all, in which case the Secret Rotation dashboard is empty too. Read the reason: kubectl -n {{.WorkloadNamespace}} get externalsecret {{.WorkloadName}}-secret -o jsonpath='{.status.conditions[*].message}'. If Vault holds the value but ESO does not, it is in backoff after a Vault restart — nudge it: kubectl -n {{.WorkloadNamespace}} annotate externalsecret {{.WorkloadName}}-secret force-sync=$(date +%s) --overwrite"
 
   - name: consumers-running
     type: kubectl
@@ -101,6 +105,7 @@ checks:
   - name: no-redeploy-needed
     type: script
     script: checks/check-no-restart.sh
+    pending: true
     remediation: "The consumer restarted or was redeployed, so this run cannot prove in-place propagation. Reset and rotate again without touching the Deployment: labctl scenario reset secrets-management"
 
   - name: env-consumer-did-not-see-it
@@ -108,6 +113,20 @@ checks:
     script: checks/check-env-consumer-stale.sh
     pending: true
     remediation: "Rotate the secret in Vault, then compare the two pods: the file-mounted one picks the new value up, the env-var one does not. If both already agree, the env-var pod restarted and re-read the Secret — reset and rotate again: labctl scenario reset secrets-management"
+
+references:
+  - label: "Kubernetes — Secrets: mounted secrets are updated automatically"
+    url: "https://kubernetes.io/docs/concepts/configuration/secret/#mounted-secrets-are-updated-automatically"
+    note: "The kubelet's own statement of the rule this drill turns into a measurement — and the paragraph immediately after it, which says an env-var secret is never updated."
+  - label: "External Secrets Operator — ExternalSecret and refreshInterval"
+    url: "https://external-secrets.io/latest/api/externalsecret/"
+    note: "What refreshInterval does and does not promise, and the force-sync annotation that breaks a backoff."
+  - label: "External Secrets Operator — HashiCorp Vault provider"
+    url: "https://external-secrets.io/latest/provider/hashicorp-vault/"
+    note: "KV v1 vs v2 paths and token auth — the two things a SecretStore usually gets wrong."
+  - label: "HashiCorp Vault — KV version 2 secrets engine"
+    url: "https://developer.hashicorp.com/vault/docs/secrets/kv/kv-v2"
+    note: "Why 'vault kv put secret/<name>' writes to secret/data/<name>, and how versioning makes a rotation reversible."
 
 snippets:
   - label: "The same secret, mounted as a file and taken as an env var"
@@ -141,6 +160,8 @@ explore:
     - "The Vault->Secret wiring (SecretStore, ExternalSecret, vault-token) belongs to the secrets/external-secrets platform component. This scenario only seeds a value and mounts the result, so tearing it down leaves that wiring intact."
     - "env-consumer is the control group, not a broken pod. The kubelet cannot rewrite a running process's environment, so an env-var secret is frozen at start and only a rollout moves it. That is why it still shows the old value, and why file mounts are the answer when you want rotation to be free."
     - "Binding the key explicitly (secretKeyRef) rather than envFrom is deliberate: 'api-key' is not a valid environment variable name, and envFrom would skip it silently with an InvalidVariableNames event."
-    - "The Secret Rotation dashboard shows the rotation as a step in ESO's sync-call rate; if those panels are empty, 'eso-metrics-scraped' will have failed first."
     - "Dev-mode Vault keeps data in memory. If vault-0 restarts, its KV is wiped — re-run 'labctl scenario up secrets-management --force' to reseed the baseline."
+    - "After a Vault restart ESO does not recover on its own timetable. Every failed read backs it off exponentially, so within a few hours it is retrying hours apart, not every 15s — re-seeding the value alone changes nothing, because the reconcile that would notice is not due. Break the backoff with ESO's own idiom: kubectl -n {{.WorkloadNamespace}} annotate externalsecret {{.WorkloadName}}-secret force-sync=$(date +%s) --overwrite. Activation does this for you; worth knowing when you meet it on a real cluster."
+    - "Careful reading ESO's metrics: the 'namespace' label on externalsecret_* is the CONTROLLER's namespace (external-secrets). Prometheus moved the real one to 'exported_namespace' to avoid the collision. Select on 'name', or on 'exported_namespace' — never on 'namespace'."
+    - "A successful rotation looks like nothing on ESO's metrics: it reconciles every 15s whether the value moved or not. The dashboard is there for the FAILURE shape — sync errors climbing, Ready dropping to 0 — and the last hop into the container's file is not instrumented at all. That one you watch in the consumer's logs."
     - "Never commit tokens: the dev root token comes from VAULT_DEV_ROOT_TOKEN (default 'root')."

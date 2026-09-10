@@ -8,16 +8,18 @@ set -eu
 # (the env pod restarted and re-read the Secret) is a failure.
 
 ROOT_TOKEN="${VAULT_DEV_ROOT_TOKEN:-root}"
-BASELINE="${SECRETS_BASELINE_VALUE:-baseline-v1}"
 
-pod_for() {
-  kubectl -n ${WORKLOAD_NAMESPACE:-go-api} get pod -l "app=$1" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true
-}
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=scripts/_consumer.sh
+. "${SCRIPT_DIR}/../scripts/_consumer.sh"
 
-FILE_POD="$(pod_for secret-consumer)"
-ENV_POD="$(pod_for env-consumer)"
+BASELINE="$(checkpoint baseline)"
+BASELINE="${BASELINE:-${SECRETS_BASELINE_VALUE:-baseline-v1}}"
+
+FILE_POD="$(consumer_pod_name secret-consumer)"
+ENV_POD="$(consumer_pod_name env-consumer)"
 if [ -z "$FILE_POD" ] || [ -z "$ENV_POD" ]; then
-  echo "NOT COMPLETE: expected both secret-consumer and env-consumer pods in namespace ${WORKLOAD_NAMESPACE:-go-api}." >&2
+  echo "NOT COMPLETE: expected both secret-consumer and env-consumer pods running in ${NS}." >&2
   exit 1
 fi
 
@@ -33,8 +35,8 @@ if [ "$WANT" = "$BASELINE" ]; then
   exit 1
 fi
 
-FILE_VALUE="$(kubectl -n ${WORKLOAD_NAMESPACE:-go-api} exec "$FILE_POD" -- cat /etc/api/api-key 2>/dev/null || true)"
-ENV_VALUE="$(kubectl -n ${WORKLOAD_NAMESPACE:-go-api} exec "$ENV_POD" -- sh -c 'echo "$API_KEY"' 2>/dev/null || true)"
+FILE_VALUE="$(kubectl -n "$NS" exec "$FILE_POD" -- cat /etc/api/api-key 2>/dev/null || true)"
+ENV_VALUE="$(kubectl -n "$NS" exec "$ENV_POD" -- sh -c 'echo "$API_KEY"' 2>/dev/null || true)"
 
 if [ "$FILE_VALUE" != "$WANT" ]; then
   echo "PENDING: the rotation has not reached the file-mounted pod yet" >&2
