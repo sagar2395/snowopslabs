@@ -21,7 +21,7 @@ spec:
   mode: one
   selector:
     namespaces:
-      - "{{.WorkloadName}}"
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
       app: "{{.WorkloadName}}"
   duration: "30s"
@@ -41,7 +41,7 @@ spec:
   mode: one
   selector:
     namespaces:
-      - "{{.WorkloadName}}"
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
       app: "{{.WorkloadName}}"
   duration: "60s"
@@ -61,7 +61,7 @@ spec:
   mode: all
   selector:
     namespaces:
-      - "{{.WorkloadName}}"
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
       app: "{{.WorkloadName}}"
   direction: both
@@ -86,7 +86,7 @@ spec:
   mode: one
   selector:
     namespaces:
-      - "{{.WorkloadName}}"
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
       app: "{{.WorkloadName}}"
   stressors:
@@ -112,7 +112,7 @@ spec:
   mode: all
   selector:
     namespaces:
-      - "{{.WorkloadName}}"
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
       app: "{{.WorkloadName}}"
   direction: both
@@ -141,7 +141,7 @@ spec:
   mode: one
   selector:
     namespaces:
-      - "{{.WorkloadName}}"
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
       app: "{{.WorkloadName}}"
   stressors:
