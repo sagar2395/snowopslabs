@@ -97,3 +97,64 @@ func TestResolvedTargetMatchesScriptEnv(t *testing.T) {
 		t.Errorf("script env %v disagrees with ResolvedTarget %+v", env, rt)
 	}
 }
+
+// The brief a learner reads on inject comes from Description, and the fault
+// list's TARGET column from Target. Both were served raw, so every templated
+// fault introduced itself as "{{.WorkloadName}}".
+func TestGetResolvesReaderFacingFields(t *testing.T) {
+	e := &Engine{
+		Workload:   workload.Workload{Name: "shop", Namespace: "storefront"},
+		faults:     make(map[string]*Fault),
+		loadErrors: make(map[string]error),
+	}
+	e.faults["demo"] = &Fault{
+		Name:        "demo",
+		DisplayName: "{{.WorkloadName}} is sad",
+		Description: "Latency on {{.WorkloadName}} crept up.",
+		Target:      Target{Namespace: "{{.WorkloadNamespace}}", Workload: "{{.WorkloadName}}"},
+	}
+
+	got, err := e.Get("demo")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.DisplayName != "shop is sad" {
+		t.Errorf("DisplayName = %q, want %q", got.DisplayName, "shop is sad")
+	}
+	if got.Description != "Latency on shop crept up." {
+		t.Errorf("Description = %q", got.Description)
+	}
+	if got.Target.Namespace != "storefront" || got.Target.Workload != "shop" {
+		t.Errorf("Target = %+v", got.Target)
+	}
+	if list := e.List(); len(list) != 1 || list[0].Target.Workload != "shop" {
+		t.Errorf("List did not resolve the target column: %+v", list)
+	}
+	// The stored fault stays raw: the binding is chosen per run.
+	if e.faults["demo"].Description != "Latency on {{.WorkloadName}} crept up." {
+		t.Error("Get mutated the loaded fault")
+	}
+}
+
+// A detection script runs on the checks.Runner, which does not inherit the
+// executor's environment — so anything it needs has to come through targetEnv.
+// Without the domain suffix a check cannot probe the workload's own ingress.
+func TestTargetEnvCarriesTheContextAChecksScriptNeeds(t *testing.T) {
+	e := &Engine{
+		DomainSuffix:        "k3d.local",
+		MonitoringNamespace: "observability",
+		Workload:            workload.Workload{Name: "shop", Namespace: "storefront"},
+	}
+	env := e.targetEnv(&Fault{Target: Target{Namespace: "{{.WorkloadNamespace}}", Workload: "{{.WorkloadName}}"}})
+
+	for k, want := range map[string]string{
+		"TARGET_NAMESPACE":     "storefront",
+		"TARGET_WORKLOAD":      "shop",
+		"DOMAIN_SUFFIX":        "k3d.local",
+		"MONITORING_NAMESPACE": "observability",
+	} {
+		if env[k] != want {
+			t.Errorf("targetEnv[%q] = %q, want %q", k, env[k], want)
+		}
+	}
+}

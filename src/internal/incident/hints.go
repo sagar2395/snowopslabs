@@ -41,6 +41,27 @@ func ParseHints(dir string) ([]string, error) {
 	return hints, nil
 }
 
+// HintCount returns how many hints a fault ships, so a caller that reveals the
+// whole solution can bill for all of them. Unknown faults count as zero.
+func (e *Engine) HintCount(name string) int {
+	if name == "" {
+		active, err := e.Active()
+		if err != nil || active == nil {
+			return 0
+		}
+		name = active.Fault
+	}
+	f, err := e.Get(name)
+	if err != nil {
+		return 0
+	}
+	hints, err := ParseHints(f.Dir)
+	if err != nil {
+		return 0
+	}
+	return len(hints)
+}
+
 // Hint is one revealed hint.
 type Hint struct {
 	Index int    `json:"index"` // 1-based
