@@ -1,12 +1,11 @@
 name: restore-broken-deploy
 displayName: "Restore the broken deploy"
 description: >
-  go-api has been deployed with a nonexistent image tag — pods are stuck
-  in ImagePullBackOff. Your job: identify the problem, update the
-  deployment to a valid image, and get the rollout healthy before the
-  clock runs out.
+  A release went out an hour ago and never finished. Users are still being
+  served by the old version, the rollout has not advanced, and the deploy
+  pipeline is red. Get the rollout healthy before the clock runs out.
 category: workload
-parTime: "10m"
+parTime: "6m"
 setup:
   type: incident
   ref: bad-deploy-rollout
