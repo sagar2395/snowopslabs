@@ -27,6 +27,28 @@ helm upgrade --install kubernetes-dashboard "$CHART_URL" \
 # Apply admin user and RBAC
 kubectl apply -f "$SCRIPT_DIR/admin-user.yaml"
 
+# The Ingress backend has to exist before the Ingress does. A dangling backend
+# is not a local failure: traefik retries the missing Service in a hot loop
+# until it fails its own liveness probe, which takes every other ingress in the
+# lab down with it. Discover the proxy Service and refuse to create an Ingress
+# without one.
+# The trailing '|| true' is load-bearing: under 'set -e' with pipefail, grep
+# finding nothing would abort the script here, before the message below that
+# explains what is wrong.
+PROXY_SVC="$(kubectl -n "$NAMESPACE" get svc -o name 2>/dev/null \
+  | cut -d/ -f2 | grep -- '-kong-proxy$' | head -1 || true)"
+
+if [ -z "$PROXY_SVC" ]; then
+  echo "ERROR: the dashboard's Kong proxy Service was not created." >&2
+  echo "  Kong renders a proxy Service only when a listener is enabled, and the" >&2
+  echo "  chart ships proxy.http.enabled=false. Check kong.proxy in values.yaml." >&2
+  echo "  No Ingress was created: a dangling one would destabilise traefik." >&2
+  exit 1
+fi
+
+PROXY_PORT="$(kubectl -n "$NAMESPACE" get svc "$PROXY_SVC" \
+  -o jsonpath='{.spec.ports[0].port}')"
+
 # Create Ingress for dashboard access (HTTP — Kong TLS is disabled in values.yaml)
 cat <<EOF | kubectl apply -f -
 apiVersion: networking.k8s.io/v1
@@ -37,7 +59,7 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web
 spec:
-  ingressClassName: traefik
+  ingressClassName: $INGRESS_CLASS
   rules:
   - host: dashboard.$DOMAIN_SUFFIX
     http:
@@ -46,9 +68,9 @@ spec:
         pathType: Prefix
         backend:
           service:
-            name: kubernetes-dashboard-kong-proxy
+            name: $PROXY_SVC
             port:
-              number: 80
+              number: $PROXY_PORT
 EOF
 
 echo "==> Kubernetes Dashboard installed."

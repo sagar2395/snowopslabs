@@ -5,10 +5,19 @@ app:
   scheduling:
     nodeSelector: {}
 
-# Disable TLS on Kong proxy so Traefik can connect over plain HTTP.
-# Without this, Kong listens on HTTPS with a self-signed cert and
-# Traefik fails to proxy because it doesn't know the backend is HTTPS.
+# Kong is the gateway in front of the api/auth/web pods, and the Ingress points
+# at its proxy Service.
+#
+# Both listeners must be set, not just tls. The chart ships proxy.http.enabled
+# as FALSE and proxy.tls.enabled as true, so turning tls off on its own leaves
+# Kong with no listener at all — and a Kong with no listener renders no proxy
+# Service. The Ingress then references a Service that does not exist, which
+# traefik retries in a hot loop until it fails its own liveness probe and takes
+# every other ingress in the lab down with it.
 kong:
   proxy:
+    http:
+      enabled: true
+      servicePort: 80
     tls:
       enabled: false
