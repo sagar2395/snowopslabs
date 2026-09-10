@@ -11,9 +11,9 @@ killing the container for exceeding its memory limit. So what *is* the
 limit? Check the deployment's `resources` block.
 
 ## Hint 3
-The limit is 8Mi. That is enough to idle on — which is why nothing looked
-wrong until traffic arrived — but not enough to serve requests. Compare it
-with what the app actually needs under load (Grafana's container memory
-panels, or `kubectl top pod -n {{.WorkloadNamespace}}` while the load is running) and
-raise it:
-`kubectl -n {{.WorkloadNamespace}} set resources deploy/{{.WorkloadName}} --limits=memory=256Mi --requests=memory=64Mi`.
+The limit was cut to just above what the container uses at rest — enough to
+start on and idle on, which is why nothing looked wrong for the first minute,
+but not enough to serve requests. Read the number off the deployment itself rather
+than assuming one, then compare it with what the app actually uses under load
+(Grafana's container memory panels, or `kubectl top pod -n {{.WorkloadNamespace}}`
+while the load is running) and raise the limit above that peak.

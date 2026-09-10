@@ -70,9 +70,9 @@ func TestVerifiedContentSet(t *testing.T) {
 		t.Errorf("verified scenarios = %d, want 13 (the confirmed set)", verifiedScenarios)
 	}
 
-	unverifiedIncidents := map[string]bool{
-		"oom-kill": true,
-	}
+	// Empty: every shipped fault has now been through incident-review end to
+	// end on a live cluster. A new fault lands here until its review passes.
+	unverifiedIncidents := map[string]bool{}
 	verifiedIncidents := 0
 	for _, f := range c.Incidents() {
 		if f.Verified {
@@ -84,7 +84,7 @@ func TestVerifiedContentSet(t *testing.T) {
 			t.Errorf("incident %q is unverified but not in the known unverified set", f.Name)
 		}
 	}
-	if verifiedIncidents != 5 {
-		t.Errorf("verified incidents = %d, want 5 (the go-api-targeting confirmed set)", verifiedIncidents)
+	if verifiedIncidents != 6 {
+		t.Errorf("verified incidents = %d, want 6 (every shipped fault, all review-confirmed)", verifiedIncidents)
 	}
 }

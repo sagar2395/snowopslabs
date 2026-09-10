@@ -1,6 +1,7 @@
 name: oom-kill
+verified: true
 displayName: "OOMKilled: memory limit too low"
-description: "{{.WorkloadName}} pods keep restarting and the service is flapping. Restart counts climb; the kernel is killing the container the moment it allocates memory."
+description: "The pager says {{.WorkloadName}} is being killed and restarted over and over. It came up clean and served fine for a minute, then the restart count started climbing and the service began flapping. Nothing was deployed."
 category: resources
 severity: high
 target:
