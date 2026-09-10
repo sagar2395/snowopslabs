@@ -71,8 +71,7 @@ func TestVerifiedContentSet(t *testing.T) {
 	}
 
 	unverifiedIncidents := map[string]bool{
-		"oom-kill":       true,
-		"noisy-neighbor": true,
+		"oom-kill": true,
 	}
 	verifiedIncidents := 0
 	for _, f := range c.Incidents() {
@@ -85,7 +84,7 @@ func TestVerifiedContentSet(t *testing.T) {
 			t.Errorf("incident %q is unverified but not in the known unverified set", f.Name)
 		}
 	}
-	if verifiedIncidents != 4 {
-		t.Errorf("verified incidents = %d, want 4 (the go-api-targeting confirmed set)", verifiedIncidents)
+	if verifiedIncidents != 5 {
+		t.Errorf("verified incidents = %d, want 5 (the go-api-targeting confirmed set)", verifiedIncidents)
 	}
 }

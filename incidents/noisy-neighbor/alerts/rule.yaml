@@ -1,0 +1,29 @@
+# Applied by inject.sh into the monitoring namespace; the `release: prometheus`
+# label is required by kube-prometheus-stack's rule selector, and the `labfault`
+# alert label routes it to the pager (see
+# platform/monitoring/metrics/prometheus/values.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: labfault-noisy-neighbor
+  labels:
+    release: prometheus
+    labfault: "true"
+spec:
+  groups:
+    - name: labfault-noisy-neighbor
+      rules:
+        # Summed from cAdvisor rather than node_exporter: on k3d every node's
+        # node_exporter reports the shared host, so all three read the same
+        # number and the alert could never say WHICH node is in trouble.
+        - alert: LabFaultNoisyNeighbor
+          expr: |
+            sum by (node) (rate(container_cpu_usage_seconds_total{container!=""}[2m]))
+              / sum by (node) (kube_node_status_allocatable{resource="cpu"}) > 0.75
+          for: 1m
+          labels:
+            labfault: "true"
+            severity: warning
+          annotations:
+            summary: "Node {{ $labels.node }} is out of CPU"
+            description: "Containers on {{ $labels.node }} are asking for more CPU than the node has. Everything scheduled there is now competing for cycles, including workloads that did not change. Find out what is consuming it."

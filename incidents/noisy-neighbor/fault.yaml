@@ -1,16 +1,18 @@
 name: noisy-neighbor
+verified: true
 displayName: "Noisy neighbor: CPU-hungry tenant"
-description: "Latency on {{.WorkloadName}} crept up and node CPU is pegged, but {{.WorkloadName}} itself didn't change. Someone else moved in — a workload with big CPU requests, no limits, and a hot loop."
+description: "You have been paged: the node {{.WorkloadName}} runs on is out of CPU. Nothing you deployed changed — same image, same replicas, same config — and the other two nodes are idle. Something else moved in, and it is taking the machine."
 category: resources
 severity: low
 target:
-  namespace: labfault-noisy-neighbor
-  workload: noisy-neighbor
+  namespace: labfault-batch
+  workload: report-batch
 prerequisites:
   apps:
     - "{{.WorkloadName}}"
+expectAlert: LabFaultNoisyNeighbor
 detection:
-  name: neighbor-evicted
+  name: neighbor-capped
   type: script
   script: checks/resolved.sh
   timeoutSeconds: 20

@@ -1,32 +1,46 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: labfault-noisy-neighbor
+  name: ${TARGET_NAMESPACE}
   labels:
     labfault: noisy-neighbor
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: noisy-neighbor
-  namespace: labfault-noisy-neighbor
+  name: ${TARGET_WORKLOAD}
+  namespace: ${TARGET_NAMESPACE}
   labels:
     labfault: noisy-neighbor
 spec:
-  replicas: 2
+  replicas: ${BURNER_REPLICAS}
   selector:
     matchLabels:
-      app: noisy-neighbor
+      app: ${TARGET_WORKLOAD}
   template:
     metadata:
       labels:
-        app: noisy-neighbor
+        app: ${TARGET_WORKLOAD}
     spec:
+      # Pinned to the node the victim is already on. Contention is a property of
+      # a SHARED node, and left to the scheduler these pods land wherever there
+      # is room — on a three-node lab, usually not the node that matters. The
+      # fault would inject cleanly and nothing would happen.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: ["${BURNER_NODE}"]
       containers:
         - name: burner
           image: busybox:1.36
-          # A hot loop per replica; requests reserve scheduler capacity,
-          # and the missing CPU limit lets it eat whatever is left.
+          # One hot loop per replica, and the loop is single-threaded, so each
+          # replica takes exactly one core. The request reserves scheduler
+          # capacity and buys a large CFS share; the missing limit is what lets
+          # it take everything the node has left.
           command: ["sh", "-c", "while true; do :; done"]
           resources:
             requests:
