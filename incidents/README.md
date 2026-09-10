@@ -33,7 +33,7 @@ target:                           # templatable — see "Targeting a workload"
   namespace: "{{.WorkloadNamespace}}"
   workload: "{{.WorkloadName}}"
 prerequisites:
-  apps: [go-api]                  # gated before injection
+  apps: ["{{.WorkloadName}}"]     # the bound workload must exist; gated before injection
 detection:                        # same schema as scenario checks
   name: rollout-healthy           # PASSES when the fault is RESOLVED
   type: script                    # http | kubectl | promql | script
@@ -67,6 +67,11 @@ which every script reads instead of hardcoding a name:
 NS="${TARGET_NAMESPACE:-go-api}"
 DEPLOY="${TARGET_WORKLOAD:-go-api}"
 ```
+
+`DOMAIN_SUFFIX` and `MONITORING_NAMESPACE` travel with them, to all three. A
+detection check needs the suffix as much as inject and resolve do — the checks
+that matter probe the workload through its own ingress — and a script check runs
+on the checks runner, which does not inherit the executor's environment.
 
 Both fields are template-resolved. A fault whose target reads
 `{{.WorkloadNamespace}}` / `{{.WorkloadName}}` follows whatever app the lab is
@@ -159,12 +164,12 @@ hatch from every state a learner can leave behind, and scores the result out of
 
 | Fault | Category | Severity | What breaks |
 |-------|----------|----------|-------------|
-| `crashloop-bad-config` | workload | medium | go-api's container command is replaced with one that exits immediately — new pods crash-loop |
-| `bad-deploy-rollout` | workload | medium | go-api is "deployed" with a nonexistent image tag — rollout sticks in ImagePullBackOff |
-| `oom-kill` | resources | high | echo-server's memory limit is cut just below what it needs under load, and k6 traffic is started — the pod idles fine and is OOMKilled once requests arrive |
-| `network-blackhole` | network | high | a deny-all-ingress NetworkPolicy lands in go-api's namespace — the service goes dark through the ingress |
-| `service-selector-broken` | config | medium | go-api's Service selector stops matching its pods — endpoints empty, pods perfectly healthy (sneaky) |
-| `noisy-neighbor` | resources | low | a CPU-burning deployment lands on the cluster with big requests and no limits |
+| `crashloop-bad-config` | workload | medium | the workload's container command is replaced with one that exits immediately — new pods crash-loop |
+| `bad-deploy-rollout` | workload | medium | the workload is "deployed" with a tag that was never pushed — rollout sticks in ImagePullBackOff |
+| `oom-kill` | resources | high | the workload's memory limit is cut just below what it needs under load, and k6 traffic is started — the pod idles fine and is OOMKilled once requests arrive |
+| `network-blackhole` | network | high | a deny-all-ingress NetworkPolicy lands in the workload's namespace — the service goes dark through the ingress |
+| `service-selector-broken` | config | medium | the workload's Service selector stops matching its pods — endpoints empty, pods perfectly healthy (sneaky) |
+| `noisy-neighbor` | resources | low | a batch tenant lands on the workload's node with big CPU requests and no limits, and takes the machine |
 
 `dns-blackhole` and `pvc-full` were considered and dropped: DNS exec probes
 and PVC behaviour vary too much with the local storage and CNI setup for
