@@ -1,9 +1,10 @@
 # Hints — network-blackhole
 
 ## Hint 1
-The app says it's fine: pods Running, probes green, logs quiet. So trust
-the app and suspect the path to it. Walk the request hop by hop: ingress →
-Service → Endpoints → pod. Where does it die?
+The page came from the edge, not from the app — and the app says it is fine:
+pods Running, probes green, logs quiet. Nothing is even reaching it to be
+logged. Trust the app and suspect the path to it: walk the request hop by hop,
+ingress → Service → Endpoints → pod, and find where it dies.
 
 ## Hint 2
 `kubectl get endpoints {{.WorkloadName}} -n {{.WorkloadNamespace}}` shows healthy endpoints, and

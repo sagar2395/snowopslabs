@@ -1,7 +1,7 @@
 name: network-blackhole
 verified: true
 displayName: "Network blackhole: service unreachable"
-description: "{{.WorkloadName}} went dark. Every request through the ingress times out or 5xxes — yet the pods are Running and Ready, logs are quiet, and nothing was deployed. Something is eating the traffic."
+description: "{{.WorkloadName}} went dark. Every request through the ingress 5xxes — yet the pods are Running and Ready, the app logs are quiet, and nothing was deployed. The requests are not arriving at all. Something on the wire is eating them."
 category: network
 severity: high
 target:
@@ -12,9 +12,9 @@ prerequisites:
     - ingress
   apps:
     - "{{.WorkloadName}}"
+expectAlert: LabFaultIngressErrors
 detection:
-  name: service-reachable
-  type: http
-  url: "http://{{.WorkloadName}}.{{.DomainSuffix}}/health"
-  expectStatus: 200
-  timeoutSeconds: 15
+  name: traffic-reaches-the-workload
+  type: script
+  script: checks/resolved.sh
+  timeoutSeconds: 30
