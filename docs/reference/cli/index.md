@@ -48,6 +48,7 @@ including checksum verification.
 | [Scenarios](scenarios.md) | `scenario` `validate` |
 | [Incidents](incidents.md) | `incident` |
 | [Traffic](traffic.md) | `traffic` |
+| [Comparing stacks](compare.md) | `compare` |
 | [Learning & challenges](learning.md) | `learn` `challenge` |
 | [Server, metrics & auth](server.md) | `ui` `users` |
 

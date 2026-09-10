@@ -347,6 +347,8 @@ func (s *Server) registerAPI(api *mux.Router) {
 	api.HandleFunc("/lab/reset", s.handleLabReset).Methods("POST", "OPTIONS")
 	api.HandleFunc("/results", s.handleResults).Methods("GET", "OPTIONS")
 	api.HandleFunc("/leaderboard", s.handleLeaderboard).Methods("GET", "OPTIONS")
+	api.HandleFunc("/comparisons", s.handleListComparisons).Methods("GET", "OPTIONS")
+	api.HandleFunc("/comparisons/{id}", s.handleGetComparison).Methods("GET", "OPTIONS")
 	api.HandleFunc("/results/{kind}", s.handleResultsByKind).Methods("GET", "OPTIONS")
 	api.HandleFunc("/progress", s.handleProgress).Methods("GET", "OPTIONS")
 	api.HandleFunc("/challenges", s.handleListChallenges).Methods("GET", "OPTIONS")

@@ -157,3 +157,59 @@ func TestNewScenarioRecord_NoChecks(t *testing.T) {
 		t.Errorf("no-checks record: score=%d outcome=%q, want -1/failed", r.Score, r.Outcome)
 	}
 }
+
+func TestNewComparisonRecord(t *testing.T) {
+	start := time.Now().Add(-4 * time.Minute)
+	end := start.Add(4 * time.Minute)
+	values := map[string]float64{"latency_p99": 0.008}
+	controls := map[string]string{"profile": "steady", "rps": "25", "warmup": "1m0s", "window": "3m0s"}
+	r := NewComparisonRecord("autoscaling-under-load", "java-api", values, controls, start, end)
+
+	if r.Kind != KindComparison {
+		t.Errorf("Kind = %q, want %q", r.Kind, KindComparison)
+	}
+	if r.Workload != "java-api" {
+		t.Errorf("Workload = %q, want java-api — a comparison is keyed by (scenario, workload)", r.Workload)
+	}
+	if r.Name != "autoscaling-under-load" {
+		t.Errorf("Name = %q", r.Name)
+	}
+	// A comparison reports numbers; the scenario's checks remain the only thing
+	// that grades, so a record must never carry a score.
+	if r.Score != -1 {
+		t.Errorf("Score = %d, want -1 (unscored)", r.Score)
+	}
+	if r.Outcome != "measured" {
+		t.Errorf("Outcome = %q, want measured", r.Outcome)
+	}
+	if r.Elapsed != 240 {
+		t.Errorf("Elapsed = %d, want 240", r.Elapsed)
+	}
+	// The controls travel with the values: two measurements taken under
+	// different warmups are not comparable however similar the numbers look.
+	if got, ok := r.Meta["controls"].(map[string]string); !ok || got["warmup"] != "1m0s" {
+		t.Errorf("Meta[controls] = %v, want the fair-run controls", r.Meta["controls"])
+	}
+	if got, ok := r.Meta["metrics"].(map[string]float64); !ok || got["latency_p99"] != 0.008 {
+		t.Errorf("Meta[metrics] = %v", r.Meta["metrics"])
+	}
+}
+
+// The record must survive the JSONL round trip the store does, including the
+// workload it was bound to.
+func TestComparisonRecordRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	s := NewStore(dir)
+	if err := s.Append(NewComparisonRecord("autoscaling-under-load", "go-api",
+		map[string]float64{"requests_per_second": 24.5}, map[string]string{"rps": "25"},
+		time.Now(), time.Now())); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	got, err := s.ByKind(KindComparison)
+	if err != nil {
+		t.Fatalf("ByKind: %v", err)
+	}
+	if len(got) != 1 || got[0].Workload != "go-api" {
+		t.Fatalf("round trip lost the workload: %+v", got)
+	}
+}
