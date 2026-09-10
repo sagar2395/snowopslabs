@@ -1,10 +1,14 @@
-# Baseline for the node-drain drill: a PodDisruptionBudget that keeps {{.WorkloadName}}
-# available while a node is drained. maxUnavailable: 1 means the eviction of one
-# pod blocks until a replacement is Ready on another node — the core mechanism
-# that makes a node drain non-disruptive.
+# APPLY THIS ONE YOURSELF
 #
-# {{.WorkloadName}} itself is deployed by the app prerequisite. drain.sh scales it to 3
-# replicas before the drill so the PDB has headroom to work with.
+# The PodDisruptionBudget is the whole point of the drill. Nothing stages it:
+# without it, `kubectl drain` evicts every {{.WorkloadName}} pod on the node at once and
+# the service drops requests. With it, the eviction of one pod blocks until a
+# replacement is Ready elsewhere, so the drain proceeds without an outage.
+#
+#   kubectl apply -f scenarios/node-drain-drill/manifests/baseline.yaml
+#
+# maxUnavailable: 1 is the conservative choice. Try minAvailable instead, or a
+# larger maxUnavailable, and watch how the drain's pace changes.
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

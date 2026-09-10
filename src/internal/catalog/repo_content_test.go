@@ -51,9 +51,10 @@ func TestVerifiedContentSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unverifiedScenarios := map[string]bool{
-		"node-drain-drill": true,
-	}
+	// Empty, and meant to stay that way: every scenario has now been walked
+	// on a live cluster, tamper-tested and scored. A new one belongs here only
+	// while it is being written.
+	unverifiedScenarios := map[string]bool{}
 	verifiedScenarios := 0
 	for _, s := range c.Scenarios() {
 		if s.Verified {
@@ -65,8 +66,8 @@ func TestVerifiedContentSet(t *testing.T) {
 			t.Errorf("scenario %q is unverified but not in the known unverified set — verify it or add it", s.Name)
 		}
 	}
-	if verifiedScenarios != 12 {
-		t.Errorf("verified scenarios = %d, want 12 (the confirmed set)", verifiedScenarios)
+	if verifiedScenarios != 13 {
+		t.Errorf("verified scenarios = %d, want 13 (the confirmed set)", verifiedScenarios)
 	}
 
 	unverifiedIncidents := map[string]bool{
