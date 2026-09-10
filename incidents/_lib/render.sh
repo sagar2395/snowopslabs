@@ -17,7 +17,7 @@
 #   ${TARGET_NAMESPACE}  ${TARGET_WORKLOAD}
 render_targeted() {
   sed \
-    -e "s|\${TARGET_NAMESPACE}|${TARGET_NAMESPACE:-}|g" \
-    -e "s|\${TARGET_WORKLOAD}|${TARGET_WORKLOAD:-}|g" \
+    -e "s|\${TARGET_NAMESPACE}|${TARGET_NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}|g" \
+    -e "s|\${TARGET_WORKLOAD}|${TARGET_WORKLOAD:-${WORKLOAD_NAME:-go-api}}|g" \
     "$1"
 }
