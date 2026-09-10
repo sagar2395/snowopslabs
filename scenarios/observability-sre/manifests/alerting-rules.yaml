@@ -14,9 +14,9 @@ spec:
         - alert: HighErrorRate
           expr: |
             (
-              sum(rate(http_server_request_duration_seconds_count{http_response_status_code=~"5..",app="{{.WorkloadName}}"}[5m]))
+              sum(rate({{.WorkloadMetric}}_count{http_response_status_code=~"5..",app="{{.WorkloadName}}"}[5m]))
               /
-              sum(rate(http_server_request_duration_seconds_count{app="{{.WorkloadName}}"}[5m]))
+              sum(rate({{.WorkloadMetric}}_count{app="{{.WorkloadName}}"}[5m]))
             ) > 0.05
           for: 2m
           labels:
@@ -28,7 +28,7 @@ spec:
 
         - alert: HighLatency
           expr: |
-            histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{app="{{.WorkloadName}}"}[5m])) by (le))
+            histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket{app="{{.WorkloadName}}"}[5m])) by (le))
             > 1.0
           for: 2m
           labels:
@@ -40,11 +40,15 @@ spec:
 
     - name: sre.saturation
       rules:
+        # kube-state-metrics for the limit, not cAdvisor's
+        # container_spec_memory_limit_bytes: that series is absent on k3s and
+        # kind, so the original rule divided by nothing and could never fire.
         - alert: PodMemoryHigh
           expr: |
-            (container_memory_working_set_bytes{namespace="{{.WorkloadNamespace}}"}
+            max by (pod) (container_memory_working_set_bytes{namespace="{{.WorkloadNamespace}}", container!=""})
             /
-            container_spec_memory_limit_bytes{namespace="{{.WorkloadNamespace}}"}) > 0.85
+            max by (pod) (kube_pod_container_resource_limits{namespace="{{.WorkloadNamespace}}", resource="memory"})
+            > 0.85
           for: 5m
           labels:
             severity: warning
@@ -53,9 +57,15 @@ spec:
             summary: "Pod memory usage above 85%"
             description: "{{.WorkloadName}} pod memory usage is {{ $value | humanizePercentage }}"
 
+        # The fraction of CFS periods that were throttled. cAdvisor here
+        # exposes throttled_periods_total, not throttled_seconds_total, so the
+        # original rule referenced a series that does not exist.
         - alert: PodCPUThrottled
           expr: |
-            rate(container_cpu_cfs_throttled_seconds_total{namespace="{{.WorkloadNamespace}}"}[5m]) > 0.1
+            sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{namespace="{{.WorkloadNamespace}}", container!=""}[5m]))
+            /
+            clamp_min(sum by (pod) (rate(container_cpu_cfs_periods_total{namespace="{{.WorkloadNamespace}}", container!=""}[5m])), 0.001)
+            > 0.25
           for: 5m
           labels:
             severity: warning
