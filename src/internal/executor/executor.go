@@ -318,6 +318,15 @@ func (e *Executor) CaptureOutput(name string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// GetEnv reads one script-environment value under the same lock SetEnv writes
+// it with. Callers that need to save and restore a value must go through this
+// rather than indexing Env, which races with a concurrent SetEnv.
+func (e *Executor) GetEnv(key string) string {
+	e.envMu.RLock()
+	defer e.envMu.RUnlock()
+	return e.Env[key]
+}
+
 func (e *Executor) buildEnv() []string {
 	env := os.Environ()
 	e.envMu.RLock()
