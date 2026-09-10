@@ -226,6 +226,36 @@ func (e *Engine) RecordHint() error {
 	return e.saveActive(run)
 }
 
+// Attempt grades the active run WITHOUT recording or ending it, so a learner can
+// see which checks are still failing, fix them, and submit again. The clock keeps
+// running, so retrying is not free — the elapsed-time deduction is the pressure,
+// not a one-shot submit.
+func (e *Engine) Attempt(passed, total int) (*RunRecord, error) {
+	run, err := e.Active()
+	if err != nil {
+		return nil, err
+	}
+	if run == nil {
+		return nil, fmt.Errorf("no active challenge")
+	}
+	c, err := e.Load(run.ChallengeName)
+	if err != nil {
+		return nil, err
+	}
+	elapsed := e.now().Sub(run.StartedAt)
+	return &RunRecord{
+		ChallengeName: run.ChallengeName,
+		StartedAt:     run.StartedAt,
+		FinishedAt:    e.now(),
+		Elapsed:       elapsed,
+		HintsUsed:     run.HintsUsed,
+		ChecksPassed:  passed,
+		ChecksTotal:   total,
+		Score:         computeScore(c, elapsed, run.HintsUsed, passed, total),
+		Outcome:       "failed",
+	}, nil
+}
+
 // Complete records the result and clears active state.
 // passed/total are the check results. outcome is "passed", "failed", or "aborted".
 // user attributes the unified result record to the authenticated API user;
