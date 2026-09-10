@@ -4,6 +4,15 @@ Learning paths are guided, ordered tracks that walk you through real lab
 exercises — cluster setup, app deployment, observability, and incident
 response — with machine-verifiable completion checks at every step.
 
+## Shipped paths
+
+| Path | Modules | Est. | What it covers |
+|------|---------|------|----------------|
+| `kubernetes-foundations` | 4 | 45m | Cluster up, deploy an app with Helm, enable observability, then diagnose and hand-fix a real fault |
+
+Written for someone starting from no cluster. On a lab that is already running,
+the first two modules pass immediately — that is expected, and the path says so.
+
 ## Directory layout
 
 ```
