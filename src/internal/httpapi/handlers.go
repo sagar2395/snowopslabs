@@ -82,6 +82,45 @@ func appURL(name, domainSuffix string, deployed bool) string {
 	return fmt.Sprintf("http://%s.%s", name, domainSuffix)
 }
 
+// appStatus builds one app's status entry: its declared contract plus whatever
+// the cluster currently says about it.
+//
+// Both /status and /apps serve this shape, and they must agree — the traffic
+// generator picks its target from /apps by the serviceUrl the contract derives,
+// so an /apps response that omitted it reported "no deployed app to target"
+// while /status showed three of them.
+func (s *Server) appStatus(ctx context.Context, appName string) AppStatusResp {
+	resp := AppStatusResp{Name: appName}
+	appCfg, _ := config.LoadAppConfig(s.cfg.ProjectRoot, appName)
+	if appCfg == nil {
+		return resp
+	}
+	resp.Build = appCfg.BuildStrategy
+	resp.Deploy = appCfg.DeployStrategy
+	resp.ServiceURL = appCfg.Workload().URL()
+	for _, c := range appCfg.Contract.Capabilities {
+		resp.Capabilities = append(resp.Capabilities, string(c))
+	}
+	ns := appName
+	if appCfg.Namespace != "" {
+		ns = appCfg.Namespace
+	}
+	if status, _ := k8s.GetAppStatus(ctx, appName, ns); status != nil {
+		resp.Deployed = status.Deployed
+		resp.Replicas = status.Replicas
+		resp.Ready = status.Ready
+	}
+	// Surface live autoscaler state so the UI can answer "why did it scale"
+	// without a terminal. Only worth querying once the app is up.
+	if resp.Deployed {
+		if hpa, err := k8s.GetHPAStatus(ctx, ns, appName); err == nil && hpa.Present {
+			resp.HPA = hpa
+		}
+	}
+	resp.URL = appURL(appName, s.cfg.DomainSuffix, resp.Deployed)
+	return resp
+}
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
@@ -137,35 +176,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	// Apps
 	apps, _ := config.ListApps(s.cfg.ProjectRoot)
 	for _, appName := range apps {
-		appCfg, _ := config.LoadAppConfig(s.cfg.ProjectRoot, appName)
-		appResp := AppStatusResp{Name: appName}
-		if appCfg != nil {
-			appResp.Build = appCfg.BuildStrategy
-			appResp.Deploy = appCfg.DeployStrategy
-			appResp.ServiceURL = appCfg.Workload().URL()
-			for _, c := range appCfg.Contract.Capabilities {
-				appResp.Capabilities = append(appResp.Capabilities, string(c))
-			}
-			ns := appName
-			if appCfg.Namespace != "" {
-				ns = appCfg.Namespace
-			}
-			status, _ := k8s.GetAppStatus(ctx, appName, ns)
-			if status != nil {
-				appResp.Deployed = status.Deployed
-				appResp.Replicas = status.Replicas
-				appResp.Ready = status.Ready
-			}
-			// Surface live autoscaler state so the UI can show why the app scaled,
-			// without a terminal. Only worth querying once it's deployed.
-			if appResp.Deployed {
-				if hpa, err := k8s.GetHPAStatus(ctx, ns, appName); err == nil && hpa.Present {
-					appResp.HPA = hpa
-				}
-			}
-			appResp.URL = appURL(appName, s.cfg.DomainSuffix, appResp.Deployed)
-		}
-		resp.Apps = append(resp.Apps, appResp)
+		resp.Apps = append(resp.Apps, s.appStatus(ctx, appName))
 	}
 
 	respondJSON(w, http.StatusOK, resp)
@@ -181,33 +192,9 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var result []AppStatusResp
+	result := make([]AppStatusResp, 0, len(apps))
 	for _, appName := range apps {
-		appCfg, _ := config.LoadAppConfig(s.cfg.ProjectRoot, appName)
-		appResp := AppStatusResp{Name: appName}
-		if appCfg != nil {
-			appResp.Build = appCfg.BuildStrategy
-			appResp.Deploy = appCfg.DeployStrategy
-			ns := appName
-			if appCfg.Namespace != "" {
-				ns = appCfg.Namespace
-			}
-			status, _ := k8s.GetAppStatus(ctx, appName, ns)
-			if status != nil {
-				appResp.Deployed = status.Deployed
-				appResp.Replicas = status.Replicas
-				appResp.Ready = status.Ready
-			}
-			// Surface live autoscaler state so the UI can answer "why did it
-			// scale" without a terminal. Only worth querying once the app is up.
-			if appResp.Deployed {
-				if hpa, err := k8s.GetHPAStatus(ctx, ns, appName); err == nil && hpa.Present {
-					appResp.HPA = hpa
-				}
-			}
-			appResp.URL = appURL(appName, s.cfg.DomainSuffix, appResp.Deployed)
-		}
-		result = append(result, appResp)
+		result = append(result, s.appStatus(ctx, appName))
 	}
 
 	respondJSON(w, http.StatusOK, result)
@@ -634,6 +621,16 @@ func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {
 	respondCatalog(w, r, s.scenes.Status())
 }
 
+// scenarioResp is a scenario as the UI needs it: the scenario itself, plus what
+// the binding resolved to and which app prerequisites are genuinely the user's
+// to satisfy. Both are presentation, so they live here rather than on the schema
+// type an author writes.
+type scenarioResp struct {
+	*scenario.Scenario
+	PinnedApps []string     `json:"pinnedApps"`
+	Workload   WorkloadResp `json:"workload"`
+}
+
 func (s *Server) handleScenarioInfo(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 	if !isValidName(name) {
@@ -650,61 +647,17 @@ func (s *Server) handleScenarioInfo(w http.ResponseWriter, r *http.Request) {
 	// so {{.Param}} shows a real value. Work on a copy with fresh slices — sc is
 	// the cached scenario and must not be mutated.
 	defaults := s.scenes.ParamDefaults(sc)
-	resolve := func(in string) string { return s.scenes.ResolveTemplateWithParams(in, defaults) }
-	resp := *sc
+	// One place owns which fields a reader sees resolved, so the next field added
+	// to the schema cannot quietly ship a raw "{{.WorkloadName}}" to the UI.
+	resp := *s.scenes.ResolvedForDisplay(sc, defaults, s.boundWorkload(s.scenes.ActiveApp(name)))
 
-	// Description and objectives are prose a learner reads first, and they name
-	// the workload the scenario is bound to. Unresolved, they would say
-	// "{{.WorkloadName}}" in the UI.
-	resp.Description = resolve(sc.Description)
-	if len(sc.Objectives) > 0 {
-		objectives := make([]string, len(sc.Objectives))
-		for i, o := range sc.Objectives {
-			objectives[i] = resolve(o)
-		}
-		resp.Objectives = objectives
-	}
-
-	urls := make([]scenario.ExploreURL, len(sc.Explore.URLs))
-	for i, u := range sc.Explore.URLs {
-		u.URL = resolve(u.URL)
-		urls[i] = u
-	}
-	cmds := make([]scenario.ExploreCommand, len(sc.Explore.Commands))
-	for i, c := range sc.Explore.Commands {
-		c.Command = resolve(c.Command)
-		cmds[i] = c
-	}
-	tips := make([]string, len(sc.Explore.Tips))
-	for i, t := range sc.Explore.Tips {
-		tips[i] = resolve(t)
-	}
-	resp.Explore = scenario.Explore{URLs: urls, Commands: cmds, Tips: tips}
-
-	// Inline each snippet's content (from its file or inline YAML) so the UI can
-	// show the actual manifest a learner would apply. Label and description are
-	// resolved with it — they name the workload too.
-	if len(sc.Snippets) > 0 {
-		snips := make([]scenario.Snippet, len(sc.Snippets))
-		for i, sn := range sc.Snippets {
-			if content, err := s.scenes.SnippetContent(sc, sn); err == nil {
-				sn.YAML = content
-			}
-			sn.Label = resolve(sn.Label)
-			sn.Description = resolve(sn.Description)
-			snips[i] = sn
-		}
-		resp.Snippets = snips
-	}
-	if len(sc.Prerequisites.Apps) > 0 {
-		apps := make([]string, len(sc.Prerequisites.Apps))
-		for i, a := range sc.Prerequisites.Apps {
-			apps[i] = resolve(a)
-		}
-		resp.Prerequisites.Apps = apps
-	}
-
-	respondJSON(w, http.StatusOK, resp)
+	// While the scenario is active the binding is the app it was activated
+	// against, so the detail describes what is really deployed.
+	respondJSON(w, http.StatusOK, scenarioResp{
+		Scenario:   &resp,
+		PinnedApps: s.scenes.PinnedPrereqApps(name),
+		Workload:   workloadResp(s.boundWorkload(s.scenes.ActiveApp(name))),
+	})
 }
 
 func (s *Server) handleScenarioUp(w http.ResponseWriter, r *http.Request) {
@@ -713,24 +666,35 @@ func (s *Server) handleScenarioUp(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid scenario name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
 		return
 	}
-	// Optional scenario parameter overrides: {"params": {"threshold": "15", ...}}.
-	// An empty or absent body means "use the defaults" — same as before.
+	// Optional overrides for this activation:
+	//   {"params": {"threshold": "15"}, "app": "java-api"}
+	// An empty or absent body means "the declared defaults, the current binding".
 	var body struct {
 		Params map[string]string `json:"params"`
+		App    string            `json:"app"`
 	}
 	if r.Body != nil {
 		_ = json.NewDecoder(r.Body).Decode(&body) // tolerate an empty body
+	}
+	if body.App != "" && !isValidName(body.App) {
+		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid app name %q", body.App))
+		return
 	}
 
 	jobID := s.exec.NextActionID()
 	label := fmt.Sprintf("Activate scenario: %s", name)
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
-		// Stage overrides for this activation only (serialised per engine, like
-		// the existing SetOutput usage).
-		s.scenes.SetActivationParams(body.Params)
-		defer s.scenes.SetActivationParams(nil)
-		s.exec.BroadcastEnd(jobID, label, s.scenes.Up(name, s.exec, false))
+		// Bind before staging params: Up records the app it ran against in the
+		// activation marker, and verify and down read it back from there.
+		scenes, _, release, err := s.withWorkload(body.App)
+		if err != nil {
+			s.exec.BroadcastEnd(jobID, label, err)
+			return
+		}
+		defer release()
+		scenes.SetActivationParams(body.Params)
+		s.exec.BroadcastEnd(jobID, label, scenes.Up(name, s.exec, false))
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -745,7 +709,14 @@ func (s *Server) handleScenarioDown(w http.ResponseWriter, r *http.Request) {
 	label := fmt.Sprintf("Deactivate scenario: %s", name)
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
-		s.exec.BroadcastEnd(jobID, label, s.scenes.Down(name, s.exec))
+		// Tear down against the workload the scenario was brought up against.
+		scenes, _, release, err := s.withWorkload(s.scenes.ActiveApp(name))
+		if err != nil {
+			s.exec.BroadcastEnd(jobID, label, err)
+			return
+		}
+		defer release()
+		s.exec.BroadcastEnd(jobID, label, scenes.Down(name, s.exec))
 	}()
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
@@ -760,6 +731,15 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Grade against the workload the scenario was activated against, not the
+	// ambient binding — the check env below is built from it.
+	scenes, _, release, err := s.withWorkload(s.scenes.ActiveApp(name))
+	if err != nil {
+		respondError(w, r, http.StatusBadRequest, "invalid_input", err.Error())
+		return
+	}
+	defer release()
+
 	runner := checks.NewRunner()
 	runner.DefaultTimeout = 10 * time.Second
 	promURL := os.Getenv("PROMETHEUS_URL")
@@ -767,10 +747,17 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 		promURL = "http://prometheus." + s.cfg.DomainSuffix
 	}
 	runner.PrometheusURL = promURL
+	// Same script environment the CLI gives a check, so verifying from the UI
+	// and from the terminal cannot disagree.
 	runner.Env = []string{
 		"DOMAIN_SUFFIX=" + s.cfg.DomainSuffix,
 		"MONITORING_NAMESPACE=" + s.cfg.MonitoringNamespace,
 		"PROJECT_ROOT=" + s.cfg.ProjectRoot,
+		"PROMETHEUS_URL=" + promURL,
+		"WORKLOAD_NAME=" + scenes.Workload.Name,
+		"WORKLOAD_NAMESPACE=" + scenes.Workload.Namespace,
+		"WORKLOAD_PORT=" + scenes.Workload.Port,
+		"WORKLOAD_METRIC=" + scenes.Workload.Metric,
 	}
 
 	// Server WriteTimeout is 15s — bound the whole verify run below that.
@@ -778,7 +765,7 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
 
-	results, err := s.scenes.Verify(ctx, name, runner)
+	results, err := scenes.Verify(ctx, name, runner)
 	if err != nil {
 		if errors.Is(err, scenario.ErrNoChecks) {
 			respondError(w, r, http.StatusBadRequest, "no_checks", err.Error())
