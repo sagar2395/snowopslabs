@@ -1,7 +1,7 @@
 name: service-selector-broken
 verified: true
 displayName: "Service selector mismatch: empty endpoints"
-description: "{{.WorkloadName}} returns 503s through the ingress, but every pod is Running and Ready and nothing was deployed. The Service exists. The pods exist. They just don't know about each other anymore."
+description: "The pager says {{.WorkloadName}}'s Service has no ready endpoints, and every request through the ingress is a 503. But every pod is Running and Ready and nothing was deployed. The Service exists. The pods exist. They just don't know about each other anymore."
 category: config
 severity: medium
 target:
@@ -12,9 +12,9 @@ prerequisites:
     - ingress
   apps:
     - "{{.WorkloadName}}"
+expectAlert: LabFaultServiceEndpointsEmpty
 detection:
-  name: service-reachable
-  type: http
-  url: "http://{{.WorkloadName}}.{{.DomainSuffix}}/health"
-  expectStatus: 200
-  timeoutSeconds: 15
+  name: service-selects-its-pods
+  type: script
+  script: checks/resolved.sh
+  timeoutSeconds: 30
