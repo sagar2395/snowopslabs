@@ -1,0 +1,32 @@
+# Scrape OpenCost's cost metrics into Prometheus.
+#
+# The platform installs OpenCost but wires nothing to it, so its cost figures
+# live only inside its own UI. Without this the scenario can show you a cost
+# number but cannot graph it next to the requests that caused it — and the whole
+# lesson is the gap between what a workload reserves and what it uses.
+#
+# Port 9003 serves /metrics; 9090 is the UI. The `release: prometheus` label is
+# what kube-prometheus-stack's serviceMonitorSelector matches — a ServiceMonitor
+# without it is created successfully and then silently never scraped.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: opencost
+  namespace: opencost
+  labels:
+    release: prometheus
+    snowops.net/scenario: cost-right-sizing
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: opencost
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      # OpenCost reports one series per container in the CLUSTER, carrying that
+      # container's own namespace and pod labels. Prometheus overwrites a
+      # target's exported labels by default, so without this every cost series
+      # comes back labelled namespace="opencost" — the data is there and every
+      # per-namespace query returns nothing.
+      honorLabels: true
