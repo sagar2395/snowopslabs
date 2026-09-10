@@ -3,6 +3,7 @@ package scenario
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -53,6 +54,7 @@ type (
 	ExploreCommand = schema.ExploreCommand
 	Parameter      = schema.Parameter
 	Snippet        = schema.Snippet
+	Reference      = schema.Reference
 )
 
 // Engine discovers, loads, and manages scenarios.
@@ -198,11 +200,8 @@ func (e *Engine) Preflight(s *Scenario) error {
 		}
 	}
 
-	// 2. Prerequisite apps — check apps/<name>/app.env exists. Resolved, so a
-	// scenario states its app prerequisite as {{.WorkloadName}} rather than
-	// pinning one.
-	for _, declared := range s.Prerequisites.Apps {
-		app := e.resolveTemplate(declared)
+	// 2. Prerequisite apps — check apps/<name>/app.env exists.
+	for _, app := range e.ResolvedPrereqApps(s) {
 		appEnv := filepath.Join(e.ProjectRoot, "apps", app, "app.env")
 		if _, err := os.Stat(appEnv); err != nil {
 			errs = append(errs, fmt.Sprintf(
@@ -281,6 +280,103 @@ func (e *Engine) Preflight(s *Scenario) error {
 	return nil
 }
 
+// withActivationParams scopes resolvedParams to the values the scenario was
+// activated with (falling back to its declared defaults) and returns the
+// function that restores the previous scoping.
+//
+// Up sets these while installing; anything that re-renders the same assets
+// afterwards must set them too. Down did not, so a manifest carrying a
+// {{.Param}} was handed to `kubectl delete` unresolved — it parsed as a map key
+// rather than a value, the delete failed, and teardown reported success while
+// leaving the object behind.
+func (e *Engine) withActivationParams(s *Scenario) func() {
+	params := e.activeParams(s.Name)
+	if params == nil {
+		params, _ = e.effectiveParams(s)
+	}
+	prev := e.resolvedParams
+	e.resolvedParams = params
+	return func() { e.resolvedParams = prev }
+}
+
+// BindTo binds the engine to an app by name, returning the function that
+// restores the previous binding. It is the one place a binding is resolved from
+// a name, so the engine, the CLI and the API cannot disagree about what
+// {{.WorkloadName}} means. An unknown or malformed app leaves the binding alone
+// and reports why.
+func (e *Engine) BindTo(app string) (func(), error) {
+	restore := func(w workload.Workload, c workload.Contract) func() {
+		return func() { e.Workload, e.Contract = w, c }
+	}(e.Workload, e.Contract)
+	if app == "" || app == e.Workload.Name {
+		return restore, nil
+	}
+	cfg, err := config.LoadAppConfig(e.ProjectRoot, app)
+	if err != nil {
+		return restore, fmt.Errorf("app %s: %w", app, err)
+	}
+	e.Workload, e.Contract = cfg.Workload(), cfg.Contract
+	return restore, nil
+}
+
+// withActivationWorkload scopes the binding to the app the scenario was
+// activated against, and returns the restore function.
+//
+// Verify and Down run in a later process than Up, so the binding cannot be read
+// from ambient config: a scenario brought up against java-api was graded against
+// go-api's namespace and metric, and reported red for the wrong reason.
+func (e *Engine) withActivationWorkload(name string) func() {
+	restore, err := e.BindTo(e.ActiveApp(name))
+	if err != nil {
+		// The recorded app has since been removed or broken. Grading against the
+		// current binding is wrong, but refusing to tear down would strand the
+		// lab, so continue and say so.
+		fmt.Fprintf(e.output(), "Warning: %v — continuing against %s.\n", err, e.Workload.Name)
+	}
+	return restore
+}
+
+// ResolvedPrereqApps returns the scenario's prerequisite apps with their
+// templates expanded, so a scenario states its prerequisite as
+// {{.WorkloadName}} rather than pinning one application.
+//
+// Every caller must go through this rather than reading Prerequisites.Apps: the
+// raw list once reached a "not a repo app: {{.WorkloadName}}" error message.
+func (e *Engine) ResolvedPrereqApps(s *Scenario) []string {
+	if len(s.Prerequisites.Apps) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(s.Prerequisites.Apps))
+	for _, declared := range s.Prerequisites.Apps {
+		if app := e.resolveTemplate(declared); app != "" {
+			out = append(out, app)
+		}
+	}
+	return out
+}
+
+// PinnedPrereqApps returns the prerequisite apps the scenario names literally —
+// the ones a user genuinely has to have. An entry written as {{.WorkloadName}}
+// is excluded: it is not a requirement but the binding itself, and presenting it
+// as "requires go-api" told users content that runs against any app did not.
+//
+// It takes a name, not a scenario: callers hold resolved copies where
+// {{.WorkloadName}} has already become "go-api" and the two kinds of entry are
+// indistinguishable.
+func (e *Engine) PinnedPrereqApps(name string) []string {
+	out := []string{}
+	sc, ok := e.scenarios[name]
+	if !ok {
+		return out
+	}
+	for _, declared := range sc.Prerequisites.Apps {
+		if declared != "" && !tmpl.IsTemplated(declared) {
+			out = append(out, declared)
+		}
+	}
+	return out
+}
+
 // Up activates a scenario by installing all its components. When force is true
 // an already-active scenario is reinstalled (components are helm upgrade
 // --install / kubectl apply, so this converges) instead of returning
@@ -308,13 +404,16 @@ func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 	e.resolvedParams = params
 	defer func() { e.resolvedParams = nil }()
 
-	fmt.Fprintf(e.output(), "Activating scenario: %s\n", s.DisplayName)
-	fmt.Fprintf(e.output(), "  %s\n\n", s.Description)
+	// Every string an author writes is a template, including the ones that are
+	// only ever printed. Resolving the command but not the label beside it left
+	// activation showing raw {{.WorkloadName}} against a fully expanded URL.
+	fmt.Fprintf(e.output(), "Activating scenario: %s\n", e.resolveTemplate(s.DisplayName))
+	fmt.Fprintf(e.output(), "  %s\n\n", e.resolveTemplate(s.Description))
 
 	if len(s.Objectives) > 0 {
 		fmt.Fprintln(e.output(), "Objectives:")
 		for _, o := range s.Objectives {
-			fmt.Fprintf(e.output(), "  - %s\n", o)
+			fmt.Fprintf(e.output(), "  - %s\n", e.resolveTemplate(o))
 		}
 		fmt.Fprintln(e.output())
 	}
@@ -340,7 +439,7 @@ func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 		if st.Name != "" {
 			fmt.Fprintf(e.output(), "=== Stage: %s ===\n", st.Name)
 			if st.Description != "" {
-				fmt.Fprintf(e.output(), "    %s\n", st.Description)
+				fmt.Fprintf(e.output(), "    %s\n", e.resolveTemplate(st.Description))
 			}
 		}
 		ev := extension.Event{Scenario: s.Name, Stage: st.Name}
@@ -360,7 +459,7 @@ func (e *Engine) Up(name string, exec CommandExecutor, force bool) error {
 	}
 
 	// Mark as active
-	if err := e.markActive(name); err != nil {
+	if err := e.markActive(name, params); err != nil {
 		return fmt.Errorf("marking scenario active: %w", err)
 	}
 
@@ -388,6 +487,13 @@ func (e *Engine) Verify(ctx context.Context, name string, runner *checks.Runner)
 	}
 
 	runner.ScriptDir = s.Dir
+
+	// Grade against the values the scenario was activated with, falling back to
+	// its declared defaults. Without this a check's {{.Param}} stayed literal and
+	// a threshold could not be expressed as a knob at all.
+	defer e.withActivationWorkload(name)()
+	defer e.withActivationParams(s)()
+
 	resolved := make([]checks.Check, len(s.Checks))
 	for i, c := range s.Checks {
 		resolved[i] = e.resolveCheck(c)
@@ -426,16 +532,28 @@ func (e *Engine) ResolveCheck(c checks.Check) checks.Check {
 }
 
 func (e *Engine) resolveCheck(c checks.Check) checks.Check {
-	c.URL = e.resolveTemplate(c.URL)
-	c.BodyContains = e.resolveTemplate(c.BodyContains)
-	c.Resource = e.resolveTemplate(c.Resource)
-	c.Namespace = e.resolveTemplate(c.Namespace)
-	c.JSONPath = e.resolveTemplate(c.JSONPath)
-	c.Query = e.resolveTemplate(c.Query)
-	c.Value = e.resolveTemplate(c.Value)
+	return resolveCheckWith(c, e.resolveTemplate)
+}
+
+// ResolveCheckWithParams expands a check for display against the given parameter
+// values. The checks tab shows a check's resource, query and remediation
+// verbatim, so an unresolved one hands the reader a namespace and a command that
+// do not exist.
+func (e *Engine) ResolveCheckWithParams(c checks.Check, params map[string]string) checks.Check {
+	return resolveCheckWith(c, func(in string) string { return e.resolveTemplateWith(in, params) })
+}
+
+func resolveCheckWith(c checks.Check, resolve func(string) string) checks.Check {
+	c.URL = resolve(c.URL)
+	c.BodyContains = resolve(c.BodyContains)
+	c.Resource = resolve(c.Resource)
+	c.Namespace = resolve(c.Namespace)
+	c.JSONPath = resolve(c.JSONPath)
+	c.Query = resolve(c.Query)
+	c.Value = resolve(c.Value)
 	// Remediation is shown to the user verbatim, so an unresolved
 	// {{.MonitoringNamespace}} in it becomes a command they cannot run.
-	c.Remediation = e.resolveTemplate(c.Remediation)
+	c.Remediation = resolve(c.Remediation)
 	return c
 }
 
@@ -451,6 +569,12 @@ func (e *Engine) Down(name string, exec CommandExecutor) error {
 	}
 
 	fmt.Fprintf(e.output(), "Deactivating scenario: %s\n\n", s.DisplayName)
+
+	// The same parameter values and the same workload the install rendered
+	// with, so a manifest that carries a {{.Param}} or a {{.WorkloadNamespace}}
+	// is deleted by the name it was created under.
+	defer e.withActivationWorkload(name)()
+	defer e.withActivationParams(s)()
 
 	// Uninstall in reverse order (across all stages)
 	all := s.AllComponents()
@@ -472,13 +596,24 @@ func (e *Engine) Down(name string, exec CommandExecutor) error {
 func (e *Engine) Status() []ScenarioStatus {
 	var result []ScenarioStatus
 	for _, s := range e.scenarios {
+		// Resolved, not raw: the catalog is the first thing a user reads, and an
+		// unresolved description told them the scenario was about
+		// "{{.WorkloadName}}".
+		bound, app := e.Workload, e.ActiveApp(s.Name)
+		if app == "" {
+			app = e.Workload.Name
+		} else if cfg, err := config.LoadAppConfig(e.ProjectRoot, app); err == nil {
+			bound = cfg.Workload()
+		}
+		resolve := func(in string) string { return tmpl.Expand(in, e.templateContextFor(bound), e.resolvedParams) }
 		result = append(result, ScenarioStatus{
 			Name:        s.Name,
-			DisplayName: s.DisplayName,
-			Description: s.Description,
+			DisplayName: resolve(s.DisplayName),
+			Description: resolve(s.Description),
 			Category:    s.Category,
 			Runtimes:    s.Runtimes,
 			Active:      e.isActive(s.Name),
+			App:         app,
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -517,6 +652,11 @@ type ScenarioStatus struct {
 	Category    string   `json:"category"`
 	Runtimes    []string `json:"runtimes,omitempty"`
 	Active      bool     `json:"active"`
+	// App is the workload this scenario runs against: the one it was activated
+	// against while it is active, otherwise the current binding. The catalog
+	// shows it, because the same scenario against a different app is a different
+	// run.
+	App string `json:"app,omitempty"`
 }
 
 func (e *Engine) scan() {
@@ -1073,7 +1213,14 @@ func (e *Engine) resolveTemplateWith(input string, extra map[string]string) stri
 // run-time expansion goes through it, so the variables content may use are the
 // same ones the catalog validator accepts.
 func (e *Engine) templateContext() tmpl.Context {
-	w := e.Workload.WithDefaults()
+	return e.templateContextFor(e.Workload)
+}
+
+// templateContextFor is the same context bound to an explicit workload, for the
+// read paths that describe a scenario running against an app other than the one
+// currently bound — an active scenario keeps the app it was activated against.
+func (e *Engine) templateContextFor(bound workload.Workload) tmpl.Context {
+	w := bound.WithDefaults()
 	return tmpl.Context{
 		DomainSuffix:        e.DomainSuffix,
 		MonitoringNamespace: e.MonitoringNamespace,
@@ -1167,12 +1314,60 @@ func (e *Engine) isActive(name string) bool {
 	return err == nil
 }
 
-func (e *Engine) markActive(name string) error {
+// markActive records the activation, including the parameter values it ran with.
+//
+// Verify resolves a check's {{.Param}} against these, so a scenario activated
+// with --set is graded against what it was actually given rather than against
+// the declared defaults. The file used to hold the literal text "active"; that
+// form is still read (as "no parameters"), so an activation from an older build
+// keeps working.
+func (e *Engine) markActive(name string, params map[string]string) error {
 	if err := os.MkdirAll(e.stateDir, 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(e.stateDir, name+".active"), []byte("active"), 0644)
+	// Only write the structured marker when there is something to record, so a
+	// bare activation still leaves the plain "active" file older builds read.
+	body := []byte("active")
+	if len(params) > 0 || e.Workload.Name != "" {
+		if encoded, err := json.Marshal(activationState{Params: params, App: e.Workload.Name}); err == nil {
+			body = encoded
+		}
+	}
+	return os.WriteFile(filepath.Join(e.stateDir, name+".active"), body, 0644)
 }
+
+// activationState is the on-disk shape of an .active marker.
+type activationState struct {
+	Params map[string]string `json:"params"`
+	// App is the workload the scenario was activated against. Verify and Down
+	// run long after Up and in a different process, so the binding cannot come
+	// from ambient config: a scenario brought up against java-api was otherwise
+	// graded and torn down against whatever APP_NAME happened to say.
+	App string `json:"app,omitempty"`
+}
+
+// activationRecord returns what a scenario was activated with, or the zero value
+// when it is inactive or was marked by an older build (the literal "active").
+func (e *Engine) activationRecord(name string) activationState {
+	data, err := os.ReadFile(filepath.Join(e.stateDir, name+".active"))
+	if err != nil {
+		return activationState{}
+	}
+	var st activationState
+	if err := json.Unmarshal(data, &st); err != nil {
+		return activationState{} // the legacy "active" marker
+	}
+	return st
+}
+
+// activeParams returns the parameters a scenario was activated with, or nil.
+func (e *Engine) activeParams(name string) map[string]string {
+	return e.activationRecord(name).Params
+}
+
+// ActiveApp returns the app a scenario was activated against, or "" when it is
+// inactive or predates the binding being recorded.
+func (e *Engine) ActiveApp(name string) string { return e.activationRecord(name).App }
 
 func (e *Engine) markInactive(name string) {
 	// Best-effort: a missing marker already means inactive.
@@ -1190,7 +1385,7 @@ func (e *Engine) printExploreHints(s *Scenario) {
 		fmt.Fprintln(e.output(), "\nURLs:")
 		for _, u := range s.Explore.URLs {
 			resolved := e.resolveTemplate(u.URL)
-			fmt.Fprintf(e.output(), "  %-30s %s\n", u.Label+":", resolved)
+			fmt.Fprintf(e.output(), "  %-30s %s\n", e.resolveTemplate(u.Label)+":", resolved)
 		}
 	}
 
@@ -1198,7 +1393,7 @@ func (e *Engine) printExploreHints(s *Scenario) {
 		fmt.Fprintln(e.output(), "\nCommands to try:")
 		for _, c := range s.Explore.Commands {
 			resolved := e.resolveTemplate(c.Command)
-			fmt.Fprintf(e.output(), "  %s:\n    %s\n", c.Label, resolved)
+			fmt.Fprintf(e.output(), "  %s:\n    %s\n", e.resolveTemplate(c.Label), resolved)
 		}
 	}
 
@@ -1257,4 +1452,18 @@ func manifestHasExplicitNamespace(manifest string) bool {
 	}
 
 	return false
+}
+
+// Clone returns a shallow copy that shares the scanned content but owns its own
+// binding and per-activation state.
+//
+// The API server holds one engine and serves many requests from it. An
+// activation that rebound the shared engine would be seen by every concurrent
+// read — so a caller that needs a different binding takes a clone instead, and
+// nothing else in the process observes it. The scenarios map and stateDir are
+// shared deliberately: content is read-only after scan, and activation state
+// lives on disk.
+func (e *Engine) Clone() *Engine {
+	c := *e
+	return &c
 }

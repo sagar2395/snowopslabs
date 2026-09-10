@@ -2,11 +2,15 @@
 package scenario
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/sagar2395/snowopslabs/internal/workload"
 )
 
 // createPlatformDir creates a minimal platform/<category>/ stub for preflight tests.
@@ -218,7 +222,7 @@ func TestIsActive_MarkActive(t *testing.T) {
 	}
 
 	// Mark active
-	err := engine.markActive("test-scenario")
+	err := engine.markActive("test-scenario", nil)
 	if err != nil {
 		t.Fatalf("markActive: %v", err)
 	}
@@ -469,7 +473,7 @@ func TestUp_AlreadyActive_ReturnsErrAlreadyActive(t *testing.T) {
 	engine := NewEngine(root, "k3d.local", "k3d")
 
 	// Mark it active manually
-	if err := engine.markActive("minimal-scenario"); err != nil {
+	if err := engine.markActive("minimal-scenario", nil); err != nil {
 		t.Fatalf("markActive: %v", err)
 	}
 
@@ -533,6 +537,51 @@ func TestCatalogOrder_Deterministic(t *testing.T) {
 			if status[j].Name != want {
 				t.Fatalf("Status[%d] on iteration %d: got %q, want %q", j, i, status[j].Name, want)
 			}
+		}
+	}
+}
+
+// Activation prints author-written text — the description, the objectives, the
+// stage headings and the labels beside each URL and command. Every one of those
+// is a template, and a label showing raw {{.WorkloadName}} next to a fully
+// expanded URL is how the bug this guards against looked.
+func TestActivationOutputResolvesAuthorText(t *testing.T) {
+	e := &Engine{
+		DomainSuffix: "k3d.local",
+		Workload:     workload.Workload{Name: "java-api", Namespace: "java-api"},
+	}
+	var out bytes.Buffer
+	e.SetOutput(&out)
+
+	s := &Scenario{
+		Name:        "templated",
+		DisplayName: "Promote {{.WorkloadName}}",
+		Description: "Build {{.WorkloadName}} images.",
+		Objectives:  []string{"Ship {{.WorkloadName}} to prod"},
+		Explore: Explore{
+			URLs: []ExploreURL{{
+				Label: "{{.WorkloadName}} /version",
+				URL:   "http://{{.WorkloadName}}.{{.DomainSuffix}}/version",
+			}},
+			Commands: []ExploreCommand{{
+				Label:   "Roll {{.WorkloadName}} forward",
+				Command: "kubectl -n {{.WorkloadNamespace}} rollout status deploy/{{.WorkloadName}}",
+			}},
+			Tips: []string{"{{.WorkloadName}} is the bound workload"},
+		},
+	}
+
+	e.printExploreHints(s)
+	fmt.Fprintf(e.output(), "%s\n%s\n%s\n", e.resolveTemplate(s.DisplayName),
+		e.resolveTemplate(s.Description), e.resolveTemplate(s.Objectives[0]))
+
+	got := out.String()
+	if strings.Contains(got, "{{") {
+		t.Errorf("activation output still carries raw template syntax:\n%s", got)
+	}
+	for _, want := range []string{"java-api /version", "Roll java-api forward", "Promote java-api"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in output:\n%s", want, got)
 		}
 	}
 }
