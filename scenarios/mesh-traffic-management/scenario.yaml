@@ -2,7 +2,7 @@ apiVersion: scenario.snowops.net/v2
 name: mesh-traffic-management
 verified: true
 displayName: "Mesh Traffic Management"
-description: "Istio canary release for {{.WorkloadName}}: a 90/10 weighted split between v1 and v2, mesh-level latency fault injection, and STRICT mTLS on the canary workload. Watch the split and faults in mesh telemetry."
+description: "Run a canary release for {{.WorkloadName}} on Istio. labctl stages two versions behind one Service and a meshed load client; you write the routing. Shift a 90/10 weighted split, rehearse a slow release with a header-matched latency fault, and lock the canary down with STRICT mTLS — then prove each one from mesh telemetry rather than from the fact that a CR exists."
 category: networking
 prerequisites:
   platform:
@@ -16,29 +16,39 @@ runtimes:
   - kind
 
 objectives:
-  - "Route traffic 90/10 across two {{.WorkloadName}} versions with an Istio VirtualService"
-  - "Inject mesh-level latency without touching the app, and observe the impact"
-  - "Enforce STRICT mTLS between meshed workloads and verify it"
+  - "Apply a VirtualService that sends 10% of canary traffic to v2, and confirm the split in mesh telemetry"
+  - "Inject a mesh-level latency fault for opted-in requests only, without touching the application"
+  - "Enforce STRICT mTLS on the canary and prove an unmeshed client is refused"
 
 stages:
-  - name: canary-rollout
-    description: Deploy v1 + v2, split 90/10, and require mTLS
+  - name: mesh-enrolment
+    description: Enrol the workload namespace so pods get a sidecar
+    components:
+      - name: enrol
+        type: script
+        script: scripts/enrol-mesh.sh
+        uninstallScript: scripts/unenrol-mesh.sh
+
+  - name: canary-workloads
+    description: Two versions behind one Service, plus the subsets a route can target
     components:
       - name: canary
         type: manifest
         path: manifests/canary.yaml
         namespace: "{{.WorkloadNamespace}}"
 
-  - name: fault-injection
-    description: Add a mesh-level latency fault to a fraction of requests
+  - name: canary-client
+    description: A meshed load client so the mesh has traffic to shape and report
     components:
-      - name: latency-fault
+      - name: client
         type: manifest
-        path: manifests/fault-injection.yaml
+        path: manifests/canary-client.yaml
         namespace: "{{.WorkloadNamespace}}"
+      - name: mesh-dashboard
+        type: grafana-dashboard
+        path: dashboards/
+        namespace: "{{.MonitoringNamespace}}"
 
-# These assume the mesh provider is Istio (the default). Checks read CR/Deployment
-# state via jsonpath — no text scraping.
 checks:
   - name: istiod-ready
     type: kubectl
@@ -47,69 +57,93 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "Istio is a platform prerequisite this scenario does not install. Bring it up: labctl platform up mesh/istio"
 
-  - name: canary-v1-ready
-    type: kubectl
-    resource: deployment/{{.WorkloadName}}-v1
-    namespace: "{{.WorkloadNamespace}}"
-    jsonpath: "{.status.readyReplicas}"
+  - name: sidecars-injected
+    type: script
+    script: checks/sidecars-injected.sh
+    remediation: "Canary pods have no istio-proxy, so the mesh cannot see their traffic and every routing rule is inert. Re-run 'labctl scenario up mesh-traffic-management --force' to re-enrol the namespace."
+
+  # The two split checks are the two bounds of one band, so each names a
+  # distinct real failure: rolled back too far, and not routed at all.
+  - name: canary-share-above-floor
+    type: promql
+    query: "(sum(rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\",destination_version=\"v2\"}[5m])) / sum(rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\"}[5m]))) or vector(0)"
+    operator: ">"
+    value: "0.02"
+    pending: true
+    remediation: "v2 is serving almost nothing. Either no traffic has reached the canary yet — give the load client a minute — or the weights were shifted all the way back to v1. A canary at weight 0 is a rollback, not a release."
+
+  - name: canary-is-a-weighted-minority
+    type: promql
+    query: "sum(rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\",destination_version=\"v2\"}[5m])) / sum(rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\"}[5m]))"
+    operator: "<"
+    value: "0.30"
+    pending: true
+    remediation: "v2 is taking too large a share. Without a VirtualService the Service round-robins both subsets at roughly 50% — apply the weighted route, or lower v2's weight and re-apply."
+
+  # reporter="source", unlike the split checks above: Istio applies a fault
+  # delay at the sending proxy, so the receiving side never observes it and a
+  # destination-reported quantile stays flat while the fault is active.
+  - name: latency-fault-observed
+    type: promql
+    query: "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"source\",destination_version=\"v2\"}[5m])))"
     operator: ">="
-    value: "1"
+    value: "1500"
+    pending: true
+    remediation: "Requests carrying 'x-canary: always' are not being delayed. Apply manifests/fault-injection.yaml from the snippets — and remember it replaces the VirtualService, so the header-matched route must sit above the weighted one."
 
-  - name: canary-v2-ready
-    type: kubectl
-    resource: deployment/{{.WorkloadName}}-v2
-    namespace: "{{.WorkloadNamespace}}"
-    jsonpath: "{.status.readyReplicas}"
-    operator: ">="
-    value: "1"
-
-  - name: virtualservice-present
-    type: kubectl
-    resource: virtualservice/{{.WorkloadName}}-canary
-    namespace: "{{.WorkloadNamespace}}"
-
-  - name: mtls-strict-present
-    type: kubectl
-    resource: peerauthentication/{{.WorkloadName}}-mtls
-    namespace: "{{.WorkloadNamespace}}"
+  - name: mtls-rejects-plaintext
+    type: script
+    script: checks/mtls-rejects-plaintext.sh
+    # The probe is a Job: scheduling, image pull and k6 startup do not fit the
+    # runner's 30s default, and being killed reads as a failure that is not one.
+    timeoutSeconds: 120
+    pending: true
+    remediation: "An unmeshed client was still served. Apply the STRICT PeerAuthentication from 'labctl scenario info mesh-traffic-management'."
 
 references:
   - label: "Istio — Traffic management (VirtualService & DestinationRule)"
     url: "https://istio.io/latest/docs/concepts/traffic-management/"
-    note: "The concepts behind manifests/canary.yaml: subsets, weighted routes, and how the 90/10 split is expressed."
+    note: "Subsets, weighted routes, and how first-match ordering in http[] decides which rule wins."
   - label: "Istio — Fault injection"
     url: "https://istio.io/latest/docs/tasks/traffic-management/fault-injection/"
-    note: "Mesh-level delay/abort faults, exactly what the fault-injection stage applies to the v2 subset."
+    note: "Why a delay attaches to a whole HTTPRoute, which is what forces the header-matched route in this scenario."
   - label: "Istio — Mutual TLS (PeerAuthentication)"
     url: "https://istio.io/latest/docs/tasks/security/authentication/mtls-migration/"
-    note: "Why STRICT mode rejects plaintext sidecar-less clients."
+    note: "PERMISSIVE to STRICT migration, and why a sidecar-less client is refused under STRICT."
 
 snippets:
-  - label: "Canary VirtualService + DestinationRule (90/10 v1/v2 split)"
-    description: "The weighted route this scenario installs. Shift spec.http[0].route weights and re-apply to promote the canary."
-    path: manifests/canary.yaml
-  - label: "Mesh-level latency fault on the v2 subset"
-    description: "Adds a fixed delay to v2 without touching the app — applied by the fault-injection stage."
+  - label: "1. Canary VirtualService — the 90/10 weighted split"
+    description: "APPLY THIS ONE YOURSELF. Nothing stages this; until it exists the Service round-robins both versions evenly and the subsets go unused."
+    path: manifests/virtualservice.yaml
+  - label: "2. Latency fault for opted-in requests"
+    description: "APPLY THIS ONE YOURSELF. Replaces the VirtualService above, adding a delayed route matched on 'x-canary: always'."
     path: manifests/fault-injection.yaml
+  - label: "3. STRICT mTLS on the canary"
+    description: "APPLY THIS ONE YOURSELF. After this, only clients with a sidecar identity can reach the canary pods."
+    path: manifests/peerauthentication.yaml
 
 explore:
   urls:
-    - label: "Grafana — {{.WorkloadName}} requests (v1/v2 traffic split)"
-      url: "http://grafana.{{.DomainSuffix}}/d/app-requests"
+    - label: "Grafana — mesh traffic: split, latency and mTLS coverage"
+      url: "http://grafana.{{.DomainSuffix}}/d/mesh-traffic"
   commands:
-    - label: "Send 20 requests and watch the 90/10 split by version"
-      command: "for i in $(seq 1 20); do kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}}-v1 -c {{.WorkloadName}} -- wget -qO- http://{{.WorkloadName}}-canary/version 2>/dev/null; done | sort | uniq -c"
-    - label: "Observe the injected latency (v2 path delayed)"
-      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}}-v1 -c {{.WorkloadName}} -- sh -c 'time wget -qO- http://{{.WorkloadName}}-canary/health'"
-    - label: "Verify mTLS is STRICT on the canary workload"
+    - label: "Apply the weighted split (do this first — nothing else stages it)"
+      command: "kubectl apply -f scenarios/mesh-traffic-management/manifests/virtualservice.yaml"
+    - label: "Which version is serving? The staged client is already generating load"
+      command: "kubectl -n {{.WorkloadNamespace}} logs deploy/{{.WorkloadName}}-v2 -c {{.WorkloadName}} --tail=5"
+    - label: "Observed split by version, straight from mesh telemetry"
+      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}}-canary-client -c istio-proxy -- curl -s localhost:15020/stats/prometheus | grep istio_requests_total | grep {{.WorkloadName}}-canary"
+    - label: "Inspect the route you applied"
+      command: "kubectl -n {{.WorkloadNamespace}} get virtualservice {{.WorkloadName}}-canary -o yaml"
+    - label: "Confirm mTLS mode once you have applied it"
       command: "kubectl -n {{.WorkloadNamespace}} get peerauthentication {{.WorkloadName}}-mtls -o jsonpath='{.spec.mtls.mode}{\"\\n\"}'"
-    - label: "Inspect the weighted route"
-      command: "kubectl -n {{.WorkloadNamespace}} get virtualservice {{.WorkloadName}}-canary -o jsonpath='{.spec.http[0].route}{\"\\n\"}'"
   tips:
-    - "Subsets v1/v2 are selected by the pod label 'version'; the DestinationRule maps them."
-    - "Grafana → the linked {{.WorkloadName}} requests dashboard: with the 90/10 split v2 should carry ~10% of requests. Shift the VirtualService weights, re-apply, and watch the balance move."
-    - "Shift the split by editing spec.http[0].route weights and re-applying — canary promotion."
-    - "The fault-injection stage adds a fixed delay to the v2 subset; mesh-level, no app change."
-    - "STRICT mTLS means plaintext clients without a sidecar are rejected — that is the security win."
+    - "Start by applying the VirtualService. Without it the two subsets are defined but unreferenced, and the Service load-balances ~50/50 — which is why the split check fails before you do anything."
+    - "Promote the canary by shifting the weights and re-applying: 90/10 → 50/50 → 0/100. The weights must sum to 100."
+    - "Istio takes the first matching entry in spec.http, so a header-matched route has to sit above the catch-all weighted route or it never fires."
+    - "The fault delays only requests carrying 'x-canary: always'. The staged client sends one in twenty, which is what makes the v2 p99 climb while the median stays fast."
+    - "STRICT mTLS refuses clients that have no sidecar. The meshed load client keeps working; the check's probe pod, which opts out of injection, does not."
+    - "If nothing routes and no mesh metrics appear, check the namespace is enrolled: kubectl get ns {{.WorkloadNamespace}} --show-labels"
     - "This scenario targets Istio (the default mesh provider); Linkerd uses different CRDs."

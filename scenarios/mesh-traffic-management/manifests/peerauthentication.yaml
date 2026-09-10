@@ -1,0 +1,20 @@
+# APPLY THIS ONE YOURSELF
+#
+# STRICT mode means the canary pods accept mTLS connections only. A client with
+# no sidecar has no workload identity to present, so its plaintext connection is
+# refused at the proxy — before it ever reaches the application.
+#
+# The meshed load client keeps working after you apply this, because it is in
+# the mesh. That contrast is the lesson: enrolment, not network position, is
+# what grants access.
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: "{{.WorkloadName}}-mtls"
+  namespace: "{{.WorkloadNamespace}}"
+spec:
+  selector:
+    matchLabels:
+      app: "{{.WorkloadName}}-canary"
+  mtls:
+    mode: STRICT

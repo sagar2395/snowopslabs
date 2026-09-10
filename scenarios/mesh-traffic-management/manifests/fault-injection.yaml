@@ -1,7 +1,16 @@
-# Stage 2: re-applies the canary VirtualService (same name) with a mesh-level
-# latency fault on the v2 subset — a fixed 2s delay on every request routed to
-# v2. This is injected by the sidecar proxies, not the app, demonstrating that
-# you can rehearse slow-dependency incidents without changing code.
+# APPLY THIS ONE YOURSELF
+#
+# Re-applies the canary VirtualService (same name — this replaces it) with a
+# delay on requests that carry `x-canary: always`.
+#
+# The delay is attached to a header-matched route, not to the weighted one,
+# because an Istio fault applies to a whole HTTPRoute: inside a single weighted
+# route there is no way to slow one destination and not the other. Matching the
+# header first gives the canary traffic a route of its own — which is also how
+# you would rehearse a slow release against opted-in testers only.
+#
+# Order matters. Istio evaluates http[] top down and takes the first match, so
+# the header route must come before the catch-all weighted route.
 apiVersion: networking.istio.io/v1beta1
 kind: VirtualService
 metadata:
@@ -12,8 +21,9 @@ spec:
     - "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
   http:
     - match:
-        - sourceLabels:
-            version: v2
+        - headers:
+            x-canary:
+              exact: always
       fault:
         delay:
           percentage:

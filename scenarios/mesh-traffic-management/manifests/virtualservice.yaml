@@ -1,0 +1,31 @@
+# APPLY THIS ONE YOURSELF
+#
+# The weighted route is the whole point of a canary: it is what decides that
+# 10% of requests reach v2 while the rest stay on v1. Nothing
+# else in this scenario installs it, and until it exists the Service simply
+# load-balances evenly across both Deployments — the subsets are defined but
+# unused.
+#
+#   kubectl apply -f - <<'YAML'
+#   ...this manifest...
+#   YAML
+#
+# Promote the canary by shifting the weights and re-applying. They must sum to 100.
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: "{{.WorkloadName}}-canary"
+  namespace: "{{.WorkloadNamespace}}"
+spec:
+  hosts:
+    - "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
+  http:
+    - route:
+        - destination:
+            host: "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
+            subset: v1
+          weight: 90
+        - destination:
+            host: "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
+            subset: v2
+          weight: 10
