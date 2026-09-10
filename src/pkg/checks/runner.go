@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -102,6 +103,16 @@ func (r *Runner) Run(ctx context.Context, c Check) Result {
 		}
 	}
 
+	// A check killed by its own deadline surfaces the child process's raw death
+	// ("kubectl: signal: killed"), which reads as a verdict about the cluster
+	// when it is nothing of the sort. Say what actually happened and which
+	// field moves the deadline.
+	if res.Error != "" && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		res.Error = fmt.Sprintf("timed out after %s, so this is not a result about "+
+			"the cluster — the check never finished. Re-run it; if it times out every "+
+			"time, the check needs a larger timeoutSeconds.", timeout)
+	}
+
 	if res.Attempts == 0 {
 		res.Attempts = 1
 	}
@@ -191,29 +202,36 @@ func (r *Runner) runKubectl(ctx context.Context, c Check) Result {
 	return res
 }
 
-func (r *Runner) runPromQL(ctx context.Context, c Check) Result {
-	res := Result{Name: c.Name, Type: c.Type, Want: fmt.Sprintf("%s %s", c.Operator, c.Value)}
-	if r.PrometheusURL == "" {
-		res.Error = "no Prometheus URL configured (set PROMETHEUS_URL)"
-		return res
-	}
+// ErrNoSamples reports that a query was answered but matched no series. It is
+// a legitimate outcome, not a failure: a workload that has never returned a 5xx
+// has no 5xx series at all.
+var ErrNoSamples = errors.New("no samples")
 
-	endpoint := strings.TrimSuffix(r.PrometheusURL, "/") + "/api/v1/query?query=" + url.QueryEscape(c.Query)
+// QueryScalar runs an instant PromQL query and returns the first sample's value
+// as Prometheus rendered it. Callers that need a number parse it themselves —
+// the string is kept so a check reports exactly what Prometheus said.
+//
+// It is exported because a check is not the only thing that reads a number out
+// of Prometheus: the comparison harness measures a workload with the same
+// queries a check would use, and a second HTTP client would be a second place
+// for the endpoint, decoding and no-samples handling to drift.
+func (r *Runner) QueryScalar(ctx context.Context, query string) (string, error) {
+	if r.PrometheusURL == "" {
+		return "", errors.New("no Prometheus URL configured (set PROMETHEUS_URL)")
+	}
+	endpoint := strings.TrimSuffix(r.PrometheusURL, "/") + "/api/v1/query?query=" + url.QueryEscape(query)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		res.Error = err.Error()
-		return res
+		return "", err
 	}
 	resp, err := r.HTTPClient.Do(req)
 	if err != nil {
-		res.Error = err.Error()
-		return res
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		res.Error = fmt.Sprintf("prometheus returned status %d", resp.StatusCode)
-		return res
+		return "", fmt.Errorf("prometheus returned status %d", resp.StatusCode)
 	}
 
 	var pr struct {
@@ -225,25 +243,34 @@ func (r *Runner) runPromQL(ctx context.Context, c Check) Result {
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
-		res.Error = fmt.Sprintf("decoding prometheus response: %v", err)
-		return res
+		return "", fmt.Errorf("decoding prometheus response: %w", err)
 	}
 	if pr.Status != "success" {
-		res.Error = fmt.Sprintf("prometheus query status %q", pr.Status)
-		return res
+		return "", fmt.Errorf("prometheus query status %q", pr.Status)
 	}
 	if len(pr.Data.Result) == 0 {
-		res.Got = "no samples"
-		return res
+		return "", ErrNoSamples
 	}
 	v := pr.Data.Result[0].Value
 	if len(v) < 2 {
-		res.Error = "malformed prometheus sample"
-		return res
+		return "", errors.New("malformed prometheus sample")
 	}
 	got, ok := v[1].(string)
 	if !ok {
-		res.Error = "malformed prometheus sample value"
+		return "", errors.New("malformed prometheus sample value")
+	}
+	return got, nil
+}
+
+func (r *Runner) runPromQL(ctx context.Context, c Check) Result {
+	res := Result{Name: c.Name, Type: c.Type, Want: fmt.Sprintf("%s %s", c.Operator, c.Value)}
+	got, err := r.QueryScalar(ctx, c.Query)
+	switch {
+	case errors.Is(err, ErrNoSamples):
+		res.Got = "no samples"
+		return res
+	case err != nil:
+		res.Error = err.Error()
 		return res
 	}
 	res.Got = got
