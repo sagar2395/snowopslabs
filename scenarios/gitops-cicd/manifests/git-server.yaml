@@ -58,6 +58,42 @@ data:
       ports:
         - port: 80
           targetPort: 80
+  broken-deployment.yaml: |
+    ## Seeded already broken, and the repair belongs in Git.
+    ##
+    ## The image tag does not exist, so the pods sit in ImagePullBackOff and the
+    ## rollout never completes. progressDeadlineSeconds is 60 rather than the
+    ## 600 default so ArgoCD reports Degraded within a minute instead of ten —
+    ## a drill nobody waits out teaches nothing.
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: gitops-broken
+      labels:
+        app: gitops-broken
+    spec:
+      replicas: 1
+      progressDeadlineSeconds: 60
+      selector:
+        matchLabels:
+          app: gitops-broken
+      template:
+        metadata:
+          labels:
+            app: gitops-broken
+        spec:
+          containers:
+            - name: web
+              image: nginx:1.27.3-alpine-THIS-TAG-DOES-NOT-EXIST
+              ports:
+                - containerPort: 80
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 16Mi
+                limits:
+                  cpu: 100m
+                  memory: 64Mi
 ---
 ## The repo outlives the pod on purpose. On an emptyDir, any restart — a scale
 ## to zero, an eviction, a node reboot — silently discards every commit the
@@ -110,13 +146,14 @@ spec:
               if [ -d /srv/git/platform.git ]; then
                 echo "repo already seeded"; exit 0
               fi
-              mkdir -p /tmp/seed/demo
+              mkdir -p /tmp/seed/demo /tmp/seed/broken
               cp /seed/deployment.yaml /seed/service.yaml /tmp/seed/demo/
+              cp /seed/broken-deployment.yaml /tmp/seed/broken/deployment.yaml
               cd /tmp/seed
               git init -q -b main .
               git -c user.email=lab@snowops.local -c user.name=SnowOps add -A
               git -c user.email=lab@snowops.local -c user.name=SnowOps \
-                commit -q -m "seed: gitops-demo at nginx:1.27.3-alpine, 2 replicas"
+                commit -q -m "seed: gitops-demo at nginx:1.27.3-alpine, 2 replicas; gitops-broken awaiting repair"
               git clone -q --bare /tmp/seed /srv/git/platform.git
               ## A bare repo still refuses a push to its checked-out HEAD unless
               ## told not to care.

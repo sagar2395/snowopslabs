@@ -2,7 +2,7 @@ apiVersion: scenario.snowops.net/v2
 name: gitops-cicd
 verified: true
 displayName: "GitOps & CI/CD (ArgoCD)"
-description: "Run a real GitOps loop against a Git repository you can actually push to. The lab serves its own repo in-cluster; ArgoCD reconciles it. You clone it, change the declared image and replica count, push, and watch the cluster follow — then prove the two halves of the contract that make GitOps different from kubectl: self-heal reverts a change you make by hand, and prune deletes a resource you remove from Git."
+description: "Run a real GitOps loop against a Git repository you can actually push to. The lab serves its own repo in-cluster; ArgoCD reconciles it. You clone it, change the declared image and replica count, push, and watch the cluster follow — then prove the three things that make GitOps different from kubectl: self-heal reverts a change you make by hand, prune deletes a resource you remove from Git, and a release that syncs perfectly can still be broken — the lab ships one that is, and you repair it in Git."
 category: delivery
 prerequisites:
   platform:
@@ -95,7 +95,7 @@ checks:
     type: script
     script: checks/check-sync-healthy.sh
     timeoutSeconds: 60
-    remediation: "ArgoCD is not reconciling. Read the Application's own complaint first: kubectl -n argocd get application gitops-demo -o jsonpath='{.status.conditions}'. A ComparisonError points at the source (repoURL, targetRevision or path); a Degraded health points at the manifests in Git."
+    remediation: "ArgoCD is not reconciling gitops-demo. If you have just pushed, this is usually the rollout still in flight — re-run with 'labctl scenario verify gitops-cicd --watch'. If it persists, read the Application's own complaint: kubectl -n argocd get application gitops-demo -o jsonpath='{.status.conditions}'. A ComparisonError points at the source (repoURL, targetRevision or path); a Degraded health points at the manifests in Git."
 
   - name: demo-workload-running
     type: kubectl
@@ -128,13 +128,36 @@ checks:
     pending: true
     remediation: "Do the drill: port-forward the git server, clone git://127.0.0.1:9418/platform.git, edit demo/deployment.yaml (bump the image to nginx:1.27.4-alpine and replicas to 3), commit, push, then force a sync. The exact commands are in 'labctl scenario info gitops-cicd'."
 
+  # The three objectives below used to be described and never graded. Each is a
+  # promise the syncPolicy makes, so each is worth proving rather than trusting.
+  - name: self-heal-observed
+    type: script
+    script: checks/self-heal-observed.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "Change the cluster by hand and watch ArgoCD undo you: kubectl -n gitops-demo scale deployment/gitops-demo --replicas=7, then kubectl -n gitops-demo get deployment gitops-demo -w until it returns to what Git declares. You do not need to be quick — the revert is graded from the Deployment's event trail."
+
+  - name: prune-removed-a-resource
+    type: script
+    script: checks/prune-removed-a-resource.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "Remove a resource from Git and watch it leave the cluster: in your clone, git rm demo/service.yaml && git commit -m 'drop the service' && git push origin main, then sync."
+
+  - name: broken-app-repaired
+    type: script
+    script: checks/broken-app-repaired.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "The gitops-broken Application ships Degraded on purpose. Find out why — kubectl -n gitops-broken describe pod -l app=gitops-broken — then repair broken/deployment.yaml in Git, push and sync. selfHeal reverts a 'kubectl set image' within seconds."
+
 snippets:
   - label: "The Application CRD — the whole GitOps contract"
     description: "One object binds a Git path to a cluster destination. automated.selfHeal reverts changes you make with kubectl; automated.prune deletes what you remove from Git. Note there is no resources-finalizer: teardown removes the managed workload explicitly instead, because a finalizer that outlives its controller wedges the namespace forever."
     path: manifests/argocd-applications.yaml
 
   - label: "The in-cluster Git server — why this loop is performable"
-    description: "A git daemon over an emptyDir, seeded from a ConfigMap into a bare repo with receive-pack enabled. This is the source of truth: you can clone it, push to it, and break it. Read the init container to see exactly what the seed commit contains."
+    description: "A git daemon over an PersistentVolumeClaim, seeded from a ConfigMap into a bare repo with receive-pack enabled. This is the source of truth: you can clone it, push to it, and break it. Read the init container to see exactly what the seed commit contains."
     path: manifests/git-server.yaml
 
   - label: "check-git-matches-live.sh — what 'verify' actually grades"
@@ -162,8 +185,20 @@ explore:
       command: "kubectl -n argocd patch application gitops-demo --type merge -p '{\"operation\":{\"initiatedBy\":{\"username\":\"admin\"},\"sync\":{\"revision\":\"main\"}}}'"
     - label: "Watch the cluster follow Git"
       command: "kubectl -n gitops-demo get deployment gitops-demo -o wide -w"
-    - label: "Self-heal: change the cluster by hand and watch ArgoCD revert you"
-      command: "kubectl -n gitops-demo scale deployment/gitops-demo --replicas=7 && sleep 20 && kubectl -n gitops-demo get deployment gitops-demo"
+    - label: "SELF-HEAL: change the cluster by hand and watch ArgoCD revert you"
+      command: "kubectl -n gitops-demo scale deployment/gitops-demo --replicas=7 && kubectl -n gitops-demo get deployment gitops-demo -w"
+    - label: "PRUNE: delete a manifest from Git and watch the Service leave the cluster"
+      command: "git rm demo/service.yaml && git commit -m 'drop the service' && git push origin main"
+    - label: "Confirm the prune landed — the Service should be gone, not merely un-declared"
+      command: "kubectl -n gitops-demo get svc"
+    - label: "DIAGNOSE: gitops-broken ships Degraded on purpose. Start with ArgoCD's own view"
+      command: "kubectl -n argocd get application gitops-broken -o jsonpath='{.status.sync.status} / {.status.health.status}{\"\\n\"}'"
+    - label: "...then ask the pods, which is where the actual reason lives"
+      command: "kubectl -n gitops-broken describe pod -l app=gitops-broken | grep -A3 -i 'failed to pull'"
+    - label: "Try the shortcut and watch it fail — selfHeal reverts a kubectl repair"
+      command: "kubectl -n gitops-broken set image deployment/gitops-broken web=nginx:1.27.3-alpine && kubectl -n gitops-broken get deploy gitops-broken -o jsonpath='{.spec.template.spec.containers[0].image}{\"\\n\"}' && echo 'wait ~20s and run this again'"
+    - label: "REPAIR it where the fix belongs — in Git (run inside the clone)"
+      command: "sed -i.bak 's|nginx:1.27.3-alpine-THIS-TAG-DOES-NOT-EXIST|nginx:1.27.3-alpine|' broken/deployment.yaml && rm -f broken/deployment.yaml.bak && git commit -am 'fix the image tag that never existed' && git push origin main"
     - label: "Why a sync failed"
       command: "kubectl -n argocd get application gitops-demo -o jsonpath='{.status.conditions}'; echo"
   tips:
@@ -172,7 +207,10 @@ explore:
     - "Automated sync polls roughly every 3 minutes. Every step below works if you wait; use the 'Sync now' command when you would rather not."
     - "selfHeal means kubectl is not the way to change anything ArgoCD manages — try it and watch your change disappear. That is the lesson, not a bug."
     - "prune means Git deletions are cluster deletions: remove demo/service.yaml, push, sync, and the Service is gone."
-    - "'verify' grades Git against the cluster, so it stays red until the two agree. 'learner-pushed-a-revision' shows PENDING until you have actually pushed and synced a commit."
+    - "'verify' grades Git against the cluster, so it stays red until the two agree. The four PENDING steps are the four things you have to do: push a change, be reverted by selfHeal, prune a resource, and repair the broken release."
+    - "'Synced' does not mean 'working'. gitops-broken syncs perfectly — its manifests are valid — and is still Degraded, because the image tag in them does not exist. That gap is the most useful thing on the ArgoCD dashboard: sync status is about your pipeline, health status is about your release."
+    - "The self-heal grade does not need you to be quick. It reads the Deployment's event trail for a scale-down FROM a replica count Git never declared, so the revert is provable minutes after it happened."
+    - "The repo carries two paths and two Applications: demo/ (yours to promote) and broken/ (yours to repair). Each Application only watches its own path, so a commit to one leaves the other untouched."
     - "The repo is on a PersistentVolumeClaim, so your commits survive a pod restart or a node reboot. 'scenario down' deletes the gitops namespace and the claim with it, which is when the repo goes back to its seed."
 
 references:

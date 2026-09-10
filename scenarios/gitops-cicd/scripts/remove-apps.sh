@@ -9,14 +9,15 @@ set -euo pipefail
 # forever. So: delete the Application first, while the controller is still
 # alive, then remove what it managed explicitly.
 
-if kubectl -n argocd get application gitops-demo >/dev/null 2>&1; then
-  echo "Removing the gitops-demo Application..."
-  kubectl -n argocd patch application gitops-demo --type merge \
+for app in gitops-demo gitops-broken; do
+  kubectl -n argocd get application "$app" >/dev/null 2>&1 || continue
+  echo "Removing the ${app} Application..."
+  kubectl -n argocd patch application "$app" --type merge \
     -p '{"metadata":{"finalizers":[]}}' >/dev/null 2>&1 || true
-  kubectl -n argocd delete application gitops-demo --ignore-not-found --timeout=60s || true
-fi
+  kubectl -n argocd delete application "$app" --ignore-not-found --timeout=60s || true
+done
 
-echo "Removing the workload the Application managed..."
-kubectl delete namespace gitops-demo --ignore-not-found --timeout=120s || true
+echo "Removing the workloads those Applications managed..."
+kubectl delete namespace gitops-demo gitops-broken --ignore-not-found --timeout=120s || true
 
-echo "✓ gitops-demo removed"
+echo "✓ gitops-demo and gitops-broken removed"
