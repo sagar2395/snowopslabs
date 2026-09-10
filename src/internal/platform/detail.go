@@ -19,6 +19,9 @@ type InterfaceMeta struct {
 	Dependencies []string `json:"dependencies"`
 	Resources    []string `json:"resources"`
 	Chart        string   `json:"chart"`
+	// Namespace the provider's control plane installs into, when it differs
+	// from the provider's own name. See Provider.Namespace.
+	Namespace string `json:"namespace"`
 }
 
 // rawInterface mirrors the _interface.yaml fields we read. Providers declare it
@@ -33,7 +36,8 @@ type rawInterface struct {
 		Dependencies        []string `yaml:"dependencies"`
 	} `yaml:"requires"`
 	Implementations map[string]struct {
-		Chart string `yaml:"chart"`
+		Chart     string `yaml:"chart"`
+		Namespace string `yaml:"namespace"`
 	} `yaml:"implementations"`
 }
 
@@ -64,6 +68,7 @@ func (p *Provider) Meta() InterfaceMeta {
 		}
 		if impl, ok := raw.Implementations[p.Name]; ok {
 			meta.Chart = impl.Chart
+			meta.Namespace = impl.Namespace
 		}
 		return meta
 	}

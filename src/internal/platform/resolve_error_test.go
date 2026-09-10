@@ -138,3 +138,65 @@ func TestProviderHasScript(t *testing.T) {
 		t.Error("HasScript(uninstall.sh) should be false")
 	}
 }
+
+// A provider whose control plane does not live in a namespace named after it
+// must declare that namespace in _interface.yaml. Inferring it from the
+// directory name made istio (istio-system) and nginx (ingress-nginx)
+// permanently undetectable, so `scenario up` warned that an installed
+// prerequisite was missing on a correctly-provisioned cluster.
+func TestProviderNamespace_DeclaredWins(t *testing.T) {
+	tests := []struct {
+		name       string
+		category   string
+		provider   string
+		declaredNS string
+		wantNS     string
+	}{
+		{"declared namespace wins over the provider name", "mesh", "istio", "istio-system", "istio-system"},
+		{"undeclared falls back to the provider name", "mesh", "linkerd", "", "linkerd"},
+		{"declared namespace on an ingress provider", "ingress", "nginx", "ingress-nginx", "ingress-nginx"},
+		// Monitoring-family providers share one namespace, so a stray
+		// declaration must not split them apart.
+		{"monitoring family ignores a declaration", "monitoring", "grafana", "grafana-own", "monitoring"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := Provider{Category: tt.category, Name: tt.provider, declaredNS: tt.declaredNS}
+			if got := p.Namespace(); got != tt.wantNS {
+				t.Errorf("Namespace() = %q, want %q", got, tt.wantNS)
+			}
+		})
+	}
+}
+
+// The declaration has to survive the registry scan, not just the struct field:
+// the real defect was that nothing ever populated it.
+func TestRegistryScan_PopulatesDeclaredNamespace(t *testing.T) {
+	root := t.TempDir()
+	provDir := filepath.Join(root, "platform", "mesh", "istio")
+	if err := os.MkdirAll(provDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(provDir, "install.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	iface := `
+name: mesh
+implementations:
+  istio:
+    charts: [istio/base, istio/istiod]
+    namespace: istio-system
+`
+	if err := os.WriteFile(filepath.Join(root, "platform", "mesh", "_interface.yaml"), []byte(iface), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := NewRegistry(root).GetProvider("mesh", "istio")
+	if err != nil {
+		t.Fatalf("GetProvider(mesh/istio): %v", err)
+	}
+	if got := p.Namespace(); got != "istio-system" {
+		t.Errorf("Namespace() = %q, want %q — the scan did not read the declaration", got, "istio-system")
+	}
+}
