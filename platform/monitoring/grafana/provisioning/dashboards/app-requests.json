@@ -29,7 +29,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Server-side** panels (`http_server_request_duration_seconds_count`) count what the app actually handled. **Client-side** panels (`k6_*`) count what the load generator sent. A gap between them is the interesting signal: requests dropped at the ingress, rejected by a full queue, or lost to pod restarts never reach the app's counters.\n\nGenerate load with `labctl traffic start --profile steady --rps 25`, then compare the two rows. The `k6_*` series only appear while a run is in flight."
+        "content": "**Server-side** panels (`{{.WorkloadMetric}}_count`) count what the app actually handled. **Client-side** panels (`k6_*`) count what the load generator sent. A gap between them is the interesting signal: requests dropped at the ingress, rejected by a full queue, or lost to pod restarts never reach the app's counters.\n\nGenerate load with `labctl traffic start --profile steady --rps 25`, then compare the two rows. The `k6_*` series only appear while a run is in flight."
       }
     },
     {
@@ -89,7 +89,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (app) (rate(http_server_request_duration_seconds_count[1m]))",
+          "expr": "sum by (app) (rate({{.WorkloadMetric}}_count[1m]))",
           "legendFormat": "{{app}}",
           "refId": "A",
           "format": "time_series"
@@ -154,7 +154,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (path) (rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m]))",
+          "expr": "sum by (path) (rate({{.WorkloadMetric}}_count{app=~\"$app\"}[1m]))",
           "legendFormat": "{{path}}",
           "refId": "A",
           "format": "time_series"
@@ -219,19 +219,19 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, app) (rate(http_server_request_duration_seconds_bucket{app=~\"$app\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, app) (rate({{.WorkloadMetric}}_bucket{app=~\"$app\"}[5m])))",
           "legendFormat": "p50 {{app}}",
           "refId": "A",
           "format": "time_series"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le, app) (rate(http_server_request_duration_seconds_bucket{app=~\"$app\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, app) (rate({{.WorkloadMetric}}_bucket{app=~\"$app\"}[5m])))",
           "legendFormat": "p95 {{app}}",
           "refId": "B",
           "format": "time_series"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le, app) (rate(http_server_request_duration_seconds_bucket{app=~\"$app\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, app) (rate({{.WorkloadMetric}}_bucket{app=~\"$app\"}[5m])))",
           "legendFormat": "p99 {{app}}",
           "refId": "C",
           "format": "time_series"
@@ -295,7 +295,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m]))",
+          "expr": "sum by (http_response_status_code) (rate({{.WorkloadMetric}}_count{app=~\"$app\"}[1m]))",
           "legendFormat": "{{code}}",
           "refId": "A",
           "format": "time_series"
@@ -360,7 +360,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (app) (rate(http_server_request_duration_seconds_count{app=~\"$app\", http_response_status_code=~\"5..\"}[5m]))",
+          "expr": "sum by (app) (rate({{.WorkloadMetric}}_count{app=~\"$app\", http_response_status_code=~\"5..\"}[5m]))",
           "legendFormat": "5xx {{app}}",
           "refId": "A",
           "format": "time_series"
@@ -430,7 +430,7 @@
           "format": "time_series"
         },
         {
-          "expr": "sum(rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m]))",
+          "expr": "sum(rate({{.WorkloadMetric}}_count{app=~\"$app\"}[1m]))",
           "legendFormat": "app handled (server)",
           "refId": "B",
           "format": "time_series"
@@ -594,7 +594,7 @@
           "uid": "prometheus"
         },
         "query": {
-          "query": "label_values(http_server_request_duration_seconds_count, app)",
+          "query": "label_values({{.WorkloadMetric}}_count, app)",
           "refId": "app"
         },
         "refresh": 2,

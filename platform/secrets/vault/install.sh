@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # HashiCorp Vault in dev mode — fine for simulation (in-memory, auto-unsealed).
-# Seeds a demo KV secret for go-api and exposes the UI via ingress.
+# Seeds a demo KV secret for the bound workload and exposes the UI via ingress.
 # Portable + idempotent.
 #
 # SECURITY: the dev root token is read from the environment and never committed.
@@ -12,7 +12,7 @@ set -euo pipefail
 # Config (env, with defaults — scripts never source .env themselves):
 #   VAULT_CHART_VERSION   pinned hashicorp/vault chart version (config/versions.env)
 #   VAULT_DEV_ROOT_TOKEN  dev root token (default: root — the well-known dev default)
-#   VAULT_DEMO_SECRET     demo KV value seeded at secret/go-api (default: demo value)
+#   VAULT_DEMO_SECRET     demo KV value seeded at secret/<workload> (default: demo value)
 #   INGRESS_CLASS         ingress class for the UI route (default: traefik)
 #   DOMAIN_SUFFIX         host suffix for the UI route (default: k3d.local)
 
@@ -42,10 +42,10 @@ helm upgrade --install vault hashicorp/vault \
 echo "Waiting for Vault to be ready..."
 kubectl wait --for=condition=Ready pod/vault-0 -n "$NAMESPACE" --timeout=180s
 
-# Seed a demo KV secret for go-api (kv-v2 is mounted at secret/ in dev mode).
-echo "Seeding demo secret at secret/go-api ..."
+# Seed a demo KV secret for the bound workload (kv-v2 is mounted at secret/ in dev mode).
+echo "Seeding demo secret at secret/${WORKLOAD_NAME:-go-api} ..."
 kubectl exec -n "$NAMESPACE" vault-0 -- sh -c \
-  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv put secret/go-api api-key='${DEMO_SECRET}'" >/dev/null
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv put secret/${WORKLOAD_NAME:-go-api} api-key='${DEMO_SECRET}'" >/dev/null
 
 # Expose the Vault UI via ingress (served on the main vault service, port 8200).
 cat <<EOF | kubectl apply -f -
@@ -73,5 +73,5 @@ echo ""
 echo "Vault installed successfully (dev mode)."
 echo "    UI:   http://vault.${DOMAIN_SUFFIX}  (token auth — use your dev root token)"
 echo "    Addr (in-cluster): http://vault.${NAMESPACE}.svc:8200"
-echo "    Demo secret: secret/go-api (key: api-key)"
+echo "    Demo secret: secret/${WORKLOAD_NAME:-go-api} (key: api-key)"
 echo "    Next: install external-secrets to sync it into the go-api namespace."

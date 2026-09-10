@@ -46,7 +46,7 @@ implementations:
     chart: opencost/opencost
     ui_port: 9090
     notes: >
-      Reads http_server_request_duration_seconds_count + container resource usage from Prometheus.
+      Reads {{.WorkloadMetric}}_count + container resource usage from Prometheus.
       UI shows cost breakdown by namespace, controller, pod, and container.
       Used by the cost-right-sizing scenario to confirm requests were reduced.
 

@@ -6,12 +6,13 @@ set -euo pipefail
 #
 # Config (env, with defaults — scripts never source .env themselves):
 #   ISTIO_VERSION   pinned chart/app version (see config/versions.env)
-#   MESH_NAMESPACE  workload namespace to enrol into the mesh (default: go-api)
+#   MESH_NAMESPACE  workload namespace to enrol into the mesh
+#                   (default: the bound workload, else go-api)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SYSTEM_NS="istio-system"
 ISTIO_VERSION="${ISTIO_VERSION:-1.24.2}"
-MESH_NAMESPACE="${MESH_NAMESPACE:-go-api}"
+MESH_NAMESPACE="${MESH_NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
 
 echo "Installing Istio ${ISTIO_VERSION} (sidecar mode)..."
 
