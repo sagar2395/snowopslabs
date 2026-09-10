@@ -14,6 +14,9 @@ image:
   repository: echo-server
   tag: latest
   pullPolicy: IfNotPresent
+  # Set by engine/deploy/helm.sh from the local image; makes a rebuild under an
+  # unchanged tag produce a new pod template so it actually rolls out.
+  id: ""
 
 resources:
   requests:

@@ -10,6 +10,9 @@ image:
   # digest the imported manifest points at, and the pod then cannot find it.
   reference: ""
   repository: ""
+  # Local image ID, set by engine/deploy/helm.sh. Surfaces as a pod annotation
+  # so a rebuild under an unchanged tag still rolls out.
+  id: ""
   tag: latest
   # IfNotPresent, not Never: the image is normally imported into k3d/kind so
   # nothing is pulled, but a failed import falls back to the registry instead of

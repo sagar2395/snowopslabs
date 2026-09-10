@@ -30,6 +30,19 @@ HELM_WAIT_TIMEOUT="${HELM_WAIT_TIMEOUT:-5m}"
 
 HELM_CHART_PATH="apps/${APP_NAME}/deploy/helm"
 
+# Identify the image by content, not just by tag.
+#
+# A rebuild under a mutable tag (:latest, or any tag reused during iteration)
+# leaves the Deployment spec byte-identical, so helm upgrade is a no-op, no new
+# ReplicaSet is created, and the running pods keep serving the previous build —
+# while deploy reports success. Threading the local image ID into a pod
+# annotation makes the template change exactly when the image content does, so
+# a rebuilt app actually goes live. Empty when docker cannot resolve the
+# reference (image already in the cluster, or a remote-only build), which simply
+# leaves the annotation off.
+IMAGE_REF="${APP_IMAGE:-${APP_NAME}:${DOCKER_IMAGE_TAG:-latest}}"
+IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE_REF}" 2>/dev/null || true)"
+
 # An app brought as a pre-built image has no chart of its own. Fall back to the
 # shared workload chart, driven entirely by the app's declared contract so the
 # deployed pod and the declaration cannot disagree.
@@ -47,6 +60,7 @@ if [ ! -d "${HELM_CHART_PATH}" ]; then
     --set "image.reference=${APP_IMAGE:-}"
     --set "image.repository=${APP_NAME}"
     --set "image.tag=${DOCKER_IMAGE_TAG:-latest}"
+    --set "image.id=${IMAGE_ID}"
     --set "port=${APP_PORT:-8080}"
     --set "probes.healthPath=${APP_HEALTH_PATH:-/health}"
     --set "probes.readyPath=${APP_READY_PATH:-/ready}"
@@ -54,6 +68,14 @@ if [ ! -d "${HELM_CHART_PATH}" ]; then
     --set "ingress.className=${INGRESS_CLASS:-traefik}"
     --set "ingress.host=${APP_NAME}.${DOMAIN_SUFFIX:-k3d.local}"
   )
+  # Resources, when the app declares them. A JVM cannot run inside the defaults
+  # sized for a small Go service, and an app silently OOMKilled at startup is the
+  # least debuggable failure the lab can hand someone.
+  [ -n "${MEMORY_REQUEST:-}" ] && SHARED_VALUES+=(--set "resources.requests.memory=${MEMORY_REQUEST}")
+  [ -n "${MEMORY_LIMIT:-}" ] && SHARED_VALUES+=(--set "resources.limits.memory=${MEMORY_LIMIT}")
+  [ -n "${CPU_REQUEST:-}" ] && SHARED_VALUES+=(--set "resources.requests.cpu=${CPU_REQUEST}")
+  [ -n "${CPU_LIMIT:-}" ] && SHARED_VALUES+=(--set "resources.limits.cpu=${CPU_LIMIT}")
+
   # Extra writable paths for a hardened image that needs more than /tmp.
   if [ -n "${APP_WRITABLE_PATHS:-}" ]; then
     SHARED_VALUES+=(--set "writablePaths={/tmp,${APP_WRITABLE_PATHS}}")
@@ -77,7 +99,8 @@ else
     echo "ERROR: apps/${APP_NAME} has its own chart, so app.env must define HELM_VALUES" >&2
     exit 1
   fi
-  VALUES_ARGS=(-f "${HELM_CHART_PATH}/${HELM_VALUES}" --set namespace.create=false)
+  VALUES_ARGS=(-f "${HELM_CHART_PATH}/${HELM_VALUES}" --set namespace.create=false
+    --set "image.id=${IMAGE_ID}")
 fi
 
 case "${COMMAND}" in

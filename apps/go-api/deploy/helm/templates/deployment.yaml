@@ -21,6 +21,12 @@ spec:
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- if .Values.image.id }}
+        # Changes when the image content changes, so a rebuild under a mutable
+        # tag produces a new pod template and actually rolls out. Without it
+        # helm upgrade is a no-op and the old build keeps serving.
+        snowops.net/image-id: {{ .Values.image.id | quote }}
+        {{- end }}
       labels:
         {{- include "go-api.selectorLabels" . | nindent 8 }}
     spec:
