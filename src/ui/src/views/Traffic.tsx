@@ -43,9 +43,13 @@ export function Traffic({ notify }: TrafficProps) {
     if (!profile && profiles.length > 0) setProfile(profiles[0])
   }, [profile, profiles])
 
+  // Default to the app the lab is bound to, not whichever app sorts first —
+  // load aimed at a workload nobody is looking at is worse than no default.
+  const boundApp = data?.workload?.app
   useEffect(() => {
-    if (!targetApp && targets.length > 0) setTargetApp(targets[0].name)
-  }, [targetApp, targets])
+    if (targetApp || targets.length === 0) return
+    setTargetApp(targets.find(a => a.name === boundApp)?.name ?? targets[0].name)
+  }, [targetApp, targets, boundApp])
 
   // Resolve the target URL from the picker; 'custom' uses the typed URL.
   const resolvedTarget = targetApp === 'custom'
@@ -125,7 +129,9 @@ export function Traffic({ notify }: TrafficProps) {
                 onChange={e => setTargetApp(e.target.value)}
               >
                 {targets.map(a => (
-                  <option key={a.name} value={a.name}>{a.name} (in-cluster)</option>
+                  <option key={a.name} value={a.name}>
+                    {a.name}{a.name === boundApp ? ' (bound workload)' : ''}{a.deployed ? '' : ' — not deployed'}
+                  </option>
                 ))}
                 <option value="custom">Custom URL…</option>
               </select>
@@ -134,7 +140,7 @@ export function Traffic({ notify }: TrafficProps) {
                   ? 'Any http(s) URL reachable from the cluster.'
                   : resolvedTarget
                     ? <>Requests go to <code>{resolvedTarget}</code></>
-                    : 'No deployed app to target — deploy one, or use a custom URL.'}
+                    : 'No app declares an in-cluster address — check apps/<name>/app.env, or use a custom URL.'}
               </span>
             </label>
 

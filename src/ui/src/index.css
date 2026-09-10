@@ -231,12 +231,17 @@ code, pre, .mono { font-family: var(--font-mono); }
 .sidebar-nav {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-2) var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
 }
-.nav-group { margin-top: var(--space-4); }
+/* The nav carries 12 items across three groups. At a 720px viewport the old
+ * rhythm overflowed the sidebar and hid the last item behind the pinned runtime
+ * footer — reachable by scrolling, but a primary nav item nobody can see is
+ * not navigation. Tightened to fit; 34px is still far above the 24px pointer
+ * target floor. */
+.nav-group { margin-top: var(--space-3); }
 .nav-group:first-child { margin-top: var(--space-2); }
 .nav-group-label {
   font-size: 10.5px;
@@ -244,14 +249,14 @@ code, pre, .mono { font-family: var(--font-mono); }
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
-  padding: var(--space-2) var(--space-3) var(--space-1);
+  padding: var(--space-1) var(--space-3);
 }
 .nav-item {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
-  min-height: 38px;
+  min-height: 34px;
   border-radius: var(--radius-sm);
   color: var(--muted);
   font-size: var(--text-base);
@@ -690,6 +695,14 @@ code, pre, .mono { font-family: var(--font-mono); }
 .field-label { font-size: var(--text-sm); font-weight: 600; color: var(--text); }
 .field-label .field-optional { color: var(--muted); font-weight: 400; }
 .field-help { font-size: var(--text-xs); color: var(--muted); line-height: 1.5; }
+.workload-line { margin: 0 0 var(--space-2); }
+/* A help line that is reporting a problem. Colour alone would not carry it, so
+   both are prefixed with a glyph — the muted default and the error read the same
+   to anyone who cannot tell the two hues apart. */
+.field-error { color: var(--danger); }
+.field-warn  { color: var(--warning); }
+.field-error::before { content: "\26A0\FE0E  "; }
+.field-warn::before  { content: "\26A0\FE0E  "; }
 .traffic-form { display: flex; flex-direction: column; gap: var(--space-4); max-width: 520px; }
 .maxw-input { max-width: 220px; }
 
@@ -1353,4 +1366,149 @@ code, pre, .mono { font-family: var(--font-mono); }
   .collapse-aside { flex: 1 0 100%; padding-left: 23px; text-align: left; }
   .modal-overlay { padding: var(--space-4) var(--space-2); }
   .topbar-title { font-size: var(--text-lg); }
+}
+
+/* ── Comparison view ─────────────────────────────────────────────────────────
+ *
+ * A comparison is a table first: the numbers have different units per row, so
+ * one chart cannot hold them and precise values are the point. The bar behind
+ * each figure gives magnitude WITHIN its row only, and is decorative — every
+ * value is also written out.
+ */
+
+/* Visually hidden but read aloud. Used for the table caption and for the
+ * meaning of a dash, which sighted readers get from the footnote. */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* The run picker: scenario, apps and when, in one scannable row each. */
+.run-picker { list-style: none; margin: 0; padding: var(--space-2); display: grid; gap: var(--space-1); }
+.run-pick {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-3) var(--space-4);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.run-pick:hover { background: var(--surface-2); }
+.run-pick.active { background: var(--surface-2); border-color: var(--accent); }
+.run-pick-scenario { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-pick-apps { color: var(--muted); font-size: 13px; }
+.run-pick-when { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* The conditions every app was held to. These are part of the result, not
+ * metadata: without them the numbers are not comparable with anything. */
+.conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-5);
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+.conditions > div { display: flex; gap: var(--space-2); align-items: baseline; }
+.conditions dt {
+  font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted);
+}
+.conditions dd { margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.conditions .muted { color: var(--muted); }
+
+.compare-table th[scope="col"] { white-space: nowrap; }
+.col-note {
+  font-weight: 400; color: var(--muted); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.metric-name { font-weight: 500; white-space: nowrap; text-align: left; }
+
+.compare-cell { position: relative; min-width: 9rem; }
+/* Decorative: magnitude within the row. Sits under the text, never over it. */
+.compare-bar {
+  position: absolute;
+  left: 0; bottom: 2px;
+  height: 2px;
+  background: var(--accent);
+  opacity: .35;
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+}
+.compare-figure { display: block; }
+
+/* The verdict carries an icon and a word. Colour only reinforces it — on its
+ * own it would fail anyone who cannot separate the hues, and "+20%" on a
+ * latency row reads as an improvement without the word. */
+.compare-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 2px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.delta-better { color: var(--success); }
+.delta-worse  { color: var(--danger); }
+.delta-same   { color: var(--muted); }
+
+.card-footnote {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* A short list of commands with what each one is for. The term is the intent and
+   the definition is the command, so the list reads top-down as "to do X, run Y"
+   rather than as a wall of shell. */
+.cli-recipe {
+  margin: 0 0 var(--space-4);
+  padding: 0 var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+}
+.cli-recipe dt { font-size: var(--text-xs); color: var(--muted); }
+.cli-recipe dd { margin: 0 0 var(--space-3); }
+.cli-recipe dd code {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--text);
+  user-select: all;
+  /* A command must stay copyable rather than be clipped by a narrow pane. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.cli-recipe dd code + br + code { margin-top: var(--space-1); }
+
+.empty-code {
+  display: inline-block;
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  color: var(--text);
+  user-select: all;
 }

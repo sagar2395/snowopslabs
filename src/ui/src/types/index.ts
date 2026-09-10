@@ -242,6 +242,13 @@ export interface Scenario {
   objectives?: string[]
   checks?: ScenarioCheck[]
   snippets?: ScenarioSnippet[]
+  /** Apps the scenario names literally — the only app prerequisites a user has
+   *  to satisfy. An app that came from the binding is in `workload`, not here. */
+  pinnedApps?: string[]
+  /** The workload this scenario will run (or is running) against. */
+  workload?: WorkloadBinding
+  /** The app an active scenario was activated against (catalog rows only). */
+  app?: string
 }
 
 /** One check outcome from POST /api/v2/scenarios/{name}/verify (pkg/checks.Result).
@@ -499,6 +506,21 @@ export interface Fault {
   prerequisites?: { platform?: string[]; apps?: string[]; capabilities?: string[] }
   references?: ContentReference[]
   snippets?: ContentSnippet[]
+  /** Apps the fault names literally — the only app prerequisites a user has to
+   *  satisfy. An app that came from the binding is in `workload`, not here. */
+  pinnedApps?: string[]
+  /** The workload this fault will be (or was) injected into. */
+  workload?: WorkloadBinding
+}
+
+/** The application a scenario or fault is bound to (ADR-0014). Content names the
+ *  binding rather than an app, so the same content runs against any of them. */
+export interface WorkloadBinding {
+  app: string
+  namespace: string
+  service: string
+  port: string
+  metric: string
 }
 
 /** The live active-incident record (nil when nothing is injected). */
@@ -564,3 +586,41 @@ export interface LeaderboardEntry {
   avgMttrSeconds: number
   runs: number
 }
+
+// ── Comparisons (ADR-0014 §6) ───────────────────────────────────────────────
+
+/** One metric's definition, sent with the data so the client never hardcodes
+ *  which way is better for a given key. */
+export interface ComparisonMetric {
+  key: string
+  label: string
+  unit: string
+  lowerBetter: boolean
+  /** True when neither direction is better (e.g. replica count). */
+  neutral: boolean
+  /** Multiplier from the raw Prometheus value into `unit`. */
+  scale: number
+  digits: number
+}
+
+/** One workload's numbers. A metric with no series is absent from `values`
+ *  rather than zero — "used none" and "not measurable here" differ. */
+export interface ComparisonMeasurement {
+  app: string
+  values: Record<string, number>
+}
+
+export interface Comparison {
+  id: string
+  scenario: string
+  apps: string[]
+  profile: string
+  rps: number
+  /** Load time excluded from the measurement, so runtime warm-up is not compared. */
+  warmupSeconds: number
+  windowSeconds: number
+  startedAt: string
+  metrics: ComparisonMetric[]
+  measurements: ComparisonMeasurement[]
+}
+

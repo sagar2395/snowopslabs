@@ -9,6 +9,7 @@ import { Icon } from '../components/Icon'
 import { Tabs, type TabItem } from '../components/Tabs'
 import { Collapsible } from '../components/Collapsible'
 import { useJobRunner } from '../hooks/useJobRunner'
+import { WorkloadPicker } from '../components/WorkloadPicker'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 interface ScenariosProps {
@@ -44,9 +45,10 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
   const [verifyResults, setVerifyResults] = useState<Record<string, ScenarioVerifyResult>>({})
   const modalCloseRef = useRef<HTMLButtonElement>(null)
   const detailOpener = useRef<Element | null>(null)
-  // Parameter values for the activation being confirmed, so onConfirm reads the
-  // latest edits from the dialog.
+  // Parameter values and the chosen workload for the activation being confirmed,
+  // so onConfirm reads the latest edits from the dialog.
   const activateParamsRef = useRef<Record<string, string>>({})
+  const activateAppRef = useRef<string>('')
 
   // Modal: Esc to close, focus management
   useEffect(() => {
@@ -86,19 +88,28 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
     let s: Scenario | null = null
     try { s = await api.getScenario(name) } catch { /* fall back to a plain confirm */ }
     const plat = s?.prerequisites?.platform ?? []
-    const apps = s?.prerequisites?.apps ?? []
+    // Apps the scenario names literally. An app that came from the workload
+    // binding is not a prerequisite — it is the choice offered below.
+    const pinned = s?.pinnedApps ?? []
     const comps = allComponents(s)
     const paramDefs = s?.parameters ?? []
-    // Seed the shared ref with each parameter's default; the form mutates it in
-    // place, and doRun submits whatever it holds at confirm time.
+    // Seed the shared refs with the defaults; the form mutates them in place, and
+    // doRun submits whatever they hold at confirm time.
     activateParamsRef.current = Object.fromEntries(paramDefs.map(p => [p.name, p.default]))
-    const doRun = () => run(name, `Activate ${name}`, () => api.scenarioUp(name, activateParamsRef.current), () => load())
+    activateAppRef.current = s?.workload?.app ?? ''
+    const doRun = () => run(name, `Activate ${name}`, () => api.scenarioUp(name, activateParamsRef.current, activateAppRef.current), () => load())
     requestConfirm({
       title: `Activate ${s?.displayName || name}?`,
       danger: false,
       confirmLabel: 'Activate',
       message: (
         <div className="stack-3">
+          <WorkloadAppField
+            initial={s?.workload?.app ?? ''}
+            valueRef={activateAppRef}
+            requiredCapabilities={s?.prerequisites?.capabilities ?? []}
+            pinnedApps={pinned}
+          />
           {paramDefs.length > 0 && (
             <div>
               <div className="field-label">Parameters <span className="hint-text">(tune these to experiment — defaults reproduce the standard scenario)</span></div>
@@ -115,18 +126,14 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
               </ul>
             </div>
           )}
-          {(plat.length > 0 || apps.length > 0) && (
+          {plat.length > 0 && (
             <div>
               <div className="field-label">Requires (install these first if missing)</div>
               <ul>
                 {plat.map(p => <li key={`p-${p}`}>Platform: <code>{p}</code></li>)}
-                {apps.map(a => <li key={`a-${a}`}>App: <code>{a}</code></li>)}
               </ul>
-              <div className="field-help">Prerequisites are not installed automatically — add any missing ones in the Platform tab, then activate.</div>
+              <div className="field-help">Platform components are not installed automatically — add any missing ones in the Platform tab, then activate.</div>
             </div>
-          )}
-          {comps.length === 0 && plat.length === 0 && apps.length === 0 && (
-            <div>Activate this scenario now?</div>
           )}
         </div>
       ),
@@ -361,8 +368,11 @@ function ScenarioDetailTabs({ detail, verifyResult, onCopy }: {
   const snippets = detail.snippets ?? []
   const objectives = detail.objectives ?? []
   const prereqPlatform = detail.prerequisites?.platform ?? []
-  const prereqApps = detail.prerequisites?.apps ?? []
+  // Only apps the scenario names literally are requirements. The one it resolved
+  // from the binding is shown as what it runs against, below.
+  const prereqApps = detail.pinnedApps ?? []
   const prereqCaps = detail.prerequisites?.capabilities ?? []
+  const bound = detail.workload
   const urls = detail.explore?.urls ?? []
   const commands = detail.explore?.commands ?? []
   const tips = detail.explore?.tips ?? []
@@ -389,6 +399,20 @@ function ScenarioDetailTabs({ detail, verifyResult, onCopy }: {
           </div>
         )}
 
+        {bound && (
+          <div className="modal-section">
+            <h3>Runs against</h3>
+            <p className="workload-line">
+              <code>{bound.app}</code> in namespace <code>{bound.namespace}</code>, port <code>{bound.port}</code>
+            </p>
+            <div className="field-help">
+              This scenario names its workload rather than an application, so it runs against any app that
+              meets the contract. Pick a different one when you activate it, or from the CLI with
+              {' '}<code>--app</code>.
+            </div>
+          </div>
+        )}
+
         {(prereqPlatform.length > 0 || prereqApps.length > 0 || prereqCaps.length > 0) && (
           <div className="modal-section">
             <h3>Prerequisites</h3>
@@ -400,7 +424,7 @@ function ScenarioDetailTabs({ detail, verifyResult, onCopy }: {
           </div>
         )}
 
-        {!detail.description && objectives.length === 0 && prereqPlatform.length === 0 && prereqApps.length === 0 && prereqCaps.length === 0 && (
+        {!detail.description && objectives.length === 0 && !bound && prereqPlatform.length === 0 && prereqApps.length === 0 && prereqCaps.length === 0 && (
           <div className="empty-state"><div>This scenario has no description yet.</div></div>
         )}
       </>
@@ -570,6 +594,26 @@ function checkAssertion(c: ScenarioCheck): string {
 /** Renders an editable field per scenario parameter inside the Activate dialog.
  *  Values are mirrored into valuesRef.current so the dialog's confirm closure
  *  submits the latest edits. Integer params render as bounded number inputs. */
+/** Holds the workload choice for a confirmation dialog. The dialog reads its
+ *  answer from a ref at confirm time, so the selection has to live in state here
+ *  and be mirrored into that ref as it changes. */
+function WorkloadAppField({ initial, valueRef, requiredCapabilities, pinnedApps }: {
+  initial: string
+  valueRef: React.MutableRefObject<string>
+  requiredCapabilities: string[]
+  pinnedApps: string[]
+}) {
+  const [app, setApp] = useState(initial)
+  return (
+    <WorkloadPicker
+      value={app}
+      onChange={v => { valueRef.current = v; setApp(v) }}
+      requiredCapabilities={requiredCapabilities}
+      pinnedApps={pinnedApps}
+    />
+  )
+}
+
 function ParamForm({ parameters, valuesRef }: { parameters: ScenarioParameter[]; valuesRef: React.MutableRefObject<Record<string, string>> }) {
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(parameters.map(p => [p.name, p.default])),

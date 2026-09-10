@@ -23,6 +23,7 @@ vi.mock('../api/client', () => ({
     injectRandomIncident: vi.fn(),
     resolveIncident: vi.fn(),
     nextIncidentHint: vi.fn(),
+    listApps: vi.fn(),
   },
 }))
 import { api } from '../api/client'
@@ -33,11 +34,14 @@ const mockApi = api as unknown as {
   injectRandomIncident: Mock
   resolveIncident: Mock
   nextIncidentHint: Mock
+  listApps: Mock
 }
 
 const fault = (name: string, over: Partial<Fault> = {}): Fault => ({
   name, displayName: name, description: `desc ${name}`, verified: true,
-  category: 'workload', severity: 'high', ...over,
+  category: 'workload', severity: 'high',
+  workload: { app: 'go-api', namespace: 'go-api', service: 'go-api.go-api.svc.cluster.local', port: '8080', metric: 'http_server_request_duration_seconds' },
+  ...over,
 })
 
 // requestConfirm that immediately fires onConfirm, so a confirmed action runs.
@@ -60,20 +64,50 @@ const twoFaults: IncidentList = {
 }
 
 describe('Incidents view', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockApi.listApps.mockResolvedValue([
+      { name: 'go-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true },
+      { name: 'java-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true },
+    ])
+  })
 
   it('lists the fault library and injects a fault', async () => {
     const user = userEvent.setup()
     mockApi.listIncidents.mockResolvedValue(twoFaults)
     mockApi.injectIncident.mockResolvedValue({ status: 'injected', silent: false })
+    let captured: ConfirmRequest | null = null
 
-    renderIncidents()
+    renderIncidents(r => { captured = r })
     expect(await screen.findByText('oom-kill')).toBeInTheDocument()
     expect(screen.getByText('network-blackhole')).toBeInTheDocument()
 
+    // Injecting confirms first: which workload to break is part of the decision.
     const row = screen.getByText('oom-kill').closest('.scenario-row') as HTMLElement
     await user.click(within(row).getByRole('button', { name: /^inject$/i }))
-    await waitFor(() => expect(mockApi.injectIncident).toHaveBeenCalledWith('oom-kill'))
+    await waitFor(() => expect(captured).not.toBeNull())
+    expect(mockApi.injectIncident).not.toHaveBeenCalled()
+    captured!.onConfirm()
+    await waitFor(() => expect(mockApi.injectIncident).toHaveBeenCalledWith('oom-kill', 'go-api'))
+  })
+
+  // A fault names its workload rather than an app (ADR-0014). Choosing which app
+  // to break was reachable only from the CLI's --app flag.
+  it('lets the user choose which application to break', async () => {
+    const user = userEvent.setup()
+    mockApi.listIncidents.mockResolvedValue(twoFaults)
+    mockApi.injectIncident.mockResolvedValue({ status: 'injected', silent: false })
+    let captured: ConfirmRequest | null = null
+
+    renderIncidents(r => { captured = r })
+    const row = (await screen.findByText('oom-kill')).closest('.scenario-row') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: /^inject$/i }))
+    await waitFor(() => expect(captured).not.toBeNull())
+    render(<div>{captured!.message as React.ReactNode}</div>)
+
+    await user.selectOptions(await screen.findByLabelText(/application to break/i), 'java-api')
+    captured!.onConfirm()
+    await waitFor(() => expect(mockApi.injectIncident).toHaveBeenCalledWith('oom-kill', 'java-api'))
   })
 
   it('shows the active console, reveals hints progressively, and disables further injects', async () => {
@@ -125,14 +159,21 @@ describe('Incidents view', () => {
     expect(screen.queryByText(/Active: oom-kill/)).not.toBeInTheDocument()
   })
 
+  // Only what the user must install. The app the fault resolved from the binding
+  // is what gets broken, not a prerequisite — listing it said content that runs
+  // against any conforming app ran against one.
   it('surfaces a fault\'s prerequisites so required tools are visible before injecting', async () => {
     mockApi.listIncidents.mockResolvedValue({
-      faults: [fault('network-blackhole', { category: 'network', prerequisites: { platform: ['ingress'], apps: ['go-api'] } })],
+      faults: [fault('network-blackhole', {
+        category: 'network',
+        prerequisites: { platform: ['ingress'], apps: ['go-api'] },
+        pinnedApps: [],
+      })],
       active: null,
     })
     renderIncidents()
     const row = (await screen.findByText('network-blackhole')).closest('.scenario-row') as HTMLElement
-    expect(within(row).getByText(/Requires:\s*ingress\s*·\s*go-api/)).toBeInTheDocument()
+    expect(within(row).getByText(/Requires:\s*ingress$/)).toBeInTheDocument()
   })
 
   it('has no accessibility violations', async () => {

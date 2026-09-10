@@ -15,6 +15,7 @@ import type { Fault, IncidentStatus, IncidentHint, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
+import { WorkloadPicker } from '../components/WorkloadPicker'
 import { Collapsible } from '../components/Collapsible'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
@@ -27,11 +28,14 @@ const SEVERITY_VARIANT: Record<string, 'stopped' | 'category' | 'runtime'> = {
   high: 'stopped', medium: 'category', low: 'runtime',
 }
 
-/** Compact "ingress · go-api" summary of a fault's prerequisites, or "" if none. */
+/** Compact "ingress" summary of a fault's prerequisites, or "" if none.
+ *
+ *  Only what the user must install: an app the fault resolved from the workload
+ *  binding is not a prerequisite but the thing being broken, and listing it here
+ *  read as "this fault only works with go-api". */
 function requiresLabel(f: Fault) {
   const plat = f.prerequisites?.platform ?? []
-  const apps = f.prerequisites?.apps ?? []
-  return [...plat, ...apps].join(' · ')
+  return [...plat, ...(f.pinnedApps ?? [])].join(' · ')
 }
 
 function relTime(iso?: string) {
@@ -88,12 +92,39 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
     return f?.displayName || name
   }
 
-  async function inject(name: string, label: string) {
+  /** Asks which application to break before injecting.
+   *
+   *  A fault names its workload rather than an app (ADR-0014), so "inject
+   *  oom-kill" is only half a decision — the other half was reachable solely
+   *  from the CLI's --app flag. The dialog carries it, defaulting to the lab's
+   *  current binding so the one-click path is unchanged. */
+  function confirmInject(f: Fault) {
+    const chosen = { app: f.workload?.app ?? '' }
+    requestConfirm({
+      title: `Inject ${f.displayName || f.name}?`,
+      confirmLabel: 'Inject',
+      message: (
+        <div className="stack-3">
+          <InjectAppField
+            initial={chosen.app}
+            onChange={v => { chosen.app = v }}
+            pinnedApps={f.pinnedApps ?? []}
+          />
+          <div className="field-help">
+            This breaks a running workload. <code>Resolve</code> undoes it at any point.
+          </div>
+        </div>
+      ),
+      onConfirm: () => inject(f.name, f.displayName || f.name, chosen.app),
+    })
+  }
+
+  async function inject(name: string, label: string, app?: string) {
     if (busy) return
     setBusy(`inject:${name}`)
     try {
-      const res = await api.injectIncident(name)
-      notify('success', `Injected ${label}`, res.silent ? 'Silent mode — the fault is hidden until you diagnose it.' : 'Diagnose it, then resolve.')
+      const res = await api.injectIncident(name, app)
+      notify('success', `Injected ${label}${app ? ` into ${app}` : ''}`, res.silent ? 'Silent mode — the fault is hidden until you diagnose it.' : 'Diagnose it, then resolve.')
       await load()
     } catch (e) {
       notify('error', 'Inject failed', e instanceof Error ? e.message : String(e))
@@ -324,7 +355,7 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
                       className="btn btn-sm btn-primary"
                       disabled={!!active || busy === `inject:${f.name}`}
                       title={active ? 'Resolve the active incident first' : undefined}
-                      onClick={() => inject(f.name, f.displayName || f.name)}
+                      onClick={() => confirmInject(f)}
                     >
                       {busy === `inject:${f.name}` ? 'Injecting…' : (<><Icon name="zap" size={14} />Inject</>)}
                     </button>
@@ -353,14 +384,27 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
             {detail.description && (
               <div className="modal-section"><p>{detail.description}</p></div>
             )}
-            {((detail.prerequisites?.platform?.length ?? 0) > 0 || (detail.prerequisites?.apps?.length ?? 0) > 0) && (
+            {detail.workload && (
+              <div className="modal-section">
+                <h3>Breaks</h3>
+                <p className="workload-line">
+                  <code>{detail.workload.app}</code> in namespace <code>{detail.workload.namespace}</code>
+                </p>
+                <div className="field-help">
+                  This fault names its workload rather than an application, so it can be injected into any
+                  app that meets the contract. Choose one when you inject it, or from the CLI with
+                  {' '}<code>--app</code>.
+                </div>
+              </div>
+            )}
+            {((detail.prerequisites?.platform?.length ?? 0) > 0 || (detail.pinnedApps?.length ?? 0) > 0) && (
               <div className="modal-section">
                 <h3>Requires (install first)</h3>
                 <div className="prereq-chips">
                   {(detail.prerequisites?.platform ?? []).map(p => (
                     <Badge key={`p-${p}`} variant="category">Platform: {p}</Badge>
                   ))}
-                  {(detail.prerequisites?.apps ?? []).map(a => (
+                  {(detail.pinnedApps ?? []).map(a => (
                     <Badge key={`a-${a}`} variant="category">App: {a}</Badge>
                   ))}
                 </div>
@@ -401,7 +445,7 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
                 className="btn btn-primary"
                 disabled={!!active || busy === `inject:${detail.name}`}
                 title={active ? 'Resolve the active incident first' : undefined}
-                onClick={() => { const f = detail; setDetail(null); inject(f.name, f.displayName || f.name) }}
+                onClick={() => { const f = detail; setDetail(null); confirmInject(f) }}
               >
                 Inject this incident
               </button>
@@ -411,5 +455,23 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
         </div>
       )}
     </>
+  )
+}
+
+/** Holds the workload choice for the inject dialog, which reads its answer from a
+ *  plain object at confirm time. */
+function InjectAppField({ initial, onChange, pinnedApps }: {
+  initial: string
+  onChange: (app: string) => void
+  pinnedApps: string[]
+}) {
+  const [app, setApp] = useState(initial)
+  return (
+    <WorkloadPicker
+      value={app}
+      onChange={v => { onChange(v); setApp(v) }}
+      pinnedApps={pinnedApps}
+      verb="break"
+    />
   )
 }
