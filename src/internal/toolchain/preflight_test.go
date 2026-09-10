@@ -305,6 +305,25 @@ func TestRequirements(t *testing.T) {
 		}
 	})
 
+	t.Run("jq is required but optional", func(t *testing.T) {
+		// Content that scrubs manifests needs jq, but a cluster builds and runs
+		// without it — reporting it as a hard failure would block the golden
+		// path over a tool most of the lab never touches.
+		var found bool
+		for _, r := range reqs {
+			if r.Binary != "jq" {
+				continue
+			}
+			found = true
+			if !r.Optional {
+				t.Error("jq must be Optional: the lab stands up fine without it")
+			}
+		}
+		if !found {
+			t.Error("jq is missing from the requirements, so a learner hits it inside a scenario instead of in doctor")
+		}
+	})
+
 	t.Run("bash minimum accommodates macOS", func(t *testing.T) {
 		// macOS ships bash 3.2; requiring 4+ would break the golden path.
 		for _, r := range reqs {

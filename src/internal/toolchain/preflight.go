@@ -75,6 +75,21 @@ func Requirements() []Requirement {
 			},
 		},
 		{
+			Binary:      "jq",
+			VersionArgs: []string{"--version"},
+			Why:         "scenario tooling that reads and scrubs Kubernetes manifests, such as the backup/restore drill",
+			// Optional because the cluster itself builds and runs without it —
+			// only content that manipulates JSON needs it, and that content says
+			// so when it cannot find it.
+			Optional: true,
+			InstallHint: func(goos string) string {
+				if goos == "darwin" {
+					return "brew install jq"
+				}
+				return "apt-get install jq — or https://jqlang.github.io/jq/download/"
+			},
+		},
+		{
 			Binary:      "docker",
 			VersionArgs: []string{"version", "--format", "{{.Client.Version}}"},
 			Why:         "k3d and kind both run the cluster inside Docker",
