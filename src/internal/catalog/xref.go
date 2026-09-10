@@ -122,7 +122,12 @@ func (c *Catalog) refProblem(kind Kind, name, file string, node *yaml.Node, ref,
 func (c *Catalog) validateTemplates(_ string) {
 	for _, s := range c.scenarios {
 		key := sourceKey(KindScenario, s.Name)
-		c.resolveFields(KindScenario, s.Name, c.sources[key], c.nodes[key], scenarioTemplated(s))
+		// A scenario's own parameters are legal variables inside it.
+		params := make([]string, 0, len(s.Parameters))
+		for _, p := range s.Parameters {
+			params = append(params, p.Name)
+		}
+		c.resolveFields(KindScenario, s.Name, c.sources[key], c.nodes[key], scenarioTemplated(s), params...)
 	}
 	for _, f := range c.incidents {
 		key := sourceKey(KindIncident, f.Name)
@@ -130,9 +135,9 @@ func (c *Catalog) validateTemplates(_ string) {
 	}
 }
 
-func (c *Catalog) resolveFields(kind Kind, name, file string, node *yaml.Node, fields []string) {
+func (c *Catalog) resolveFields(kind Kind, name, file string, node *yaml.Node, fields []string, extra ...string) {
 	for _, raw := range fields {
-		if err := Validate(raw); err != nil {
+		if err := Validate(raw, extra...); err != nil {
 			c.problems = append(c.problems, Problem{
 				Kind: kind, Name: name, File: file, Line: lineOfValue(node, raw), Message: err.Error(),
 			})

@@ -31,6 +31,6 @@ func DefaultTemplateContext(projectRoot string) TemplateContext {
 // namespace at run time. Other systems' templating in the same string — Loki,
 // Prometheus, Grafana, Helm — is left alone, exactly as the run-time expander
 // leaves it. See internal/tmpl.
-func Validate(input string) error {
-	return tmpl.Validate(input)
+func Validate(input string, extra ...string) error {
+	return tmpl.Validate(input, extra...)
 }

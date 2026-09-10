@@ -109,11 +109,17 @@ var varRef = regexp.MustCompile(`{{\s*\.(\w+)\s*}}`)
 // exported fields of Context. So a {{.Name}} beginning with an upper-case letter
 // is claiming to be one of ours and must resolve; anything else belongs to
 // whichever engine consumes the document next and is left alone.
-func Validate(input string) error {
+// extra names additional variables that are legal in this particular content —
+// a scenario's own declared parameters, which are substituted alongside the
+// built-ins at activation.
+func Validate(input string, extra ...string) error {
 	if !strings.Contains(input, "{{") {
 		return nil
 	}
 	known := Context{}.Vars()
+	for _, name := range extra {
+		known[name] = ""
+	}
 	for _, m := range varRef.FindAllStringSubmatch(input, -1) {
 		name := m[1]
 		r, _ := utf8.DecodeRuneInString(name)
@@ -121,8 +127,10 @@ func Validate(input string) error {
 			continue // another system's templating
 		}
 		if _, ok := known[name]; !ok {
+			legal := FieldNames()
+			legal = append(legal, extra...)
 			return fmt.Errorf("unknown template variable %q in %q (known: %s)",
-				"{{."+name+"}}", input, strings.Join(FieldNames(), ", "))
+				"{{."+name+"}}", input, strings.Join(legal, ", "))
 		}
 	}
 	return nil
@@ -152,3 +160,10 @@ func Expand(input string, ctx Context, extra map[string]string) string {
 		return match // unknown {{.Var}} — leave it for whoever else consumes it
 	})
 }
+
+// IsTemplated reports whether input carries a placeholder for Expand to fill.
+//
+// Callers use it to tell a value an author pinned from one an author delegated
+// to the binding: "go-api" is a literal requirement, "{{.WorkloadName}}" is
+// whatever app the lab is bound to and is not a requirement at all.
+func IsTemplated(input string) bool { return strings.Contains(input, "{{") }
