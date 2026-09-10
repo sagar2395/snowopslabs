@@ -121,6 +121,13 @@ func challengeStartCmd() *cobra.Command {
 
 			// Run the setup action.
 			if err := runChallengeSetup(cmd.Context(), c, exec); err != nil {
+				// A setup that fails partway still changed the cluster, and no
+				// run has been recorded yet — so `challenge abort` refuses and
+				// the learner is left with a half-injected fault and nothing to
+				// undo it. Clean up here, where the failure is known about.
+				if cleanupErr := runChallengeCleanup(cmd.Context(), c, exec); cleanupErr != nil {
+					fmt.Fprintf(cmd.OutOrStdout(), "Warning: could not undo the partial setup: %v\n", cleanupErr)
+				}
 				return fmt.Errorf("setup failed: %w", err)
 			}
 
@@ -149,11 +156,13 @@ func challengeRequiredApps(c *challenge.Challenge) []string {
 	switch c.Setup.Type {
 	case "scenario":
 		if s, err := scenes.Get(c.Setup.Ref); err == nil {
-			return s.Prerequisites.Apps
+			return scenes.ResolvedPrereqApps(s)
 		}
 	case "incident":
-		if f, err := incEng.Get(c.Setup.Ref); err == nil && appExists(f.Target.Namespace) {
-			return []string{f.Target.Namespace}
+		if f, err := incEng.Get(c.Setup.Ref); err == nil {
+			if ns := incEng.ResolvedTarget(f).Namespace; appExists(ns) {
+				return []string{ns}
+			}
 		}
 	}
 	return nil
@@ -266,18 +275,37 @@ func challengeSubmitCmd() *cobra.Command {
 				}
 			}
 			total := len(results)
-			outcome := "failed"
-			if passed == total {
-				outcome = "passed"
+			out := cmd.OutOrStdout()
+
+			// A failed submit does NOT end the run. Ending it on the first
+			// attempt gave the learner one shot, discarded the score they were
+			// working towards, and left the fault injected with no cleanup
+			// offered — `challenge abort` refuses once nothing is active.
+			if passed < total {
+				rec, err := eng.Attempt(passed, total)
+				if err != nil {
+					return err
+				}
+				printGradingResults(out, c, rec, results)
+				fmt.Fprintln(out, "\nStill running. Fix what is listed above and submit again,")
+				fmt.Fprintln(out, "or give up and clean the lab with:  labctl challenge abort")
+				return nil
 			}
 
-			rec, err := eng.Complete(passed, total, outcome, "")
+			rec, err := eng.Complete(passed, total, "passed", "")
 			if err != nil {
 				return err
 			}
-
-			out := cmd.OutOrStdout()
 			printGradingResults(out, c, rec, results)
+
+			// The challenge injected the fault, so finishing it owns the
+			// teardown — exactly as abort does. Without this the incident stays
+			// active after a passing run: its alert rule stays armed, its
+			// bookkeeping stays on the workload, and the NEXT challenge refuses
+			// to start with "an incident is already active".
+			if err := runChallengeCleanup(cmd.Context(), c, exec); err != nil {
+				fmt.Fprintf(out, "Warning: cleanup failed: %v\n", err)
+			}
 			return nil
 		},
 	}
