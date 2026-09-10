@@ -97,7 +97,7 @@ var scenarioUpCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := ensureAppsDeployed(cmd.Context(), s.Prerequisites.Apps, scenarioDeployPrereqs); err != nil {
+		if err := ensureAppsDeployed(cmd.Context(), scenes.ResolvedPrereqApps(s), scenarioDeployPrereqs); err != nil {
 			return err
 		}
 		// Platform prerequisites (opencost, prometheus, ingress, …) are not
@@ -125,6 +125,10 @@ var scenarioDownCmd = &cobra.Command{
 		if s, err := scenes.Get(name); err == nil && !s.Active {
 			fmt.Fprintf(os.Stderr, "Scenario %s is not active.\n", name)
 			return nil
+		}
+		// Tear down against the workload the scenario was brought up against.
+		if err := rebindTo(scenes.ActiveApp(name)); err != nil {
+			return err
 		}
 		return runScenarioOp(cmd, "deactivate", name, func(ctx context.Context, svc *scnsvc.Service) (string, error) {
 			return svc.Deactivate(ctx, name)
@@ -220,6 +224,11 @@ With --watch, checks are re-run every --interval until they all pass or
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true, // a failing check is a result, not a usage error
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Grade against the workload the scenario was activated against — the
+		// check scripts read WORKLOAD_* from the executor environment.
+		if err := rebindTo(scenes.ActiveApp(args[0])); err != nil {
+			return err
+		}
 		runner := newCheckRunner()
 		ctx := context.Background()
 		startedAt := time.Now()
@@ -304,10 +313,21 @@ func newCheckRunner() *checks.Runner {
 		promURL = "http://prometheus." + cfg.DomainSuffix
 	}
 	r.PrometheusURL = promURL
+	// A check script grades the bound workload, so it needs the workload's
+	// identity for the same reason a component script does (ADR-0014).
+	// Without these a check can only hardcode an app name, which is the thing
+	// the workload binding exists to remove.
 	r.Env = []string{
 		"DOMAIN_SUFFIX=" + cfg.DomainSuffix,
 		"MONITORING_NAMESPACE=" + cfg.MonitoringNamespace,
 		"PROJECT_ROOT=" + cfg.ProjectRoot,
+		// The same Prometheus the promql checks use, so a script check and a
+		// promql check in one scenario cannot disagree about where to look.
+		"PROMETHEUS_URL=" + promURL,
+		"WORKLOAD_NAME=" + scenes.Workload.Name,
+		"WORKLOAD_NAMESPACE=" + scenes.Workload.Namespace,
+		"WORKLOAD_PORT=" + scenes.Workload.Port,
+		"WORKLOAD_METRIC=" + scenes.Workload.Metric,
 	}
 	return r
 }
@@ -414,8 +434,8 @@ var scenarioInfoCmd = &cobra.Command{
 		}
 		if len(s.Prerequisites.Apps) > 0 {
 			fmt.Printf("\nPrerequisites (apps):\n")
-			for _, a := range s.Prerequisites.Apps {
-				fmt.Printf("  - %s\n", resolve(a))
+			for _, a := range scenes.ResolvedPrereqApps(s) {
+				fmt.Printf("  - %s\n", a)
 			}
 		}
 		// Show the requirement against the app actually bound, so a reader sees
@@ -428,6 +448,19 @@ var scenarioInfoCmd = &cobra.Command{
 					mark = "ok"
 				}
 				fmt.Printf("  - %-22s %s\n", name, mark)
+			}
+		}
+
+		// Parameters are the knobs a learner is meant to turn — including the
+		// SLO a scenario grades against. Left unlisted, a threshold reads as an
+		// unexplained constant rather than a choice.
+		if len(s.Parameters) > 0 {
+			fmt.Printf("\nParameters (override with --set Name=value):\n")
+			for _, p := range s.Parameters {
+				fmt.Printf("  %-22s %s (default: %s)\n", p.Name, p.DisplayName, p.Default)
+				if p.Description != "" {
+					fmt.Printf("  %-22s   %s\n", "", p.Description)
+				}
 			}
 		}
 

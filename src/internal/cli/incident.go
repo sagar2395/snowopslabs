@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -96,7 +97,7 @@ a reproducible pick across a team.`,
 		// it isn't deployed, inject would fail cryptically. Check first (or deploy
 		// it with --deploy-prereqs).
 		if appExists(f.Target.Namespace) {
-			if err := ensureAppsDeployed(cmd.Context(), []string{f.Target.Namespace}, injectDeployPrereqs); err != nil {
+			if err := ensureAppsDeployed(cmd.Context(), []string{incEng.ResolvedTarget(f).Namespace}, injectDeployPrereqs); err != nil {
 				return err
 			}
 		}
@@ -141,6 +142,9 @@ var incidentStatusCmd = &cobra.Command{
 	Short:        "Run the active incident's detection check",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := rebindToActiveIncident(); err != nil {
+			return err
+		}
 		res, err := incEng.Status(context.Background(), newCheckRunner(), "")
 		if errors.Is(err, incident.ErrNoActive) {
 			fmt.Println("No incident is active. Inject one with: labctl incident inject --random")
@@ -196,6 +200,11 @@ var incidentResolveCmd = &cobra.Command{
 		if len(args) == 1 {
 			name = args[0]
 		}
+		// resolve.sh acts on the workload that was broken, which is not
+		// necessarily the one ambient config names.
+		if err := rebindToActiveIncident(); err != nil {
+			return err
+		}
 		// With no name, resolve the active incident (an explicit name works even
 		// if the active state was lost — the escape hatch).
 		if name == "" {
@@ -239,8 +248,27 @@ var incidentHintCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Hint %d of %d:\n\n%s\n", h.Index, h.Total, h.Text)
+		chargeHints(1)
 		return nil
 	},
+}
+
+// chargeHints bills revealed hints to the active challenge, if there is one.
+//
+// The only hint mechanism a challenge has is the wrapped incident's, so without
+// this the hintPenalty term of the published score formula can never fire: a
+// learner reads every hint and still scores 100. Best effort — outside a
+// challenge there is nothing to bill, and that is not an error.
+func chargeHints(n int) {
+	eng := challengeEngine()
+	if active, err := eng.Active(); err != nil || active == nil {
+		return
+	}
+	for i := 0; i < n; i++ {
+		if err := eng.RecordHint(); err != nil {
+			return
+		}
+	}
 }
 
 var solutionYes bool
@@ -268,6 +296,10 @@ var incidentSolutionCmd = &cobra.Command{
 			return err
 		}
 		fmt.Println(text)
+		// The solution contains everything the hints do, so reading it costs
+		// what reading all of them would. Otherwise it is the cheapest way to
+		// win a challenge: full marks for the full walkthrough.
+		chargeHints(incEng.HintCount(name))
 		return nil
 	},
 }
@@ -345,4 +377,21 @@ func init() {
 	incidentCmd.AddCommand(incidentSolutionCmd)
 	incidentCmd.AddCommand(incidentHistoryCmd)
 	rootCmd.AddCommand(incidentCmd)
+}
+
+// rebindToActiveIncident re-binds the lab to the workload the active fault was
+// injected into, so status, hints and resolve act on what was actually broken.
+func rebindToActiveIncident() error {
+	// An unreadable active file is reported by the command that needs it, not
+	// here — refusing to bind would turn a corrupt state file into a lab with no
+	// way to resolve.
+	a, err := incEng.Active()
+	if err != nil {
+		slog.Debug("could not read the active incident to rebind", "err", err)
+		return nil
+	}
+	if a == nil {
+		return nil
+	}
+	return rebindTo(a.App)
 }

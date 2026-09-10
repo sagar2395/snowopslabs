@@ -112,38 +112,8 @@ var rootCmd = &cobra.Command{
 		} else if appOverride != "" {
 			appName = appOverride
 		}
-		bound := workload.Default(appName)
-		var boundContract workload.Contract
-		appCfg, appErr := config.LoadAppConfig(cfg.ProjectRoot, appName)
-		switch {
-		case appErr != nil && appOverride != "":
-			return fmt.Errorf("--app %s: %w", appOverride, appErr)
-		case appErr != nil:
-			slog.Debug("workload binding fell back to defaults", "app", appName, "err", appErr)
-		default:
-			bound = appCfg.Workload()
-			boundContract = appCfg.Contract
-		}
-		slog.Debug("workload bound", "app", bound.Name, "namespace", bound.Namespace,
-			"port", bound.Port, "capabilities", boundContract.Capabilities)
-
-		// Component and fault scripts act on the bound workload, so they need it
-		// in their environment the same way they get DOMAIN_SUFFIX.
-		exec.SetEnv("WORKLOAD_NAME", bound.Name)
-		exec.SetEnv("WORKLOAD_NAMESPACE", bound.Namespace)
-		exec.SetEnv("WORKLOAD_PORT", bound.Port)
-		exec.SetEnv("WORKLOAD_METRIC", bound.Metric)
-		scenes = scenario.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix, cfg.Profile)
-		scenes.MonitoringNamespace = cfg.MonitoringNamespace
-		scenes.IngressClass = cfg.IngressClass
-		scenes.Workload = bound
-		scenes.Contract = boundContract
-		incEng = incident.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix)
-		incEng.MonitoringNamespace = cfg.MonitoringNamespace
-		incEng.Workload = bound
-		incEng.AlertmanagerURL = os.Getenv("ALERTMANAGER_URL")
-		if incEng.AlertmanagerURL == "" {
-			incEng.AlertmanagerURL = "http://alertmanager." + cfg.DomainSuffix
+		if err := bindWorkload(appName, appOverride != ""); err != nil {
+			return err
 		}
 		svcReg = services.NewRegistry(cfg.ProjectRoot)
 		rtm = runtime.NewManager(cfg.ProjectRoot, cfg.ClusterName)
@@ -163,6 +133,71 @@ var rootCmd = &cobra.Command{
 // incident, …); those DO need the engines, so only the `runs` subcommands may
 // skip on those leaf names. Matching the leaf alone was a real bug: it made
 // `labctl scenario list` nil-panic because `scenes` was never constructed.
+// bindWorkload resolves the app name to a workload binding and rebuilds
+// everything that reads it: the script environment, the scenario engine and the
+// incident engine. Binding is a step, not a one-off during start-up, because
+// `labctl compare` runs the same scenario against several apps in turn and must
+// rebind between them (ADR-0014).
+//
+// explicit says the name came from a deliberate choice (--app, or --apps in a
+// comparison) rather than the ambient APP_NAME. A missing or malformed app.env must not stop unrelated
+// commands from running, so an ambient name falls back to the conventional
+// defaults and `labctl app verify` is where the problem is reported; an explicit
+// one is a usage error.
+func bindWorkload(appName string, explicit bool) error {
+	bound := workload.Default(appName)
+	var boundContract workload.Contract
+	appCfg, appErr := config.LoadAppConfig(cfg.ProjectRoot, appName)
+	switch {
+	case appErr != nil && explicit:
+		return fmt.Errorf("app %s: %w", appName, appErr)
+	case appErr != nil:
+		slog.Debug("workload binding fell back to defaults", "app", appName, "err", appErr)
+	default:
+		bound = appCfg.Workload()
+		boundContract = appCfg.Contract
+	}
+	slog.Debug("workload bound", "app", bound.Name, "namespace", bound.Namespace,
+		"port", bound.Port, "capabilities", boundContract.Capabilities)
+
+	// Component and fault scripts act on the bound workload, so they need it
+	// in their environment the same way they get DOMAIN_SUFFIX.
+	exec.SetEnv("WORKLOAD_NAME", bound.Name)
+	exec.SetEnv("WORKLOAD_NAMESPACE", bound.Namespace)
+	exec.SetEnv("WORKLOAD_PORT", bound.Port)
+	exec.SetEnv("WORKLOAD_METRIC", bound.Metric)
+
+	scenes = scenario.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix, cfg.Profile)
+	scenes.MonitoringNamespace = cfg.MonitoringNamespace
+	scenes.IngressClass = cfg.IngressClass
+	scenes.Workload = bound
+	scenes.Contract = boundContract
+
+	incEng = incident.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix)
+	incEng.MonitoringNamespace = cfg.MonitoringNamespace
+	incEng.Workload = bound
+	incEng.AlertmanagerURL = os.Getenv("ALERTMANAGER_URL")
+	if incEng.AlertmanagerURL == "" {
+		incEng.AlertmanagerURL = "http://alertmanager." + cfg.DomainSuffix
+	}
+	return nil
+}
+
+// rebindTo re-binds the whole lab to an app recorded in state — the workload a
+// scenario was activated against, or the one a fault was injected into.
+//
+// It must go through bindWorkload rather than setting the engine field alone:
+// the fault and component scripts read WORKLOAD_* from the executor's
+// environment, so a binding that stopped at the engine graded one app while the
+// scripts acted on another. A no-op when nothing was recorded (state written by
+// an older build) or the app is already bound.
+func rebindTo(app string) error {
+	if app == "" || app == scenes.Workload.Name {
+		return nil
+	}
+	return bindWorkload(app, true)
+}
+
 // pinsWorkload reports whether a command must run against the default workload
 // regardless of --app or APP_NAME.
 //
