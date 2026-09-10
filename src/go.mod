@@ -2,6 +2,11 @@ module github.com/sagar2395/snowopslabs
 
 go 1.25.0
 
+// The language floor above stays at 1.25; this pins the toolchain that BUILDS
+// it. Without it `make vuln` passes in CI (which tracks the latest 1.26 patch)
+// and fails on any developer machine whose Go has fallen behind a stdlib CVE.
+toolchain go1.26.6
+
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
