@@ -24,12 +24,20 @@ var knownSubdomains = []string{
 	"go-api-staging", // env-promotion: staging environment ingress
 	"go-api-prod",    // env-promotion: prod environment ingress
 	"echo-server",
+	"java-api", // the second workload stack, deployed like any other app
 	"grafana",
 	"prometheus",
+	// The incident engine defaults ALERTMANAGER_URL to alertmanager.<suffix> and
+	// asks it whether an expectAlert fault actually paged. Without this entry the
+	// query cannot connect, and every paging fault reports "did not fire".
+	"alertmanager",
 	"opencost", // cost-right-sizing: OpenCost UI ingress
 	"argocd",
 	"traefik",
-	"kubernetes-dashboard",
+	// The dashboard's Ingress host is dashboard.<suffix>, not the release name:
+	// platform/dashboard/kubernetes-dashboard/install.sh prints that URL, and an
+	// entry under any other name resolves nothing.
+	"dashboard",
 	"chaos", // chaos-engineering: Chaos Mesh dashboard ingress
 }
 
