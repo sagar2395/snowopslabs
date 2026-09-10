@@ -85,10 +85,14 @@ lint-go:
 lint-ui:
 	@cd $(UI_DIR) && npm run typecheck
 
+# gosec runs through golangci-lint so there is exactly one gosec policy: the
+# rule exclusions and their reasons in .golangci.yml, plus the per-site
+# //nolint:gosec justifications. A bare `gosec ./...` reads neither, and
+# re-reports every finding this project has already answered.
 sec:
-	@command -v gosec >/dev/null 2>&1 || { \
-	  echo "gosec not found: go install github.com/securego/gosec/v2/cmd/gosec@latest"; exit 1; }
-	@gosec -quiet ./...
+	@command -v golangci-lint >/dev/null 2>&1 || { \
+	  echo "golangci-lint not found: https://golangci-lint.run/welcome/install/"; exit 1; }
+	@golangci-lint run --enable-only=gosec ./...
 
 vuln:
 	@command -v govulncheck >/dev/null 2>&1 || { \

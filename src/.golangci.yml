@@ -46,10 +46,14 @@ linters:
         - name: error-strings
         - name: error-return
     gosec:
+      # The single source of gosec policy for this repo. `make sec` runs gosec
+      # through golangci-lint so it reads these excludes and the per-site
+      # //nolint:gosec justifications, rather than re-deriving findings the
+      # project has already answered.
       excludes:
         # G204: this tool's entire job is running shell scripts. Command
-        # construction is argv-only and paths are containment-checked in
-        # internal/toolchain (W1-T03), which is where that risk is handled.
+        # construction is argv-only and script paths are containment-checked in
+        # internal/toolchain, which is where that risk is handled.
         - G204
         # G301/G302/G306: this is a single-user local lab CLI. Its state,
         # results, and snapshot files under .labctl/ are deliberately
