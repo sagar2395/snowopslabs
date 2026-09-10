@@ -46,7 +46,7 @@ machine with a non-zero exit.
 🔍 Whatever the outcome, check the table itself:
 
 - Is every column meaningful at a glance (`TOOL`, `STATUS`, `VERSION`, `REQUIRED`)?
-- Are optional tools (`k3d`, `kind`) visibly distinct from required ones?
+- Are optional tools (`k3d`, `kind`, `jq`) visibly distinct from required ones?
 - Does the version it detected match what `helm version` etc. actually report?
 
 ---
@@ -129,7 +129,9 @@ $ PATH="$R02_DIR/bin:$PATH" ./bin/labctl doctor 2>&1 | grep -A3 'Notes:'
 
 **Expect:** if `k3d` or `kind` is absent on your machine, each appears under
 `Notes:` rather than `Problems to fix`, and each hint mentions the alternative
-("or use PROFILE=kind").
+("or use PROFILE=kind"). `jq` behaves the same way: the lab builds and runs
+without it, and only scenario tooling that scrubs manifests — the backup/restore
+drill — needs it.
 
 🔍 Confirm the exit code is driven only by *required* tools.
 

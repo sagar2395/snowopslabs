@@ -47,9 +47,15 @@ Manages a labctl-owned block in `/etc/hosts` so cluster ingress hostnames
 safe to run repeatedly. Needs privileges to write `/etc/hosts`.
 
 ```bash
-labctl hosts add        # add or refresh the managed block
+sudo labctl hosts add   # add or refresh the managed block
 labctl hosts remove     # remove it
 ```
+
+Re-run `hosts add` after upgrading: the managed block is rewritten from the
+hostname list in the binary, so an entry added by a newer labctl is missing
+until you do. A missing entry fails quietly — `alertmanager.k3d.local` was
+absent for several releases, and the only symptom was every `expectAlert`
+incident reporting that its page had not fired.
 
 ## The cluster
 

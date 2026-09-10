@@ -73,6 +73,10 @@ These hold everywhere. Breaking one is a review rejection, not a discussion.
   timeout and a lock key. Never `exec.Command(...).Run()`.
 - Every operation is idempotent. `helm upgrade --install`, `kubectl apply`;
   interrupting and re-running must converge.
+- One gosec policy, in `src/.golangci.yml`. `make sec` runs gosec through
+  golangci-lint so it reads that file and the per-site `//nolint:gosec`
+  justifications. Suppress a finding at its call site with a reason, or exclude
+  the rule there with one — never by running the tool unconfigured.
 
 **Content**
 
