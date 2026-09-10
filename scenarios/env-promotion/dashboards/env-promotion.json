@@ -1,0 +1,281 @@
+{
+ "uid": "env-promotion",
+ "title": "Promotion Pipeline \u2014 dev, staging, prod",
+ "schemaVersion": 39,
+ "tags": [
+  "delivery",
+  "promotion",
+  "rollout"
+ ],
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ },
+ "refresh": "30s",
+ "editable": true,
+ "graphTooltip": 1,
+ "annotations": {
+  "list": []
+ },
+ "templating": {
+  "list": []
+ },
+ "panels": [
+  {
+   "title": "Where the release actually is",
+   "type": "text",
+   "gridPos": {
+    "h": 5,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "options": {
+    "mode": "markdown",
+    "content": "A promotion is an image moving forward one environment at a time. The table below is the pipeline's live state: each namespace and the tag its pods were **asked** to run.\n\nRead `image_spec`, not `image`. The lab builds every version as both `vX.Y.Z` and `:latest`, so those tags share a digest and the kubelet reports whichever one it resolved \u2014 usually `docker.io/library/{{.WorkloadName}}:latest` for a pod that correctly requested `{{.WorkloadName}}:v1.1.0`. `image_spec` is what the pod asked for, and that is the release.\n\nThe right-hand panel is the difference between asking and arriving: **rollout converged** sits at 1 while an environment is settled, dips during a promotion, and *stays down* when a promotion cannot land \u2014 a tag that was never built, for instance. That is drift, and it is what `verify` fails on."
+   }
+  },
+  {
+   "title": "The pipeline right now \u2014 which tag each environment asked for",
+   "type": "table",
+   "description": "One row per environment. During a promotion two rows appear for the same namespace: the old ReplicaSet's pod and the new one.",
+   "gridPos": {
+    "h": 8,
+    "w": 13,
+    "x": 0,
+    "y": 5
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "custom": {
+      "align": "left"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "showHeader": true
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "kube_pod_container_info{namespace=~\"env-.*\"}",
+     "instant": true,
+     "format": "table",
+     "refId": "A"
+    }
+   ],
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true,
+       "Value": true,
+       "__name__": true,
+       "container": true,
+       "endpoint": true,
+       "instance": true,
+       "job": true,
+       "pod": true,
+       "service": true,
+       "uid": true,
+       "image_id": true,
+       "container_id": true,
+       "image": true
+      },
+      "renameByName": {
+       "namespace": "environment",
+       "image_spec": "requested image"
+      }
+     }
+    }
+   ]
+  },
+  {
+   "title": "Rollout converged (1 = settled, below 1 = drifting)",
+   "type": "timeseries",
+   "description": "Two independent ways a promotion can be un-landed: the controller has not caught up with your spec, or it has and the pods will not become ready. A line stuck below 1 is a wedged rollout \u2014 the state a release record claiming vNEXT is lying about.",
+   "gridPos": {
+    "h": 8,
+    "w": 11,
+    "x": 13,
+    "y": 5
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none"
+      }
+     },
+     "max": 1.1
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (namespace) (kube_deployment_status_replicas_updated{namespace=~\"env-.*\"}) / sum by (namespace) (kube_deployment_spec_replicas{namespace=~\"env-.*\"})",
+     "legendFormat": "updated / desired",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (namespace) (kube_deployment_status_observed_generation{namespace=~\"env-.*\"}) / sum by (namespace) (kube_deployment_metadata_generation{namespace=~\"env-.*\"})",
+     "legendFormat": "observed / desired generation",
+     "refId": "B"
+    }
+   ]
+  },
+  {
+   "title": "Ready replicas per environment",
+   "type": "timeseries",
+   "description": "The dip during a promotion is the new ReplicaSet coming up. A dip that does not recover is a release that never made it \u2014 check the pods for ImagePullBackOff before you blame the app.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 13
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (namespace) (kube_deployment_status_replicas_available{namespace=~\"env-.*\"})",
+     "legendFormat": "available",
+     "refId": "A"
+    },
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (namespace) (kube_deployment_spec_replicas{namespace=~\"env-.*\"})",
+     "legendFormat": "desired",
+     "refId": "B"
+    }
+   ]
+  },
+  {
+   "title": "ReplicaSets per environment \u2014 the release history, live",
+   "type": "timeseries",
+   "description": "Each new tag an environment is promoted to leaves a ReplicaSet behind; this is 'kubectl rollout history' as a graph. A rollback does NOT add one \u2014 it reuses an older ReplicaSet, which is exactly why rolling back is fast and rebuilding is not.",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 13
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "none",
+     "min": 0,
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10,
+      "spanNulls": false,
+      "stacking": {
+       "mode": "none"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "count by (namespace) (kube_replicaset_owner{namespace=~\"env-.*\"})",
+     "legendFormat": "ReplicaSets",
+     "refId": "A"
+    }
+   ]
+  }
+ ]
+}

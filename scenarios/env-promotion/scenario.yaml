@@ -7,6 +7,7 @@ category: delivery
 prerequisites:
   platform:
     - ingress
+    - monitoring/metrics
   apps:
     - "{{.WorkloadName}}"
 runtimes:
@@ -28,6 +29,7 @@ stages:
       - name: baseline-image
         type: script
         script: scripts/seed-baseline-image.sh
+        uninstallScript: scripts/unseed-baseline-image.sh
 
   - name: dev-env
     description: Deploy {{.WorkloadName}}:v1.0.0 into the dev environment (namespace env-dev)
@@ -50,18 +52,26 @@ stages:
         type: manifest
         path: manifests/prod-env.yaml
 
+      - name: promotion-dashboard
+        type: grafana-dashboard
+        path: dashboards/
+        namespace: "{{.MonitoringNamespace}}"
+
 checks:
   - name: env-dev-namespace-exists
     type: kubectl
     resource: namespace/env-dev
+    remediation: "The dev environment is missing. Re-activate the scenario to rebuild the three environments: labctl scenario up env-promotion --force"
 
   - name: env-staging-namespace-exists
     type: kubectl
     resource: namespace/env-staging
+    remediation: "The staging environment is missing. Re-activate the scenario: labctl scenario up env-promotion --force"
 
   - name: env-prod-namespace-exists
     type: kubectl
     resource: namespace/env-prod
+    remediation: "The prod environment is missing. Re-activate the scenario: labctl scenario up env-promotion --force"
 
   - name: workload-running-in-dev
     type: kubectl
@@ -70,6 +80,7 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "Nothing is Ready in env-dev yet. Straight after activation the rollout is usually still in flight — re-run with 'labctl scenario verify env-promotion --watch'. If it stays down, look at the pods: a promotion to a tag that was never built leaves them in ImagePullBackOff. kubectl -n env-dev get pods"
 
   - name: workload-running-in-staging
     type: kubectl
@@ -78,6 +89,7 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "Nothing is Ready in env-staging yet. Straight after activation the rollout is usually still in flight — re-run with 'labctl scenario verify env-promotion --watch'. If it stays down: kubectl -n env-staging get pods && kubectl -n env-staging rollout status deploy/{{.WorkloadName}}"
 
   - name: workload-running-in-prod
     type: kubectl
@@ -86,6 +98,7 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "Nothing is Ready in env-prod yet. Straight after activation the rollout is usually still in flight — re-run with 'labctl scenario verify env-promotion --watch'. If it stays down: kubectl -n env-prod get pods && kubectl -n env-prod rollout status deploy/{{.WorkloadName}}"
 
   - name: declared-tag-matches-running-image
     type: script
@@ -102,6 +115,29 @@ checks:
     pending: true
     remediation: "Build a newer image and promote it through to prod: bash scenarios/env-promotion/scripts/build-image.sh v1.1.0 && kubectl -n env-dev set image deployment/{{.WorkloadName}} {{.WorkloadName}}={{.WorkloadName}}:v1.1.0 && kubectl -n env-dev rollout status deployment/{{.WorkloadName}} (then repeat for env-staging and env-prod, updating each env-metadata declared_tag to v1.1.0)."
 
+  # Objective 5 was previously only a suggestion in explore. It is graded here on
+  # the one thing a rollback leaves behind that rolling forward cannot: prod
+  # serving a ReplicaSet older than the newest it has created.
+  - name: rollback-was-exercised
+    type: script
+    script: checks/rollback-was-exercised.sh
+    pending: true
+    remediation: "You have promoted forward but never had to come back. Ship a release to prod that cannot land — kubectl -n env-prod set image deployment/{{.WorkloadName}} {{.WorkloadName}}={{.WorkloadName}}:v9.9.9 — verify to see the drift reported, then recover with kubectl -n env-prod rollout undo deployment/{{.WorkloadName}} and put declared_tag back to the release you returned to."
+
+references:
+  - label: "Kubernetes — Deployments: updating, rollout status and rolling back"
+    url: "https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#updating-a-deployment"
+    note: "Why 'set image' creates a new ReplicaSet, and why 'rollout undo' re-activates an old one instead of building anything."
+  - label: "Kubernetes — Object management: spec vs status"
+    url: "https://kubernetes.io/docs/concepts/overview/working-with-objects/#object-spec-and-status"
+    note: "The distinction the consistency check is built on: your intent, and what the controller has actually achieved."
+  - label: "Kubernetes — Images and imagePullPolicy"
+    url: "https://kubernetes.io/docs/concepts/containers/images/"
+    note: "Why an environment must pin an explicit tag, and what happens when it names one that was never built."
+  - label: "OCI — Image tags are mutable, digests are not"
+    url: "https://github.com/opencontainers/distribution-spec/blob/main/spec.md#pulling-manifests"
+    note: "The reason 'promote the artifact you tested' means promoting one immutable build rather than rebuilding per environment."
+
 snippets:
   - label: "One environment's full stack (namespace, deployment, service, ingress)"
     description: "Each env is the same shape in its own namespace, pinned to an EXPLICIT image tag ({{.WorkloadName}}:v1.0.0) — never :latest. Promotion changes spec.template.spec.containers[].image, which rolls out a new ReplicaSet. Read this to see there is no magic: promotion is a plain image change on a Deployment."
@@ -115,6 +151,8 @@ snippets:
 
 explore:
   urls:
+    - label: "Grafana — the pipeline: which tag each env asked for, and whether it landed"
+      url: "http://grafana.{{.DomainSuffix}}/d/env-promotion"
     - label: "{{.WorkloadName}} /version — dev environment"
       url: "http://{{.WorkloadName}}-dev.{{.DomainSuffix}}/version"
     - label: "{{.WorkloadName}} /version — staging environment"
@@ -126,8 +164,8 @@ explore:
       command: "sudo labctl hosts add"
     - label: "1. Baseline check — all three envs serve the SAME version (v1.0.0)"
       command: "for e in dev staging prod; do echo -n \"$e: \"; curl -s {{.WorkloadName}}-$e.{{.DomainSuffix}}/version; echo; done"
-    - label: "2. Make a code change you can SEE: edit `releaseNote` in apps/{{.WorkloadName}}/main.go"
-      command: "grep -n 'releaseNote =' apps/{{.WorkloadName}}/main.go   # change the string, then build a new version"
+    - label: "2. Make a code change you can SEE: make a visible change in the workload's source under apps/{{.WorkloadName}}/ (go-api exposes `releaseNote` in main.go)"
+      command: "grep -rn 'releaseNote' apps/{{.WorkloadName}}/ 2>/dev/null || echo 'this workload has no releaseNote — change any user-visible string, then rebuild'"
     - label: "3. Build the new version and load it into the cluster (this is 'docker build + push')"
       command: "bash scenarios/env-promotion/scripts/build-image.sh v1.1.0"
     - label: "4. Deploy to DEV ONLY — a real rollout (new ReplicaSet), then record the declared tag"
@@ -138,22 +176,32 @@ explore:
       command: "kubectl -n env-staging set image deployment/{{.WorkloadName}} {{.WorkloadName}}={{.WorkloadName}}:v1.1.0 && kubectl -n env-staging rollout status deployment/{{.WorkloadName}} && kubectl -n env-staging patch cm env-metadata --type=merge -p '{\"data\":{\"declared_tag\":\"v1.1.0\",\"promoted_from\":\"dev\"}}'"
     - label: "7. Promote staging → PROD (release to production)"
       command: "kubectl -n env-prod set image deployment/{{.WorkloadName}} {{.WorkloadName}}={{.WorkloadName}}:v1.1.0 && kubectl -n env-prod rollout status deployment/{{.WorkloadName}} && kubectl -n env-prod patch cm env-metadata --type=merge -p '{\"data\":{\"declared_tag\":\"v1.1.0\",\"promoted_from\":\"staging\"}}'"
-    - label: "8. Verify the whole pipeline (declared == running everywhere; newer release reached prod)"
+    - label: "8. Verify the pipeline so far (declared == running everywhere; a newer release reached prod)"
       command: "labctl scenario verify env-promotion"
-    - label: "ROLLBACK drill — undo prod's last rollout and see it revert"
+    - label: "9. ROLLBACK DRILL — ship prod something that cannot land (a tag nobody ever built)"
+      command: "kubectl -n env-prod set image deployment/{{.WorkloadName}} {{.WorkloadName}}={{.WorkloadName}}:v9.9.9"
+    - label: "10. Watch it fail to arrive — the spec says v9.9.9, the pods do not, and verify says so"
+      command: "kubectl -n env-prod get pods && labctl scenario verify env-promotion"
+    - label: "11. Recover — undo is the fastest lever you have, because it reuses a ReplicaSet"
       command: "kubectl -n env-prod rollout undo deployment/{{.WorkloadName}} && kubectl -n env-prod rollout status deployment/{{.WorkloadName}} && kubectl -n env-prod rollout history deployment/{{.WorkloadName}}"
+    - label: "12. Put the release record back in step with reality, then grade the whole drill"
+      command: "kubectl -n env-prod patch cm env-metadata --type=merge -p '{\"data\":{\"declared_tag\":\"v1.1.0\"}}' && labctl scenario verify env-promotion"
     - label: "Watch a rollout happen live (run in a second terminal before promoting)"
       command: "kubectl -n env-staging get pods -w"
     - label: "Diff what's running between two environments"
       command: "diff <(kubectl -n env-dev get deploy {{.WorkloadName}} -o jsonpath='{.spec.template.spec.containers[0].image}') <(kubectl -n env-prod get deploy {{.WorkloadName}} -o jsonpath='{.spec.template.spec.containers[0].image}') && echo 'same image' || echo 'environments differ'"
   tips:
     - "Default mode: one cluster, three namespaces (env-dev/staging/prod). Laptop-friendly — no extra clusters."
+    - "Activation returns as soon as the manifests are applied, so a verify run in the same breath will report the three environments as not Ready. That is the rollout still happening, not a broken lab — use 'labctl scenario verify env-promotion --watch'."
     - "Promotion moves an IMAGE, not a config value. 'kubectl set image' changes spec.template, which creates a new ReplicaSet — that rollout IS the promotion. Editing env-metadata alone would fail 'labctl scenario verify'."
     - "Versions are immutable: build {{.WorkloadName}}:v1.1.0 once, then promote that SAME image dev→staging→prod. You never rebuild per environment — that is the point of promoting a tested artifact forward."
-    - "The version is baked into the image (main.version). Edit `releaseNote` in apps/{{.WorkloadName}}/main.go before building so you can SEE the new build in /version as it moves through the pipeline."
+    - "The version is baked into the image (main.version). Change something user-visible in the workload's source before building (go-api has `releaseNote` in main.go) so you can SEE the new build in /version as it moves through the pipeline."
     - "'labctl scenario verify' grades the real outcome: declared_tag must equal the running image in every env, and a newer-than-baseline release must have reached prod."
     - "spec vs status is the core Kubernetes lesson here. 'kubectl set image' only writes .spec — your intent. The Deployment controller writes .status once reality catches up. Compare them yourself: kubectl -n env-prod get deploy {{.WorkloadName}} -o jsonpath='{.metadata.generation} {.status.observedGeneration} {.status.updatedReplicas}/{.spec.replicas}'"
-    - "Drift detection is the real-world skill: a release record that claims v1.1.0 while the cluster serves v1.0.0 is exactly what ArgoCD reports as OutOfSync. Break it deliberately — 'kubectl -n env-prod set image deployment/{{.WorkloadName}} {{.WorkloadName}}={{.WorkloadName}}:v9.9.9' (an image that does not exist) — then verify. Spec says v9.9.9, the rollout never converges, pods still run the old tag, and the check tells you all three."
+    - "Drift detection is the real-world skill: a release record that claims v1.1.0 while the cluster serves v1.0.0 is exactly what ArgoCD reports as OutOfSync. Steps 9-12 make you cause it deliberately — spec says v9.9.9, the rollout never converges, pods still run the old tag, and the check tells you all three."
+    - "A rollback is graded on what it leaves behind. Rolling FORWARD always creates a new ReplicaSet; coming back re-activates an older one and bumps its revision. So 'prod is serving a ReplicaSet that is not the newest it has created' means prod went somewhere and returned — and it is true whether you used 'rollout undo' or set the image back by hand, because those are the same operation."
+    - "Watch the ReplicaSet count on the dashboard across steps 9-12: it goes up when you ship v9.9.9 and does NOT go up when you undo. That is the whole reason a rollback is seconds and a rebuild is minutes — nothing is being built."
+    - "Deleting the workload namespaces is not how you finish. 'labctl scenario down env-promotion' removes the three environments and the versioned images it built; the ':latest' tag every other scenario runs on is deliberately left alone."
     - "Break it on purpose: patch env-metadata's declared_tag WITHOUT running 'kubectl set image', then verify — the consistency check catches the drift. That is why the ConfigMap alone is not a promotion."
     - "This scenario teaches IMPERATIVE promotion — you run the rollout yourself with kubectl. For the DECLARATIVE version, where you commit an image tag to Git and ArgoCD reconciles it (with automated prune + self-heal), run the 'gitops-cicd' scenario. Same goal, two philosophies."
     - "Tear down with 'labctl scenario down env-promotion' — removes all three namespaces cleanly."
