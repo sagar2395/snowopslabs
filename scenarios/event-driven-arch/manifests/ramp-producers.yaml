@@ -1,6 +1,10 @@
-# Stage 2: re-apply the producer Deployment (same name) at 3 replicas so the
-# single consumer can't keep up — consumer-group lag climbs. Drain it by scaling
-# orders-consumer up (see the explore commands) or with a KEDA Kafka-lag scaler.
+# Stage 2 — the pressure. Re-applies the producer Deployment (same name) at 3
+# replicas emitting five times as fast: roughly 29 orders/second against a
+# consumer group that can process about 18. Lag then climbs at ~11/s, which is
+# what the learner has to diagnose and drain.
+#
+# The producers stay ramped for the whole exercise. Draining by stopping them is
+# not a fix, and 'producers-still-ramped' grades that.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,8 +28,12 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
+              PAD=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+              PAD=$PAD$PAD$PAD$PAD
+              PAD=$PAD$PAD$PAD$PAD
+              PAD=$PAD$PAD
               while true; do
-                echo "order-$(date +%s)-${RANDOM}";
+                echo "{\"id\":\"order-$(date +%s)-${RANDOM}\",\"items\":3,\"body\":\"$PAD\"}";
                 sleep 0.1;
               done | /opt/kafka/bin/kafka-console-producer.sh \
                 --bootstrap-server lab-kafka-kafka-bootstrap:9092 \
