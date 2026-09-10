@@ -8,6 +8,7 @@ This directory contains the applications deployed to the lab cluster. Each app i
 |-----|----------|-----------|-------------|
 | **go-api** | Go 1.24 | `/health`, `/ready`, `/metrics`, `/toggle-failure`, `/` | None |
 | **echo-server** | Go 1.24 | `/health`, `/ready`, `/echo`, `/cache`, `/metrics` | Redis (optional) |
+| **java-api** | Java 21 | `/health`, `/ready`, `/metrics`, `/toggle-failure`, `/` | None |
 
 ## App Directory Structure
 
@@ -58,6 +59,20 @@ HELM_VALUES=values-dev.yaml    # Which values file to use
 The `app.env` file is sourced by `engine/build.sh` and `engine/deploy.sh` to select strategy scripts.
 
 **Runtime env vars** (like `PORT`, `REDIS_URL`) are documented at the bottom of `app.env` as comments but are NOT read by the engine. They are injected into the container via Helm values (`env:` section in `values-*.yaml`).
+
+**Rebuilds under a mutable tag.** `labctl app deploy` threads the local image
+ID into a pod annotation (`snowops.net/image-id`). Without it, rebuilding under
+an unchanged tag leaves the Deployment spec identical, `helm upgrade` is a no-op,
+and the running pods keep serving the previous build while deploy reports
+success. A chart brought by a BYO app should carry the same annotation — set
+`image.id` on the pod template — or iterating on that app will appear to do
+nothing.
+
+**`APP_VERSION`** is part of the workload contract: when it is set, the app must
+report it as the version on `/version`, overriding any build-time stamp. Content
+relies on this to run two Deployments of one image as distinct versions — a mesh
+canary splits on it, and `/version` is how a learner sees which subset served
+them. Both reference apps honour it (`go-api`, `java-api`).
 
 ## The workload contract
 
@@ -348,6 +363,20 @@ A Go HTTP server that echoes request details and provides Redis-backed caching.
 **Features:** Structured JSON logging, Prometheus labeled metrics, optional Redis integration, graceful shutdown.
 
 **Dependencies:** Redis (optional). Install via `labctl service up redis` or `make service-up SVC=redis`.
+
+## java-api
+
+A second technology stack, so a scenario can be run against something that is not
+Go and the two compared. Its JVM characteristics are the point: ~50Mi resident at
+rest against the Go services' ~10Mi, plus slower start and GC pauses.
+
+It has **no Helm chart of its own** — the shared workload chart deploys it from
+its declared contract, which is the same path a user's own application takes. It
+also has no build tool: the app is dependency-free and compiles with `javac`, so
+the lab stays offline and fast.
+
+See [java-api/README.md](java-api/README.md), including how the same metric maps
+onto Micrometer for a real Spring service.
 
 ## Security
 

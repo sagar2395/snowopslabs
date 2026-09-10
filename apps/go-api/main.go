@@ -66,6 +66,14 @@ func init() {
 }
 
 func main() {
+	// APP_VERSION overrides the -ldflags build stamp so two Deployments of one
+	// image can present distinct identities — what a mesh canary splits on, and
+	// what /version must report for the split to be observable. Applied here,
+	// not as an initializer: the linker's -X cannot set a var that has one.
+	if v := os.Getenv("APP_VERSION"); v != "" {
+		version = v
+	}
+
 	readinessFailure := getEnv("READINESS_FAILURE", "false") == "true"
 	flag.BoolFunc("failure", "Simulate readiness check failure", func(s string) error {
 		v, err := strconv.ParseBool(s)
