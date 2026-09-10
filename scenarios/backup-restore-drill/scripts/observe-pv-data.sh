@@ -14,7 +14,11 @@ set -euo pipefail
 #
 # This is the point of the drill: the ConfigMap round-trips, the PV data does not.
 
-NS="${1:-${WORKLOAD_NAMESPACE:-go-api}}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=scripts/_backup_lib.sh
+. "${SCRIPT_DIR}/_backup_lib.sh"
+
+NS="$(backup_ns "${1:-}")"
 
 if ! kubectl -n "$NS" get deploy data-writer >/dev/null 2>&1; then
   echo "data-writer is not deployed in '${NS}'." >&2
@@ -36,5 +40,22 @@ if [ -z "$BOOT_ID" ]; then
 fi
 
 echo "PV data boot-id: ${BOOT_ID}"
-echo "(If this value changed after a restore, the PV data was LOST — a manifest"
-echo " backup restores the PVC object, not the bytes that were on the volume.)"
+
+# Show it against what the backup recorded, so the change is a comparison the
+# learner can see rather than a number they had to remember.
+LOG="$(bootid_log "$NS")"
+if [ -f "$LOG" ]; then
+  AT_BACKUP="$(head -1 "$LOG" | awk '{print $2}')"
+  if [ "$AT_BACKUP" = "$BOOT_ID" ]; then
+    echo "Same boot-id as when you took the backup — the volume is untouched."
+  else
+    echo "At backup time it was: ${AT_BACKUP}"
+    echo "DIFFERENT: the PVC object came back from the archive, but bound to a brand-new,"
+    echo "empty volume. The objects round-tripped; the data did not. This is exactly what"
+    echo "a manifest-level backup cannot do for you — that needs a volume snapshot or"
+    echo "Velero with restic."
+  fi
+else
+  echo "(Take a backup first to record this value; then it becomes a comparison, not a"
+  echo " number you have to remember.)"
+fi
