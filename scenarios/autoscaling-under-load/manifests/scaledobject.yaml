@@ -14,8 +14,11 @@ metadata:
 spec:
   scaleTargetRef:
     name: "{{.WorkloadName}}"
-  minReplicaCount: "{{.MinReplicas}}"
-  maxReplicaCount: "{{.MaxReplicas}}"
+  # Unquoted: these are integers in the ScaledObject schema, and a quoted
+  # template renders as the string "1", which the CRD rejects. The trigger's
+  # metadata below is map[string]string, so threshold stays quoted.
+  minReplicaCount: {{.MinReplicas}}
+  maxReplicaCount: {{.MaxReplicas}}
   pollingInterval: 15      # seconds between metric polls
   cooldownPeriod: 60       # seconds at/under threshold before scaling down
   advanced:
@@ -29,5 +32,5 @@ spec:
     - type: prometheus
       metadata:
         serverAddress: "http://prometheus-kube-prometheus-prometheus.{{.MonitoringNamespace}}.svc:9090"
-        query: "sum(rate(http_server_request_duration_seconds_count{app=\"{{.WorkloadName}}\"}[1m]))"  # total RPS across pods
+        query: "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[1m]))"  # total RPS across pods
         threshold: "{{.Threshold}}"                                  # RPS per replica
