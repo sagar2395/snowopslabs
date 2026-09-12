@@ -168,7 +168,7 @@ checks:
     operator: ">="
     value: "5"
     pending: true
-    remediation: "{{.WorkloadName}} is only serving its own health probes. Drive real traffic — k6 holds a constant arrival rate, so latency shows up as queueing rather than as fewer requests: labctl traffic start --profile steady --rps 25 --duration 20m"
+    remediation: "{{.WorkloadName}} is only serving its own health probes. Drive real traffic — k6 holds a constant arrival rate, so latency shows up as queueing rather than as fewer requests: labctl traffic start --app {{.WorkloadName}} --profile steady --rps 25 --duration 20m"
 
   # The lower bound of the wiring: the endpoint is set. Its own remediation is
   # the precise command, which is why it is worth keeping alongside the
@@ -202,24 +202,28 @@ checks:
 
   # The point of an alert is that it fires. A rule that exists and has never
   # left 'inactive' has not been tested, and this is the only check here that
-  # requires the learner to break something on purpose.
+  # requires the learner to break something on purpose. Windowed to this
+  # activation: a fixed window forgot a drill done early in the run, and an
+  # open one would count a previous run's alerts.
   - name: an-sre-alert-fired
     type: promql
-    query: 'max_over_time((count(ALERTS{scenario="observability-sre",alertstate="firing"}) or vector(0))[15m:1m])'
+    query: 'max_over_time((count(ALERTS{scenario="observability-sre",alertstate="firing"}) or vector(0))[{{.SinceActivation}}:1m])'
     operator: ">="
     value: "1"
     pending: true
-    remediation: "No alert from this scenario has fired in the last 15 minutes. Break readiness while traffic is flowing and watch PodNotReady go pending then firing: kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:8080/toggle-failure — then Prometheus > Alerts. Toggle it back when you are done."
+    remediation: "No alert from this scenario has fired since it was activated. Break readiness while traffic is flowing and watch PodNotReady go pending then firing: kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:{{.WorkloadPort}}/toggle-failure — then Prometheus > Alerts. Toggle it back when you are done."
 
 snippets:
   - label: "Alloy — the collector config that receives OTLP and forwards to Tempo"
     description: "Three blocks: an OTLP receiver, a batch processor, and an exporter pointing at Tempo. Applications talk to the receiver and know nothing about Tempo — swapping trace backends is a change to the exporter alone, with no application redeploy."
     path: values/alloy.yaml
   - label: "enable-tracing.sh — wiring the app to the collector"
-    description: "APPLY THIS ONE YOURSELF. Nothing stages it; until you do, the app exports nowhere and Tempo stays empty. It is a plain 'kubectl set env' on the Deployment — setting OTEL_EXPORTER_OTLP_ENDPOINT patches the pod template and rolls the pods, the same mechanism as any other config change."
+    description: "Until you run it, the app exports nowhere and Tempo stays empty. It is a plain 'kubectl set env' on the Deployment — setting OTEL_EXPORTER_OTLP_ENDPOINT patches the pod template and rolls the pods, the same mechanism as any other config change."
     path: scripts/enable-tracing.sh
+    exercise: true
+    apply: "bash scenarios/observability-sre/scripts/enable-tracing.sh --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}"
   - label: "SRE alerting rules (error rate, latency, saturation, readiness)"
-    description: "A PrometheusRule with the golden-signal alerts this scenario installs: 5xx error rate, p99 latency, memory/CPU saturation, and pod readiness. Trip one with the traffic/fault commands and watch it fire."
+    description: "A PrometheusRule with the golden-signal alerts this scenario installs: 5xx error rate, p99 latency, memory/CPU saturation, and pod readiness. Trip one with the traffic/fault commands and watch it fire. The release: prometheus label is what makes Prometheus load the rules — a wrong value fails silently."
     path: manifests/alerting-rules.yaml
 
 references:
@@ -244,17 +248,17 @@ explore:
       url: "http://prometheus.{{.DomainSuffix}}"
   commands:
     - label: "1. Wire the app to the collector (do this first — nothing stages it)"
-      command: "bash scenarios/observability-sre/scripts/enable-tracing.sh"
+      command: "bash scenarios/observability-sre/scripts/enable-tracing.sh --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}"
     - label: "2. Generate sustained load with k6 (not a curl loop — real arrival-rate traffic)"
-      command: "labctl traffic start --profile steady --rps 25 --duration 20m"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile steady --rps 25 --duration 20m"
     - label: "2. Watch the generator itself — this is a plain Kubernetes Job"
       command: "kubectl -n traffic get job,pod -l app=traffic-k6 && kubectl -n traffic logs -f job/traffic-k6"
     - label: "3. See the same requests arrive in the app's logs"
       command: "kubectl -n {{.WorkloadNamespace}} logs -f deploy/{{.WorkloadName}} | grep request"
     - label: "4. Confirm the app is counting them (server-side truth)"
-      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:8080/metrics | grep '^{{.WorkloadMetric}}_count'"
+      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:{{.WorkloadPort}}/metrics | grep '^{{.WorkloadMetric}}_count'"
     - label: "5. Compare client-side vs server-side in Grafana"
-      command: "open http://grafana.{{.DomainSuffix}}/d/app-requests  # k6 sent vs app handled — the two lines should overlap"
+      command: "open 'http://grafana.{{.DomainSuffix}}/d/app-requests?var-app={{.WorkloadName}}'  # k6 sent vs app handled — the two lines should overlap"
     - label: "6. Query {{.WorkloadName}} logs in Loki"
       command: "Open Grafana > Explore > Loki > {namespace=\"{{.WorkloadNamespace}}\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\""
     - label: "7. Jump from a log line to its trace"
@@ -264,7 +268,7 @@ explore:
     - label: "Stop the load"
       command: "labctl traffic stop"
     - label: "Break it on purpose: make the app fail readiness and watch every signal react"
-      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:8080/toggle-failure"
+      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:{{.WorkloadPort}}/toggle-failure"
   tips:
     - "Check the alert rules actually loaded: kubectl -n {{.MonitoringNamespace}} get prometheusrules, then Prometheus > Alerts. A PrometheusRule whose 'release' label does not match the kube-prometheus-stack release is silently ignored — it exists in the cluster and Prometheus never reads it."
     - "SLO dashboards appear in Grafana automatically via the sidecar ConfigMap loader."
@@ -273,6 +277,6 @@ explore:
     - "The app exports to Alloy, not to Tempo. That indirection is the point: the collector owns batching, retry and sampling, and the trace backend can be replaced without touching a single application."
     - "Three signals, one request. Metrics say a request was slow, logs say what it did, traces say where the time went. The link between them is the trace_id {{.WorkloadName}} writes on every access-log line — Grafana's Loki datasource turns it into a clickable link to the trace."
     - "Tempo's HTTP API listens on 3200, not 3100. A Grafana datasource pointing at 3100 fails every trace query with a connection error and looks exactly like 'no traces were recorded'."
-    - "Use k6, not a curl loop: 'labctl traffic start --profile steady --rps 25'. k6 holds a constant ARRIVAL rate, so latency changes show up as queueing rather than as fewer requests. Its client-side metrics are remote-written to Prometheus and graphed next to the app's own counters on the Application Request Metrics dashboard."
+    - "Use k6, not a curl loop: 'labctl traffic start --app {{.WorkloadName}} --profile steady --rps 25'. k6 holds a constant ARRIVAL rate, so latency changes show up as queueing rather than as fewer requests. Its client-side metrics are remote-written to Prometheus and graphed next to the app's own counters on the Application Request Metrics dashboard."
     - "If a dashboard panel is empty, check the pipeline before the query: is Prometheus scraping the target (Status > Targets), is Promtail attaching the label your query filters on, is the app actually exporting? 'labctl scenario verify observability-sre' now checks each of those."
     - "Loki and Tempo are platform components. This scenario adopts them when they are already installed rather than upgrading them, because most of a StatefulSet's spec is immutable and re-applying different values fails outright."

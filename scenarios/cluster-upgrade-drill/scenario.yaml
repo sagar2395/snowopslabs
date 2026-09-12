@@ -43,7 +43,7 @@ checks:
     type: kubectl
     resource: pdb/{{.WorkloadName}}-upgrade-pdb
     namespace: "{{.WorkloadNamespace}}"
-    remediation: "You have not applied the PodDisruptionBudget yet. Copy the snippet from 'labctl scenario info cluster-upgrade-drill' and apply it: kubectl apply -f scenarios/cluster-upgrade-drill/manifests/baseline.yaml"
+    remediation: "You have not applied the PodDisruptionBudget yet. Apply it: labctl scenario render cluster-upgrade-drill manifests/baseline.yaml --app {{.WorkloadName}} | kubectl apply -f -"
 
   - name: pdb-protects-workload
     type: kubectl
@@ -85,7 +85,7 @@ checks:
     query: 'sum(rate({{.WorkloadMetric}}_count{app="{{.WorkloadName}}"}[10m]))'
     operator: ">"
     value: "0.5"
-    remediation: "Prometheus sees almost no requests to {{.WorkloadName}}, so the availability grade below would be meaningless. The usual cause is that a drain evicted the k6 Job — check 'labctl traffic status', then restart it and let it run a couple of minutes: labctl traffic start --profile steady --rps 20"
+    remediation: "Prometheus sees almost no requests to {{.WorkloadName}}, so the availability grade below would be meaningless. The usual cause is that a drain evicted the k6 Job — check 'labctl traffic status', then restart it and let it run a couple of minutes: labctl traffic start --app {{.WorkloadName}} --profile steady --rps 20"
 
   # A ratio of two rates reports a perfect 1.00 on an idle cluster, so this was
   # green before the drill began — next to a traffic check correctly reporting
@@ -97,24 +97,25 @@ checks:
     script: checks/check-availability.sh
     timeoutSeconds: 90
     pending: true
-    remediation: "The grade is the measured success rate across the upgrade window, so it needs load flowing while you roll: labctl traffic start --profile steady --rps 20. If it reports a low number rather than no data, the usual cause is draining while the PDB still allowed the last healthy replica to go — apply the PDB BEFORE the first drain. If Prometheus itself lost its volume to the roll, run scripts/reclaim-stranded-pvcs.sh first."
+    remediation: "The grade is the measured success rate across the upgrade window, so it needs load flowing while you roll: labctl traffic start --app {{.WorkloadName}} --profile steady --rps 20. If it reports a low number rather than no data, the usual cause is draining while the PDB still allowed the last healthy replica to go — apply the PDB BEFORE the first drain. If Prometheus itself lost its volume to the roll, run scripts/reclaim-stranded-pvcs.sh first."
 
 snippets:
   - label: "PodDisruptionBudget that keeps {{.WorkloadName}} up across the node roll"
     description: "Apply this before the first drain. maxUnavailable: 1 makes each drain block until {{.WorkloadName}} has a Ready replica elsewhere — the mechanism that keeps the success rate up. Without it, a drain evicts every replica on the node at once."
     path: manifests/baseline.yaml
+    exercise: true
 
 explore:
   urls:
     - label: "Grafana — the roll itself: node versions, pod spread, PDB and success rate"
       url: "http://grafana.{{.DomainSuffix}}/d/cluster-upgrade-drill"
     - label: "Grafana — {{.WorkloadName}} request metrics in detail"
-      url: "http://grafana.{{.DomainSuffix}}/d/app-requests"
+      url: "http://grafana.{{.DomainSuffix}}/d/app-requests?var-app={{.WorkloadName}}"
   commands:
     - label: "1. Start steady background traffic (leave it running)"
-      command: "labctl traffic start --profile steady --rps 20"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile steady --rps 20"
     - label: "2. Apply your PodDisruptionBudget before touching a node"
-      command: "kubectl apply -f {{.ProjectRoot}}/scenarios/cluster-upgrade-drill/manifests/baseline.yaml"
+      command: "labctl scenario render cluster-upgrade-drill manifests/baseline.yaml --app {{.WorkloadName}} | kubectl apply -f -"
     - label: "3. Note the current version and pick your target"
       command: "kubectl get nodes -o custom-columns=NAME:.metadata.name,VERSION:.status.nodeInfo.kubeletVersion"
     - label: "4. Pick a worker from step 3 and cordon it (NODE is that node's name)"
@@ -130,7 +131,7 @@ explore:
     - label: "9. Recover anything left Pending on storage that died with a node"
       command: "DRY_RUN=true bash {{.ProjectRoot}}/scenarios/cluster-upgrade-drill/scripts/reclaim-stranded-pvcs.sh"
     - label: "10. Restart traffic if the roll evicted it, let it run ~2 minutes, then grade"
-      command: "labctl traffic start --profile steady --rps 20 && labctl scenario verify cluster-upgrade-drill"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile steady --rps 20 && labctl scenario verify cluster-upgrade-drill"
   tips:
     - "Start traffic FIRST. The availability grade reads {{.WorkloadMetric}}_count from Prometheus over a 10m window, and the 'traffic-is-flowing' check fails the drill if there was no load to measure — an upgrade nobody was using proves nothing."
     - "Apply the PDB BEFORE the first drain. Applying it afterwards grades green while teaching the opposite lesson: the eviction it was meant to block has already happened."

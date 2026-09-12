@@ -37,6 +37,8 @@ const BASE = '/api/v2'
 const GET_TIMEOUT_MS = 15_000
 /** Action (POST) requests return 202 immediately; allow some slack. */
 const POST_TIMEOUT_MS = 30_000
+/** Verify runs every check synchronously; the server bounds it at 5 min. */
+const VERIFY_TIMEOUT_MS = 5 * 60_000
 
 /** Generic fetch wrapper — throws Error with a useful message on every
  *  failure mode: network down, timeout, HTTP error body, malformed JSON. */
@@ -155,7 +157,7 @@ export const api = {
   scenarioDown:  (name: string) => post(`/scenarios/${enc(name)}/down`),
   // Verify is synchronous: it returns the per-check results directly (not a job),
   // so it parses the ScenarioVerifyResult body rather than an ActionAccepted.
-  scenarioVerify: (name: string) => req<ScenarioVerifyResult>(`/scenarios/${enc(name)}/verify`, { method: 'POST' }, POST_TIMEOUT_MS),
+  scenarioVerify: (name: string) => req<ScenarioVerifyResult>(`/scenarios/${enc(name)}/verify`, { method: 'POST' }, VERIFY_TIMEOUT_MS),
 
   // ── Runtimes ──────────────────────────────────────────────────────────────
   listRuntimes:     ()             => req<Runtime[]>('/runtimes'),

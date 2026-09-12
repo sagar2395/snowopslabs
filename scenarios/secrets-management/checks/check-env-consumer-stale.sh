@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Grades the CONTRAST, which is the lesson: after a rotation reaches the
 # file-mounted consumer, the env-var consumer is still holding the old value.
@@ -24,14 +25,14 @@ if [ -z "$FILE_POD" ] || [ -z "$ENV_POD" ]; then
 fi
 
 WANT="$(kubectl exec -n vault vault-0 -- sh -c \
-  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv get -field=api-key secret/${WORKLOAD_NAME:-go-api}" 2>/dev/null || true)"
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv get -field=api-key secret/${WORKLOAD_NAME}" 2>/dev/null || true)"
 if [ -z "$WANT" ]; then
-  echo "NOT COMPLETE: could not read secret/${WORKLOAD_NAME:-go-api} from Vault." >&2
+  echo "NOT COMPLETE: could not read secret/${WORKLOAD_NAME} from Vault." >&2
   exit 1
 fi
 
 if [ "$WANT" = "$BASELINE" ]; then
-  echo "PENDING: secret/${WORKLOAD_NAME:-go-api} is still the baseline ('${BASELINE}') — rotate it first." >&2
+  echo "PENDING: secret/${WORKLOAD_NAME} is still the baseline ('${BASELINE}') — rotate it first." >&2
   exit 1
 fi
 

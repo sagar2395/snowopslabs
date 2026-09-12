@@ -6,9 +6,10 @@
 # existing, and the next activation would see them and believe an experiment had
 # already been run.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+WORKLOAD="${WORKLOAD_NAME}"
 STATE="chaos-steady-state"
 
 kubectl -n "$NS" delete podchaos,networkchaos,stresschaos --all --ignore-not-found >/dev/null 2>&1 || true

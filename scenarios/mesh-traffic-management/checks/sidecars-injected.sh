@@ -6,9 +6,10 @@
 # enforces nothing, and every CR-existence assertion still passes. Grading that
 # state as success is the failure mode this check exists to make impossible.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-APP="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+APP="${WORKLOAD_NAME}"
 
 PODS="$(kubectl -n "$NS" get pods -l "app=${APP}-canary" \
   --field-selector=status.phase=Running \

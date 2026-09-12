@@ -22,5 +22,6 @@ otherwise have to reverse-engineer from the code.
 | [0011](0011-chart-pinning-and-repo-migration.md) | Pin every chart; migrate off the deprecated Grafana charts | Accepted |
 | [0012](0012-alloy-as-trace-collector.md) | Grafana Alloy as the trace collector; Promtail retained for logs | Accepted |
 | [0013](0013-remove-unversioned-api.md) | `/api/v2` is the only API; the unversioned alias is removed | Accepted |
+| [0015](0015-learner-facing-workload-binding.md) | Hand-run scripts take the workload binding as flags; dashboards select the app; hostnames come from the Ingress | Accepted |
 
 Template: `0000-template.md`.

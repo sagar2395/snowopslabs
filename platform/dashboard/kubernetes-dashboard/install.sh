@@ -35,8 +35,8 @@ kubectl apply -f "$SCRIPT_DIR/admin-user.yaml"
 # The trailing '|| true' is load-bearing: under 'set -e' with pipefail, grep
 # finding nothing would abort the script here, before the message below that
 # explains what is wrong.
-PROXY_SVC="$(kubectl -n "$NAMESPACE" get svc -o name 2>/dev/null \
-  | cut -d/ -f2 | grep -- '-kong-proxy$' | head -1 || true)"
+PROXY_SVC="$(kubectl -n "$NAMESPACE" get svc -o name 2>/dev/null |
+  cut -d/ -f2 | grep -- '-kong-proxy$' | head -1 || true)"
 
 if [ -z "$PROXY_SVC" ]; then
   echo "ERROR: the dashboard's Kong proxy Service was not created." >&2

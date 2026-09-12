@@ -79,6 +79,7 @@ func (r *Runner) Run(ctx context.Context, c Check) Result {
 	if c.TimeoutSeconds > 0 {
 		timeout = time.Duration(c.TimeoutSeconds) * time.Second
 	}
+	parent := ctx
 	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -106,11 +107,18 @@ func (r *Runner) Run(ctx context.Context, c Check) Result {
 	// A check killed by its own deadline surfaces the child process's raw death
 	// ("kubectl: signal: killed"), which reads as a verdict about the cluster
 	// when it is nothing of the sort. Say what actually happened and which
-	// field moves the deadline.
+	// field moves the deadline. When the caller's deadline fired first, raising
+	// timeoutSeconds would change nothing, so blame the right clock.
 	if res.Error != "" && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		res.Error = fmt.Sprintf("timed out after %s, so this is not a result about "+
-			"the cluster — the check never finished. Re-run it; if it times out every "+
-			"time, the check needs a larger timeoutSeconds.", timeout)
+		if errors.Is(parent.Err(), context.DeadlineExceeded) {
+			res.Error = "the verify run's overall time limit ran out before this check " +
+				"finished, so this is not a result about the cluster. Re-run it; the " +
+				"check's own timeoutSeconds was never reached."
+		} else {
+			res.Error = fmt.Sprintf("timed out after %s, so this is not a result about "+
+				"the cluster — the check never finished. Re-run it; if it times out every "+
+				"time, the check needs a larger timeoutSeconds.", timeout)
+		}
 	}
 
 	if res.Attempts == 0 {

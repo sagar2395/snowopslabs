@@ -22,11 +22,11 @@
    },
    "targets": [
     {
-     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[5m]))",
+     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"$app\"}[5m]))",
      "legendFormat": "Total"
     },
     {
-     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\",http_response_status_code=~\"5..\"}[5m]))",
+     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"$app\",http_response_status_code=~\"5..\"}[5m]))",
      "legendFormat": "5xx Errors"
     }
    ],
@@ -42,7 +42,7 @@
    }
   },
   {
-   "title": "Error Rate SLO (Target: 99.9%)",
+   "title": "Availability, last hour (SLO 99.9%)",
    "type": "gauge",
    "gridPos": {
     "h": 8,
@@ -56,7 +56,7 @@
    },
    "targets": [
     {
-     "expr": "1 - (sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\",http_response_status_code=~\"5..\"}[1h])) / sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[1h])))",
+     "expr": "1 - (sum(rate({{.WorkloadMetric}}_count{app=\"$app\",http_response_status_code=~\"5..\"}[1h])) / sum(rate({{.WorkloadMetric}}_count{app=\"$app\"}[1h])))",
      "legendFormat": "Availability"
     }
    ],
@@ -99,7 +99,7 @@
    },
    "targets": [
     {
-     "expr": "1 - ((1 - 0.999) - (sum(increase({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\",http_response_status_code=~\"5..\"}[30d])) / sum(increase({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[30d])))) / (1 - 0.999)",
+     "expr": "1 - ((sum(increase({{.WorkloadMetric}}_count{app=\"$app\",http_response_status_code=~\"5..\"}[30d])) / clamp_min(sum(increase({{.WorkloadMetric}}_count{app=\"$app\"}[30d])), 1)) / (1 - 0.999))",
      "legendFormat": "Budget"
     }
    ],
@@ -107,22 +107,27 @@
     "defaults": {
      "unit": "percentunit",
      "thresholds": {
+      "mode": "absolute",
       "steps": [
        {
-        "value": 0,
-        "color": "red"
+        "color": "red",
+        "value": null
        },
        {
-        "value": 0.25,
-        "color": "yellow"
+        "color": "orange",
+        "value": 0
        },
        {
-        "value": 0.5,
-        "color": "green"
+        "color": "green",
+        "value": 0.25
        }
       ]
      }
     }
+   },
+   "description": "The share of the 30-day error budget (0.1% of requests may fail) not yet spent. 100% means no 5xx so far; 0% or below means the SLO is breached. Prometheus only keeps a few days here, so the window is really its retention.",
+   "options": {
+    "colorMode": "background"
    }
   },
   {
@@ -140,15 +145,15 @@
    },
    "targets": [
     {
-     "expr": "histogram_quantile(0.50, sum(rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le))",
+     "expr": "histogram_quantile(0.50, sum(rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])) by (le))",
      "legendFormat": "p50"
     },
     {
-     "expr": "histogram_quantile(0.95, sum(rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le))",
+     "expr": "histogram_quantile(0.95, sum(rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])) by (le))",
      "legendFormat": "p95"
     },
     {
-     "expr": "histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le))",
+     "expr": "histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])) by (le))",
      "legendFormat": "p99"
     }
    ],
@@ -217,8 +222,8 @@
    },
    "targets": [
     {
-     "expr": "container_memory_working_set_bytes{namespace=\"{{.WorkloadNamespace}}\", container!=\"\"}",
-     "legendFormat": "{{ pod }}"
+     "expr": "container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"}",
+     "legendFormat": "{{pod}} / {{container}}"
     }
    ],
    "fieldConfig": {
@@ -247,8 +252,8 @@
    },
    "targets": [
     {
-     "expr": "rate(container_cpu_usage_seconds_total{namespace=\"{{.WorkloadNamespace}}\", container!=\"\"}[5m])",
-     "legendFormat": "{{ pod }}"
+     "expr": "rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container!=\"\"}[5m])",
+     "legendFormat": "{{pod}} / {{container}}"
     }
    ],
    "fieldConfig": {
@@ -267,11 +272,64 @@
  "tags": [
   "slo",
   "sre",
-  "{{.WorkloadName}}",
   "scenario"
  ],
  "templating": {
-  "list": []
+  "list": [
+   {
+    "name": "app",
+    "label": "App",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+    "query": {
+     "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+     "refId": "app",
+     "qryType": 3
+    },
+    "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+    "regex": "/app=\"([^\"]+)\"/",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 1,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadName}}",
+     "value": "{{.WorkloadName}}"
+    },
+    "options": []
+   },
+   {
+    "name": "namespace",
+    "label": "Namespace",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "Where the selected app runs.",
+    "query": {
+     "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+     "refId": "namespace",
+     "qryType": 1
+    },
+    "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 0,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadNamespace}}",
+     "value": "{{.WorkloadNamespace}}"
+    },
+    "options": []
+   }
+  ]
  },
  "time": {
   "from": "now-1h",
@@ -279,6 +337,6 @@
  },
  "timepicker": {},
  "timezone": "browser",
- "title": "SLO Dashboard - {{.WorkloadName}}",
+ "title": "SLO Dashboard",
  "uid": "scenario-slo-workload"
 }

@@ -177,18 +177,20 @@ type Reference struct {
 
 // Snippet is a reference fragment presented to the learner. Exactly one of YAML
 // (inline text) or Path (a file relative to the item's directory) is set; both
-// are template-resolved before display. Most snippets are kubectl manifests, but
-// some are other formats (e.g. Helm values) — set Apply to override the default
-// "kubectl apply -f -" hint with how this particular snippet is actually used.
-// Reused by scenarios and incidents (M2).
+// are template-resolved before display. Reused by scenarios and incidents.
 type Snippet struct {
 	Label       string `yaml:"label" json:"label"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	YAML        string `yaml:"yaml,omitempty" json:"yaml,omitempty"`
 	Path        string `yaml:"path,omitempty" json:"path,omitempty"`
-	// Apply describes how to use the snippet. Empty means it is a kubectl
-	// manifest applied with "kubectl apply -f -" (the default hint).
+	// Apply is the complete command that uses the snippet. Empty means it is a
+	// manifest piped into "kubectl apply -f -".
 	Apply string `yaml:"apply,omitempty" json:"apply,omitempty"`
+	// Exercise marks a snippet nothing installs: applying it is the learner's task.
+	Exercise bool `yaml:"exercise,omitempty" json:"exercise,omitempty"`
+	// ApplyCommand is filled for display only: a ready-to-run command for an
+	// exercise, with the manifest inlined when Apply is empty.
+	ApplyCommand string `yaml:"-" json:"applyCommand,omitempty"`
 }
 
 // Parameter is a user-tunable knob exposed at activation time. Its value is

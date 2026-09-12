@@ -315,3 +315,22 @@ func TestParseHPAList_EmptyList(t *testing.T) {
 		t.Error("expected Present=false for an empty HPA list")
 	}
 }
+
+func TestUniqueLines(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{name: "hosts in order", in: "a.k3d.local\nb.k3d.local", want: []string{"a.k3d.local", "b.k3d.local"}},
+		{name: "duplicates and blanks dropped", in: "a\n\n a \nb\na\n", want: []string{"a", "b"}},
+		{name: "no ingress at all", in: "", want: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := uniqueLines(tt.in); fmt.Sprint(got) != fmt.Sprint(tt.want) {
+				t.Errorf("uniqueLines(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+		})
+	}
+}

@@ -47,7 +47,7 @@ while [ "$attempt" -le 8 ]; do
     --delete --group "$GROUP" 2>&1 || true)"
 
   case "$out" in
-    *GroupIdNotFoundException*|*"not found"*)
+    *GroupIdNotFoundException* | *"not found"*)
       echo "Consumer group $GROUP is not present."
       exit 0
       ;;

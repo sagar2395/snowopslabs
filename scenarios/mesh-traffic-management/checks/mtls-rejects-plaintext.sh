@@ -5,9 +5,10 @@
 # lives in the sidecar, so the only honest test is to send a plaintext request
 # from a client with no workload identity and require it to fail.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-APP="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+APP="${WORKLOAD_NAME}"
 JOB="${APP}-mtls-probe"
 TARGET="http://${APP}-canary.${NS}.svc.cluster.local"
 

@@ -414,6 +414,30 @@ func GetCurrentContext(ctx context.Context) (string, error) {
 	return kubectl(ctx, "config", "current-context")
 }
 
+// IngressHosts returns every hostname an Ingress in the cluster serves, in the
+// order kubectl lists them. Duplicates and rules without a host are dropped.
+func IngressHosts(ctx context.Context) ([]string, error) {
+	out, err := kubectl(ctx, "get", "ingress", "--all-namespaces",
+		"-o", `jsonpath={range .items[*]}{range .spec.rules[*]}{.host}{"\n"}{end}{end}`)
+	if err != nil {
+		return nil, err
+	}
+	return uniqueLines(out), nil
+}
+
+func uniqueLines(out string) []string {
+	seen := map[string]bool{}
+	lines := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !seen[line] {
+			seen[line] = true
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
 // RunKubectl executes a kubectl command and returns its stdout.
 func RunKubectl(ctx context.Context, args ...string) (string, error) {
 	return kubectl(ctx, args...)

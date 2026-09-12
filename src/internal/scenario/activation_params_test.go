@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestActiveParamsRoundTrip(t *testing.T) {
@@ -41,6 +42,45 @@ func TestActiveParamsReadsLegacyMarker(t *testing.T) {
 	}
 	if got := e.activeParams("legacy"); got != nil {
 		t.Errorf("activeParams() = %v, want nil", got)
+	}
+}
+
+// A windowed check grades this run: the window must open at activation, reset
+// on re-activation, and exist (as the smallest range) when nothing is active.
+func TestSinceActivationWindowsTheRun(t *testing.T) {
+	dir := t.TempDir()
+	e := &Engine{stateDir: dir}
+	s := &Scenario{Name: "demo"}
+	query := "max_over_time(x[{{.SinceActivation}}:1m])"
+
+	restore := e.withActivationParams(s)
+	if got, want := e.resolveTemplate(query), "max_over_time(x[1m:1m])"; got != want {
+		t.Errorf("inactive: resolveTemplate() = %q, want %q", got, want)
+	}
+	restore()
+
+	if err := e.markActive("demo", nil); err != nil {
+		t.Fatal(err)
+	}
+	activated := time.Now().Add(-(94*time.Minute + 30*time.Second))
+	if err := os.Chtimes(filepath.Join(dir, "demo.active"), activated, activated); err != nil {
+		t.Fatal(err)
+	}
+	restore = e.withActivationParams(s)
+	if got, want := e.resolveTemplate(query), "max_over_time(x[95m:1m])"; got != want {
+		t.Errorf("active 94.5m: resolveTemplate() = %q, want %q", got, want)
+	}
+	restore()
+	if !e.activatedAt.IsZero() {
+		t.Errorf("activatedAt = %v after restore, want zero", e.activatedAt)
+	}
+
+	if err := e.markActive("demo", nil); err != nil {
+		t.Fatal(err)
+	}
+	defer e.withActivationParams(s)()
+	if got, want := e.resolveTemplate(query), "max_over_time(x[1m:1m])"; got != want {
+		t.Errorf("re-activated: resolveTemplate() = %q, want %q", got, want)
 	}
 }
 

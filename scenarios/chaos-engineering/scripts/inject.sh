@@ -11,11 +11,12 @@
 # resolve Go templates. So the rendering happens here, and the learner still runs
 # one experiment at a time.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 MANIFEST="${SCRIPT_DIR}/../manifests/chaos-experiments.yaml"
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+WORKLOAD="${WORKLOAD_NAME}"
 
 available() {
   sed -n 's/^ *experiment: *\([a-z-]*\).*/\1/p' "$MANIFEST" | sort -u

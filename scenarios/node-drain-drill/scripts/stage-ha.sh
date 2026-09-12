@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # stage-ha.sh — put the workload into the shape the drill needs: enough replicas
 # that a PodDisruptionBudget has something to protect.
@@ -7,16 +8,16 @@ set -euo pipefail
 # Staging only. The PDB and the drain itself are the learner's work: a drill that
 # applies the budget and runs the drain for you teaches neither.
 
-APP_NAMESPACE="${APP_NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
+APP_NAMESPACE="${WORKLOAD_NAMESPACE}"
+WORKLOAD="${WORKLOAD_NAME}"
 REPLICAS="${DRAIN_DRILL_REPLICAS:-3}"
 
 # Surface a colliding budget at activation, not thirty minutes later when the
 # drain fails on it. Only a warning: the learner may not have applied theirs yet,
 # and the graded check is what enforces it.
 EXISTING="$(kubectl -n "$APP_NAMESPACE" get pdb --no-headers \
-  -o 'custom-columns=NAME:.metadata.name,APP:.spec.selector.matchLabels.app' 2>/dev/null \
-  | awk -v app="$WORKLOAD" '$2 == app { print $1 }' || true)"
+  -o 'custom-columns=NAME:.metadata.name,APP:.spec.selector.matchLabels.app' 2>/dev/null |
+  awk -v app="$WORKLOAD" '$2 == app { print $1 }' || true)"
 if [ -n "$EXISTING" ]; then
   echo "WARNING: a PodDisruptionBudget already selects ${WORKLOAD}:"
   printf '  %s\n' $EXISTING

@@ -9,9 +9,10 @@
 # arrives — 'workload-survives-pod-loss' is green at activation and the lesson
 # never happens.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+WORKLOAD="${WORKLOAD_NAME}"
 STATE="chaos-steady-state"
 
 # Chaos objects are applied by the learner from the explore commands, so they

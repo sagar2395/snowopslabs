@@ -1,4 +1,4 @@
-# APPLY THIS ONE YOURSELF
+# Exercise: nothing installs this file — the learner applies it.
 #
 # STRICT mode means the canary pods accept mTLS connections only. A client with
 # no sidecar has no workload identity to present, so its plaintext connection is

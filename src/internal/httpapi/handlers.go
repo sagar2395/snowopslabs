@@ -721,9 +721,12 @@ func (s *Server) handleScenarioDown(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
 
+// scenarioVerifyBudget bounds one UI verify run. It matches the CLI's
+// `scenario verify --timeout` default; the UI client waits the same length.
+const scenarioVerifyBudget = 5 * time.Minute
+
 // handleScenarioVerify runs the scenario's checks synchronously and returns
-// the per-check results. The overall run is bounded to stay inside the HTTP
-// server's write timeout; use the CLI's --watch mode for long convergence.
+// the per-check results. Use the CLI's --watch mode for long convergence.
 func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 	if !isValidName(name) {
@@ -740,8 +743,10 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
+	// NewRunner's per-check default is the CLI's --check-timeout default and the
+	// schema's documented one; a shorter one here made the UI fail checks the
+	// terminal passes.
 	runner := checks.NewRunner()
-	runner.DefaultTimeout = 10 * time.Second
 	promURL := os.Getenv("PROMETHEUS_URL")
 	if promURL == "" {
 		promURL = "http://prometheus." + s.cfg.DomainSuffix
@@ -760,9 +765,10 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 		"WORKLOAD_METRIC=" + scenes.Workload.Metric,
 	}
 
-	// Server WriteTimeout is 15s — bound the whole verify run below that.
+	// Checks run in order, each under its own timeoutSeconds, so a fixed short
+	// budget starved the last checks of a long list. Bound it like the CLI does.
 	startedAt := time.Now()
-	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), scenarioVerifyBudget)
 	defer cancel()
 
 	results, err := scenes.Verify(ctx, name, runner)

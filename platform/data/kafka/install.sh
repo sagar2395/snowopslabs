@@ -42,8 +42,8 @@ helm repo update strimzi
 CRD_ERR="$(mktemp "${TMPDIR:-/tmp}/strimzi-crds.XXXXXX")"
 if helm status strimzi-kafka-operator -n "$NAMESPACE" >/dev/null 2>&1; then
   echo "Applying Strimzi ${STRIMZI_VERSION} CRDs (helm upgrade does not update CRDs)..."
-  helm show crds strimzi/strimzi-kafka-operator --version "$STRIMZI_VERSION" \
-    | kubectl apply --server-side --force-conflicts -f - 2>&1 | tee "$CRD_ERR" || true
+  helm show crds strimzi/strimzi-kafka-operator --version "$STRIMZI_VERSION" |
+    kubectl apply --server-side --force-conflicts -f - 2>&1 | tee "$CRD_ERR" || true
 fi
 
 # Strimzi 1.x serves its CRDs at v1 only; 0.x stored objects as v1beta2.

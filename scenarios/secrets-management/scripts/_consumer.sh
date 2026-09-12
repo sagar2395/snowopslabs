@@ -8,7 +8,8 @@
 # while the new one comes up. The checkpoint then names a pod that is already
 # dead, and the drill grades red no matter what the learner does.
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
+. "$(dirname "$0")/../../_lib/workload.sh"
+NS="${WORKLOAD_NAMESPACE}"
 
 # The newest Running pod that is not being deleted. --field-selector excludes
 # Pending and Succeeded; the deletionTimestamp test excludes the one that is on

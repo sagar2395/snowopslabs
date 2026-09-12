@@ -8,9 +8,10 @@
 # and cluster-upgrade-drill both do), so this collides in ordinary use. The
 # Kubernetes error names neither budget, which is why this check exists.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-APP="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+APP="${WORKLOAD_NAME}"
 MINE="${APP}-drill-pdb"
 
 # A PDB covers this workload when its selector matches the app label the

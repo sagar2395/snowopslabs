@@ -2,12 +2,19 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"maps"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"time"
 
+	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/sagar2395/snowopslabs/internal/k8s"
 	"github.com/spf13/cobra"
 )
 
@@ -17,29 +24,26 @@ const (
 	hostsEnd   = "# END snowops-labs"
 )
 
-// knownSubdomains are the ingress hostnames managed in /etc/hosts.
-var knownSubdomains = []string{
-	"go-api",
-	"go-api-dev",     // env-promotion: dev environment ingress
-	"go-api-staging", // env-promotion: staging environment ingress
-	"go-api-prod",    // env-promotion: prod environment ingress
-	"echo-server",
-	"java-api", // the second workload stack, deployed like any other app
+// platformSubdomains are the hostnames platform components serve. They are
+// listed rather than discovered so a `hosts add` run straight after `labctl init`
+// already covers components that are not installed yet.
+var platformSubdomains = []string{
 	"grafana",
 	"prometheus",
-	// The incident engine defaults ALERTMANAGER_URL to alertmanager.<suffix> and
-	// asks it whether an expectAlert fault actually paged. Without this entry the
-	// query cannot connect, and every paging fault reports "did not fire".
+	// The incident engine asks alertmanager.<suffix> whether a paging fault fired.
 	"alertmanager",
-	"opencost", // cost-right-sizing: OpenCost UI ingress
+	"opencost",
 	"argocd",
 	"traefik",
-	// The dashboard's Ingress host is dashboard.<suffix>, not the release name:
-	// platform/dashboard/kubernetes-dashboard/install.sh prints that URL, and an
-	// entry under any other name resolves nothing.
+	// The dashboard's Ingress host is dashboard.<suffix>, not its release name.
 	"dashboard",
-	"chaos", // chaos-engineering: Chaos Mesh dashboard ingress
+	"chaos",
+	"vault",
 }
+
+// hostsAddResolved carries the host list into the sudo re-exec, because under
+// sudo kubectl would read root's kubeconfig and find no cluster.
+var hostsAddResolved []string
 
 var hostsCmd = &cobra.Command{
 	Use:   "hosts",
@@ -49,12 +53,24 @@ var hostsCmd = &cobra.Command{
 var hostsAddCmd = &cobra.Command{
 	Use:   "add",
 	Short: "Add (or update) the managed /etc/hosts block",
+	Long: `Writes one /etc/hosts line naming every hostname the lab serves: the platform
+components, each app under apps/, and every Ingress host in the cluster under
+the domain suffix. Re-run it after activating a scenario that adds hostnames,
+such as env-promotion's <app>-dev, -staging and -prod.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if os.Getuid() != 0 {
-			return reexecWithSudo()
+		hosts := hostsAddResolved
+		if len(hosts) == 0 {
+			hosts = collectHosts(cmd.Context(), cfg.ProjectRoot, cfg.DomainSuffix, os.Stderr)
 		}
-		hosts := buildHostList(cfg.DomainSuffix)
-		return writeHostsBlock(buildBlock(hosts))
+		if os.Getuid() != 0 {
+			return reexecWithSudo("--resolved-hosts=" + strings.Join(hosts, ","))
+		}
+		before := managedHosts(readHostsFile())
+		if err := writeHostsBlock(buildBlock(hosts)); err != nil {
+			return err
+		}
+		printHostsSummary(os.Stdout, hosts, before)
+		return nil
 	},
 }
 
@@ -65,32 +81,145 @@ var hostsRemoveCmd = &cobra.Command{
 		if os.Getuid() != 0 {
 			return reexecWithSudo()
 		}
-		return writeHostsBlock("")
+		if err := writeHostsBlock(""); err != nil {
+			return err
+		}
+		fmt.Printf("Removed managed block from %s\n", hostsFile)
+		return nil
 	},
 }
 
 func init() {
+	hostsAddCmd.Flags().StringSliceVar(&hostsAddResolved, "resolved-hosts", nil, "hostnames to write, as collected before elevating")
+	_ = hostsAddCmd.Flags().MarkHidden("resolved-hosts")
 	hostsCmd.AddCommand(hostsAddCmd)
 	hostsCmd.AddCommand(hostsRemoveCmd)
 	rootCmd.AddCommand(hostsCmd)
 }
 
+// collectHosts gathers every hostname the lab serves. A cluster that cannot be
+// read is reported, not fatal: the platform and app hosts still get written.
+func collectHosts(ctx context.Context, projectRoot, domainSuffix string, warn io.Writer) []string {
+	subdomains := slices.Clone(platformSubdomains)
+	apps, err := config.ListApps(projectRoot)
+	if err != nil {
+		fmt.Fprintf(warn, "Warning: could not list apps (%v); their hostnames are not included.\n", err)
+	}
+	subdomains = append(subdomains, apps...)
+
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	ingress, err := k8s.IngressHosts(ctx)
+	if err != nil {
+		fmt.Fprintf(warn, "Warning: could not read Ingress hosts from the cluster (%v).\n", err)
+		fmt.Fprintln(warn, "         Hostnames that scenarios add are not included. Re-run once the cluster is up,")
+		fmt.Fprintln(warn, "         without sudo: labctl hosts add elevates itself after reading the cluster.")
+	}
+	return mergeHosts(domainSuffix, subdomains, ingress)
+}
+
+// mergeHosts returns the sorted, de-duplicated hostnames under domainSuffix: one
+// per subdomain, plus each discovered host the suffix covers. A host outside the
+// suffix belongs to someone else's DNS and is left alone.
+func mergeHosts(domainSuffix string, subdomains, discovered []string) []string {
+	set := map[string]bool{}
+	for _, sub := range subdomains {
+		set[sub+"."+domainSuffix] = true
+	}
+	for _, host := range discovered {
+		if strings.HasSuffix(host, "."+domainSuffix) {
+			set[host] = true
+		}
+	}
+	return slices.Sorted(maps.Keys(set))
+}
+
+// managedHosts returns the hostnames in the managed block of a hosts file.
+func managedHosts(content string) map[string]bool {
+	hosts := map[string]bool{}
+	inBlock := false
+	for _, line := range strings.Split(content, "\n") {
+		switch {
+		case line == hostsBegin:
+			inBlock = true
+		case line == hostsEnd:
+			inBlock = false
+		case inBlock:
+			if fields := strings.Fields(line); len(fields) > 1 {
+				for _, h := range fields[1:] {
+					hosts[h] = true
+				}
+			}
+		}
+	}
+	return hosts
+}
+
+func printHostsSummary(w io.Writer, hosts []string, before map[string]bool) {
+	var added []string
+	for _, h := range hosts {
+		if !before[h] {
+			added = append(added, h)
+		}
+	}
+	fmt.Fprintf(w, "Updated %s: %d hostnames", hostsFile, len(hosts))
+	if len(added) == 0 {
+		fmt.Fprintln(w, ", none new.")
+		return
+	}
+	fmt.Fprintf(w, ", %d new:\n", len(added))
+	for _, h := range added {
+		fmt.Fprintf(w, "  + %s\n", h)
+	}
+}
+
+// warnMissingHosts names the Ingress hosts /etc/hosts does not list yet, so a
+// learner is told before a browser fails to resolve them. It stays quiet when
+// the cluster cannot be read or the hosts file is not managed at all.
+func warnMissingHosts(ctx context.Context, w io.Writer, domainSuffix string) {
+	content := readHostsFile()
+	if !strings.Contains(content, hostsBegin) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	ingress, err := k8s.IngressHosts(ctx)
+	if err != nil {
+		return
+	}
+	missing := unlistedHosts(domainSuffix, ingress, managedHosts(content))
+	if len(missing) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "\n%d hostname(s) are not in /etc/hosts yet, so they will not resolve:\n", len(missing))
+	for _, h := range missing {
+		fmt.Fprintf(w, "  %s\n", h)
+	}
+	fmt.Fprintln(w, "Add them with: labctl hosts add")
+}
+
+func unlistedHosts(domainSuffix string, ingress []string, listed map[string]bool) []string {
+	var missing []string
+	for _, h := range mergeHosts(domainSuffix, nil, ingress) {
+		if !listed[h] {
+			missing = append(missing, h)
+		}
+	}
+	return missing
+}
+
+func readHostsFile() string {
+	data, err := os.ReadFile(hostsFile)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
 // hostsBlockPresent reports whether the managed block is already in /etc/hosts.
 // Reading the file needs no privileges, so init/doctor can advise without sudo.
 func hostsBlockPresent() bool {
-	data, err := os.ReadFile(hostsFile)
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(data), hostsBegin)
-}
-
-func buildHostList(domainSuffix string) []string {
-	hosts := make([]string, len(knownSubdomains))
-	for i, sub := range knownSubdomains {
-		hosts[i] = sub + "." + domainSuffix
-	}
-	return hosts
+	return strings.Contains(readHostsFile(), hostsBegin)
 }
 
 func buildBlock(hosts []string) string {
@@ -99,10 +228,13 @@ func buildBlock(hosts []string) string {
 		hostsEnd + "\n"
 }
 
-// reexecWithSudo re-runs the current invocation under sudo, preserving all flags.
-func reexecWithSudo() error {
+// reexecWithSudo re-runs the current invocation under sudo, preserving all flags
+// and appending extra arguments.
+func reexecWithSudo(extra ...string) error {
 	fmt.Fprintln(os.Stderr, "Root required — re-running with sudo...")
-	c := osexec.Command("sudo", append([]string{os.Args[0]}, os.Args[1:]...)...) //nolint:gosec,noctx // re-exec of this same CLI under sudo; a context would not manage the replacement process
+	args := append([]string{os.Args[0]}, os.Args[1:]...)
+	args = append(args, extra...)
+	c := osexec.Command("sudo", args...) //nolint:gosec,noctx // re-exec of this same CLI under sudo; a context would not manage the replacement process
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr
@@ -112,15 +244,7 @@ func reexecWithSudo() error {
 // writeHostsBlock replaces the managed block in /etc/hosts.
 // Pass an empty string to remove the block.
 func writeHostsBlock(block string) error {
-	if err := writeManagedHostsFile(hostsFile, block); err != nil {
-		return err
-	}
-	if block != "" {
-		fmt.Printf("Added managed block to %s\n", hostsFile)
-	} else {
-		fmt.Printf("Removed managed block from %s\n", hostsFile)
-	}
-	return nil
+	return writeManagedHostsFile(hostsFile, block)
 }
 
 // writeManagedHostsFile rewrites path with the managed block replaced (or removed

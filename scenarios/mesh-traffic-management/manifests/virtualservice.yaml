@@ -1,4 +1,4 @@
-# APPLY THIS ONE YOURSELF
+# Exercise: nothing installs this file — the learner applies it.
 #
 # The weighted route is the whole point of a canary: it is what decides that
 # 10% of requests reach v2 while the rest stay on v1. Nothing

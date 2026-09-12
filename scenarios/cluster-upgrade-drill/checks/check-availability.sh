@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Grades the drill's headline claim: the request success rate held across the
 # upgrade window.
@@ -18,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=checks/_drill.sh
 . "${SCRIPT_DIR}/_drill.sh"
 
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
+WORKLOAD="${WORKLOAD_NAME}"
 METRIC="${WORKLOAD_METRIC:-http_server_request_duration_seconds}"
 PROM="${PROMETHEUS_URL:-http://prometheus.${DOMAIN_SUFFIX:-k3d.local}}"
 SLO="${AVAILABILITY_SLO:-0.99}"
@@ -42,13 +43,13 @@ remaining_n="$(printf '%s\n' $REMAINING | grep -c . || true)"
 if [ "${remaining_n:-0}" -ge "${recorded_n:-0}" ]; then
   echo "PENDING: no node has been rolled yet, so there is no upgrade window to grade." >&2
   echo "  Start load, then roll a worker:" >&2
-  echo "    labctl traffic start --profile steady --rps 20" >&2
+  echo "    labctl traffic start --app ${WORKLOAD_NAME} --profile steady --rps 20" >&2
   exit 1
 fi
 
 STARTED="$(mark_roll_started)"
 NOW="$(date -u +%s)"
-WINDOW=$(( (NOW - STARTED) / 60 ))
+WINDOW=$(((NOW - STARTED) / 60))
 
 # Do not look back further than Prometheus can see. This drill can destroy
 # Prometheus's own volume — it is one of the things it teaches — and after that
@@ -76,7 +77,7 @@ if [ -z "$RPS" ] || [ "$(awk -v a="${RPS:-0}" -v b="$MIN_RPS" 'BEGIN{print (a<b)
   echo "  also evicts the k6 traffic Job, and its Job does not restart itself — so check" >&2
   echo "  and restart it after each roll, then let it run a couple of minutes:" >&2
   echo "    labctl traffic status" >&2
-  echo "    labctl traffic start --profile steady --rps 20" >&2
+  echo "    labctl traffic start --app ${WORKLOAD_NAME} --profile steady --rps 20" >&2
   exit 1
 fi
 
@@ -93,8 +94,8 @@ if [ "$(awk -v a="$RATIO" -v b="$SLO" 'BEGIN{print (a<b)}')" = "1" ]; then
   echo "  The usual cause is draining while the PodDisruptionBudget still allowed the last" >&2
   echo "  healthy replica to go. Check the PDB was applied BEFORE the first drain, and that" >&2
   echo "  ${WORKLOAD} had somewhere else to run:" >&2
-  echo "    kubectl -n ${WORKLOAD_NAMESPACE:-go-api} get pdb -o wide" >&2
-  echo "    kubectl -n ${WORKLOAD_NAMESPACE:-go-api} get pods -o wide" >&2
+  echo "    kubectl -n ${WORKLOAD_NAMESPACE} get pdb -o wide" >&2
+  echo "    kubectl -n ${WORKLOAD_NAMESPACE} get pods -o wide" >&2
   exit 1
 fi
 

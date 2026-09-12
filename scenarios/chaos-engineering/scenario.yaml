@@ -84,7 +84,7 @@ checks:
     type: script
     script: checks/experiment-was-run.sh
     pending: true
-    remediation: "You have not run an experiment yet. Start load first, then inject one failure: labctl traffic start --profile browse --rps 20 --duration 30m && bash scenarios/chaos-engineering/scripts/inject.sh pod-kill — then watch the blast radius on http://grafana.{{.DomainSuffix}}/d/chaos-engineering"
+    remediation: "You have not run an experiment yet. Start load first, then inject one failure: labctl traffic start --app {{.WorkloadName}} --profile browse --rps 20 --duration 30m && bash scenarios/chaos-engineering/scripts/inject.sh pod-kill --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}} — then watch the blast radius on http://grafana.{{.DomainSuffix}}/d/chaos-engineering"
 
   - name: workload-survives-pod-loss
     type: kubectl
@@ -107,7 +107,7 @@ checks:
 
 snippets:
   - label: "Chaos Mesh experiments (pod kill, pod failure, partition, CPU, network delay, memory)"
-    description: "Six failure injections targeting {{.WorkloadName}} by label. Apply ONE at a time — running several at once makes the blast radius unattributable, which is the one thing chaos engineering must never be. Use scripts/inject.sh rather than 'kubectl apply -f' on this file: it is the one manifest the scenario never installs as a component, so nothing has rendered its {{.WorkloadName}} and {{.WorkloadNamespace}}, and kubectl does not resolve Go templates."
+    description: "Six failure injections targeting {{.WorkloadName}} by label: pod-kill (self-healing), pod-failure (readiness), network-partition (failover), cpu-stress (latency with nothing autoscaling), network-delay (watch p99, not errors) and memory-stress (OOMKill). Apply ONE at a time — running several at once makes the blast radius unattributable, which is the one thing chaos engineering must never be. Use scripts/inject.sh rather than 'kubectl apply -f' on this file: it is the one manifest the scenario never installs as a component, so nothing has rendered its {{.WorkloadName}} and {{.WorkloadNamespace}}, and kubectl does not resolve Go templates."
     path: manifests/chaos-experiments.yaml
   - label: "PodDisruptionBudget protecting {{.WorkloadName}} during chaos"
     description: "minAvailable=1 against a Deployment that runs one replica is the trap this scenario is built on: the budget can never be satisfied, so it blocks voluntary disruptions entirely (disruptionsAllowed 0) while doing nothing about the involuntary ones a pod kill simulates. Scaling out is what makes it a control."
@@ -135,27 +135,27 @@ explore:
       url: "http://chaos.{{.DomainSuffix}}"
   commands:
     - label: "1. Establish the steady state — continuous load on {{.WorkloadName}}"
-      command: "labctl traffic start --profile browse --rps 20 --duration 30m"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile browse --rps 20 --duration 30m"
     - label: "2. Read the control that is missing (expect disruptionsAllowed 0, InsufficientPods)"
       command: "kubectl -n {{.WorkloadNamespace}} get pdb {{.WorkloadName}}-pdb -o wide"
     - label: "3. Inject one failure: kill a {{.WorkloadName}} pod"
-      command: "bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/inject.sh pod-kill"
+      command: "bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/inject.sh pod-kill --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}"
     - label: "4. Measure the blast radius while it runs"
       command: "kubectl get pods -n {{.WorkloadNamespace}} -w"
     - label: "5. Harden it — give the PDB enough replicas to be a control"
       command: "kubectl -n {{.WorkloadNamespace}} scale deploy/{{.WorkloadName}} --replicas=3 && kubectl -n {{.WorkloadNamespace}} rollout status deploy/{{.WorkloadName}}"
     - label: "6. Re-run the same experiment against the hardened service"
-      command: "kubectl delete podchaos pod-kill-{{.WorkloadName}} -n {{.WorkloadNamespace}} --ignore-not-found && bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/inject.sh pod-kill"
+      command: "kubectl delete podchaos pod-kill-{{.WorkloadName}} -n {{.WorkloadNamespace}} --ignore-not-found && bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/inject.sh pod-kill --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}"
     - label: "See what you can inject (run it with no argument)"
-      command: "bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/inject.sh"
+      command: "bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/inject.sh --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}"
     - label: "List the experiments and their phases"
       command: "kubectl get podchaos,networkchaos,stresschaos --all-namespaces"
     - label: "Try another failure mode (swap pod-kill for network-delay, cpu-stress, memory-stress or network-partition)"
-      command: "bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/inject.sh network-delay   # or: cpu-stress, memory-stress, network-partition, pod-failure"
+      command: "bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/inject.sh network-delay --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}   # or: cpu-stress, memory-stress, network-partition, pod-failure"
     - label: "Measure client-observed latency through the ingress — the only place a network fault shows"
       command: "curl -s -o /dev/null -w 'connect=%{time_connect}s ttfb=%{time_starttransfer}s\\n' http://{{.WorkloadName}}.{{.DomainSuffix}}/health"
     - label: "Clean up every experiment and stop the load"
-      command: "bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/cleanup-experiments.sh && labctl traffic stop"
+      command: "bash {{.ProjectRoot}}/scenarios/chaos-engineering/scripts/cleanup-experiments.sh --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}} && labctl traffic stop"
   tips:
     - "Start the load FIRST. An experiment run against an idle service proves nothing, and every dashboard panel is honestly empty. The generator exits when its --duration is up — 'labctl traffic status' tells you whether it is still running."
     - "The two pending checks are the drill: 'chaos-experiment-was-run' goes green once you inject a failure, 'workload-survives-pod-loss' once you scale {{.WorkloadName}} out. Run 'labctl scenario verify chaos-engineering' after each step."

@@ -102,7 +102,7 @@
   {
    "title": "Rollout converged (1 = settled, below 1 = drifting)",
    "type": "timeseries",
-   "description": "Two independent ways a promotion can be un-landed: the controller has not caught up with your spec, or it has and the pods will not become ready. A line stuck below 1 is a wedged rollout \u2014 the state a release record claiming vNEXT is lying about.",
+   "description": "A rollout has converged when every desired replica runs the new template and is available. Updated replicas alone count a new pod that is stuck in ImagePullBackOff, so a release that can never land would read as settled; subtracting the unavailable ones is what makes it show as drifting.",
    "gridPos": {
     "h": 8,
     "w": 11,
@@ -147,8 +147,8 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum by (namespace) (kube_deployment_status_replicas_updated{namespace=~\"env-.*\"}) / sum by (namespace) (kube_deployment_spec_replicas{namespace=~\"env-.*\"})",
-     "legendFormat": "updated / desired",
+     "expr": "(sum by (namespace) (kube_deployment_status_replicas_updated{namespace=~\"env-.*\"}) - sum by (namespace) (kube_deployment_status_replicas_unavailable{namespace=~\"env-.*\"})) / sum by (namespace) (kube_deployment_spec_replicas{namespace=~\"env-.*\"})",
+     "legendFormat": "{{namespace}}: updated and available / desired replicas",
      "refId": "A"
     },
     {
@@ -157,7 +157,7 @@
       "uid": "prometheus"
      },
      "expr": "sum by (namespace) (kube_deployment_status_observed_generation{namespace=~\"env-.*\"}) / sum by (namespace) (kube_deployment_metadata_generation{namespace=~\"env-.*\"})",
-     "legendFormat": "observed / desired generation",
+     "legendFormat": "{{namespace}}: observed / desired generation",
      "refId": "B"
     }
    ]
@@ -210,7 +210,7 @@
       "uid": "prometheus"
      },
      "expr": "sum by (namespace) (kube_deployment_status_replicas_available{namespace=~\"env-.*\"})",
-     "legendFormat": "available",
+     "legendFormat": "{{namespace}}: available",
      "refId": "A"
     },
     {
@@ -219,7 +219,7 @@
       "uid": "prometheus"
      },
      "expr": "sum by (namespace) (kube_deployment_spec_replicas{namespace=~\"env-.*\"})",
-     "legendFormat": "desired",
+     "legendFormat": "{{namespace}}: desired",
      "refId": "B"
     }
    ]
@@ -272,7 +272,7 @@
       "uid": "prometheus"
      },
      "expr": "count by (namespace) (kube_replicaset_owner{namespace=~\"env-.*\"})",
-     "legendFormat": "ReplicaSets",
+     "legendFormat": "{{namespace}}",
      "refId": "A"
     }
    ]

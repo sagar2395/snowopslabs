@@ -30,3 +30,9 @@ spec:
       # comes back labelled namespace="opencost" — the data is there and every
       # per-namespace query returns nothing.
       honorLabels: true
+      # OpenCost re-exports kube-state-metrics series for its own use. With
+      # honorLabels they duplicate the real ones, and every sum() doubles.
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: kube_.*
+          action: drop

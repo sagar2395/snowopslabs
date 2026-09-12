@@ -44,6 +44,7 @@ contradict themselves, or you are editing the code in question.
 | Understand the run engine | [architecture §3](architecture/ARCHITECTURE.md), [R01](runbooks/R01-run-engine-and-cancellation.md) | `src/internal/run/` |
 | Write tests | [TESTING.md](TESTING.md) | — |
 | Ship a release | [RELEASING.md](../RELEASING.md) | — |
+| Pick up deferred work | [backlog](backlog.md) | — |
 
 Everything else: [docs/README index in the root README](../README.md#documentation).
 

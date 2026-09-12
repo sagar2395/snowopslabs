@@ -8,7 +8,7 @@
   "links": [],
   "panels": [
     {
-      "title": "{{.WorkloadName}}: Replicas vs Request Rate",
+      "title": "$app: Replicas vs Request Rate",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -22,11 +22,11 @@
       },
       "targets": [
         {
-          "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[1m]))",
+          "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"$app\"}[1m]))",
           "legendFormat": "RPS"
         },
         {
-          "expr": "kube_deployment_status_replicas{deployment=\"{{.WorkloadName}}\"}",
+          "expr": "kube_deployment_status_replicas{namespace=\"$namespace\",deployment=\"$app\"}",
           "legendFormat": "Replicas"
         }
       ],
@@ -93,7 +93,7 @@
       },
       "targets": [
         {
-          "expr": "kube_deployment_status_replicas{deployment=\"{{.WorkloadName}}\"}",
+          "expr": "kube_deployment_status_replicas{namespace=\"$namespace\",deployment=\"$app\"}",
           "legendFormat": "Replicas"
         }
       ],
@@ -124,7 +124,7 @@
       }
     },
     {
-      "title": "{{.WorkloadName}}: p99 vs p50 latency (tail amplification is graded)",
+      "title": "$app: p99 vs p50 latency (tail amplification is graded)",
       "type": "timeseries",
       "gridPos": {
         "h": 8,
@@ -138,11 +138,11 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])) by (le))",
           "legendFormat": "p99"
         },
         {
-          "expr": "histogram_quantile(0.50, sum(rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])) by (le))",
           "legendFormat": "p50",
           "refId": "B"
         }
@@ -170,7 +170,7 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le)) / clamp_min(histogram_quantile(0.50, sum(rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le)), 0.001)",
+          "expr": "histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])) by (le)) / clamp_min(histogram_quantile(0.50, sum(rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])) by (le)), 0.001)",
           "legendFormat": "p99/p50",
           "refId": "A"
         }
@@ -180,11 +180,64 @@
   "schemaVersion": 39,
   "tags": [
     "autoscaling",
-    "keda",
-    "{{.WorkloadName}}"
+    "keda"
   ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "app",
+        "label": "App",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+        "query": {
+          "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+          "refId": "app",
+          "qryType": 3
+        },
+        "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+        "regex": "/app=\"([^\"]+)\"/",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "{{.WorkloadName}}",
+          "value": "{{.WorkloadName}}"
+        },
+        "options": []
+      },
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "Where the selected app runs.",
+        "query": {
+          "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+          "refId": "namespace",
+          "qryType": 1
+        },
+        "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 0,
+        "current": {
+          "selected": true,
+          "text": "{{.WorkloadNamespace}}",
+          "value": "{{.WorkloadNamespace}}"
+        },
+        "options": []
+      }
+    ]
   },
   "time": {
     "from": "now-15m",

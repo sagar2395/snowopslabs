@@ -10,8 +10,7 @@
   "tags": [
     "mesh",
     "istio",
-    "canary",
-    "{{.WorkloadName}}"
+    "canary"
   ],
   "time": {
     "from": "now-15m",
@@ -35,7 +34,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (destination_version) (rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\"}[1m]))",
+          "expr": "sum by (destination_version) (rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\"}[1m]))",
           "legendFormat": "{{destination_version}}"
         }
       ],
@@ -68,7 +67,7 @@
       "description": "The weight actually being served, not the weight you wrote. ~0.10 for a 90/10 split; ~0.50 means no VirtualService is in force.",
       "targets": [
         {
-          "expr": "sum(rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\",destination_version=\"v2\"}[5m])) / sum(rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\"}[5m]))",
+          "expr": "sum(rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\",destination_version=\"v2\"}[5m])) / sum(rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\"}[5m]))",
           "legendFormat": "v2 share"
         }
       ],
@@ -109,7 +108,7 @@
       "description": "Share of canary requests whose connection_security_policy is mutual_tls, as reported by the receiving sidecar. Every request is reported twice \u2014 the sending sidecar reports the policy as 'unknown', so without reporter=\"destination\" this ratio caps at ~0.5 and never turns green. Reaches 1 once STRICT is enforced.",
       "targets": [
         {
-          "expr": "sum(rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\",connection_security_policy=\"mutual_tls\"}[5m])) / sum(rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\"}[5m]))",
+          "expr": "sum(rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\",connection_security_policy=\"mutual_tls\"}[5m])) / sum(rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\"}[5m]))",
           "legendFormat": "mTLS"
         }
       ],
@@ -149,15 +148,15 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"source\",destination_version=\"v2\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"$app-canary\",reporter=\"source\",destination_version=\"v2\"}[5m])))",
           "legendFormat": "v2 p99"
         },
         {
-          "expr": "histogram_quantile(0.50, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"source\",destination_version=\"v2\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"$app-canary\",reporter=\"source\",destination_version=\"v2\"}[5m])))",
           "legendFormat": "v2 p50"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"source\",destination_version=\"v1\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"$app-canary\",reporter=\"source\",destination_version=\"v1\"}[5m])))",
           "legendFormat": "v1 p99"
         }
       ],
@@ -189,7 +188,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (destination_version, response_code) (rate(istio_requests_total{destination_service_name=\"{{.WorkloadName}}-canary\",reporter=\"destination\"}[1m]))",
+          "expr": "sum by (destination_version, response_code) (rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\"}[1m]))",
           "legendFormat": "{{destination_version}} \u00b7 {{response_code}}"
         }
       ],
@@ -206,5 +205,36 @@
       },
       "description": "A canary that is failing shows up here first: 5xx concentrated on one version is the signal to shift the weights back."
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "app",
+        "label": "App",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+        "query": {
+          "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+          "refId": "app",
+          "qryType": 3
+        },
+        "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+        "regex": "/app=\"([^\"]+)\"/",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "{{.WorkloadName}}",
+          "value": "{{.WorkloadName}}"
+        },
+        "options": []
+      }
+    ]
+  }
 }

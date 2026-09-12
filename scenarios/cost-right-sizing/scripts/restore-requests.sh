@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # restore-requests.sh — the inverse of inflate.sh, run by `scenario down`.
 #
@@ -8,8 +9,8 @@ set -euo pipefail
 # learner right-sized it to), and the next scenario starts from a state its
 # author never intended.
 
-NAMESPACE="${NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
-APP="${APP:-${WORKLOAD_NAME:-go-api}}"
+NAMESPACE="${WORKLOAD_NAMESPACE}"
+APP="${WORKLOAD_NAME}"
 MARK="snowops.net/cost-right-sizing-original"
 
 if ! kubectl get deployment "$APP" -n "$NAMESPACE" >/dev/null 2>&1; then

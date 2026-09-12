@@ -9,8 +9,7 @@
   "schemaVersion": 39,
   "tags": [
     "operations",
-    "drain",
-    "{{.WorkloadName}}"
+    "drain"
   ],
   "time": {
     "from": "now-30m",
@@ -34,7 +33,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\",http_response_status_code!~\"5..\"}[1m])) / sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[1m]))",
+          "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"$app\",http_response_status_code!~\"5..\"}[1m])) / sum(rate({{.WorkloadMetric}}_count{app=\"$app\"}[1m]))",
           "legendFormat": "success rate"
         }
       ],
@@ -104,7 +103,7 @@
       },
       "targets": [
         {
-          "expr": "count by (node) (kube_pod_info{namespace=\"{{.WorkloadNamespace}}\",created_by_name=~\"{{.WorkloadName}}-.*\"})",
+          "expr": "count by (node) (kube_pod_info{namespace=\"$namespace\",created_by_kind=\"ReplicaSet\",created_by_name=~\"$app-[a-z0-9]+\"})",
           "legendFormat": "{{node}}"
         }
       ],
@@ -138,11 +137,11 @@
       },
       "targets": [
         {
-          "expr": "kube_deployment_status_replicas_ready{namespace=\"{{.WorkloadNamespace}}\",deployment=\"{{.WorkloadName}}\"}",
+          "expr": "kube_deployment_status_replicas_ready{namespace=\"$namespace\",deployment=\"$app\"}",
           "legendFormat": "ready"
         },
         {
-          "expr": "kube_deployment_spec_replicas{namespace=\"{{.WorkloadNamespace}}\",deployment=\"{{.WorkloadName}}\"}",
+          "expr": "kube_deployment_spec_replicas{namespace=\"$namespace\",deployment=\"$app\"}",
           "legendFormat": "desired"
         }
       ],
@@ -161,5 +160,62 @@
       },
       "description": "Ready dipping below desired during the drain is normal and expected; ready reaching zero is the failure the PodDisruptionBudget exists to prevent."
     }
-  ]
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "app",
+        "label": "App",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+        "query": {
+          "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+          "refId": "app",
+          "qryType": 3
+        },
+        "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+        "regex": "/app=\"([^\"]+)\"/",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "{{.WorkloadName}}",
+          "value": "{{.WorkloadName}}"
+        },
+        "options": []
+      },
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "Where the selected app runs.",
+        "query": {
+          "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+          "refId": "namespace",
+          "qryType": 1
+        },
+        "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 0,
+        "current": {
+          "selected": true,
+          "text": "{{.WorkloadNamespace}}",
+          "value": "{{.WorkloadNamespace}}"
+        },
+        "options": []
+      }
+    ]
+  }
 }

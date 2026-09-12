@@ -29,7 +29,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Server-side** panels (`{{.WorkloadMetric}}_count`) count what the app actually handled. **Client-side** panels (`k6_*`) count what the load generator sent. A gap between them is the interesting signal: requests dropped at the ingress, rejected by a full queue, or lost to pod restarts never reach the app's counters.\n\nGenerate load with `labctl traffic start --profile steady --rps 25`, then compare the two rows. The `k6_*` series only appear while a run is in flight."
+        "content": "**Server-side** panels (`http_server_request_duration_seconds_count`) count what the app actually handled. **Client-side** panels (`k6_*`) count what the load generator sent. A gap between them is the interesting signal: requests dropped at the ingress, rejected by a full queue, or lost to pod restarts never reach the app's counters.\n\nGenerate load with `labctl traffic start --profile steady --rps 25`, then compare the two rows. The `k6_*` series only appear while a run is in flight."
       }
     },
     {
@@ -89,7 +89,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (app) (rate({{.WorkloadMetric}}_count[1m]))",
+          "expr": "sum by (app) (rate(http_server_request_duration_seconds_count[1m]))",
           "legendFormat": "{{app}}",
           "refId": "A",
           "format": "time_series"
@@ -154,13 +154,13 @@
       },
       "targets": [
         {
-          "expr": "sum by (path) (rate({{.WorkloadMetric}}_count{app=~\"$app\"}[1m]))",
-          "legendFormat": "{{path}}",
+          "expr": "sum by (app, http_route) (rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m]))",
+          "legendFormat": "{{app}} {{http_route}}",
           "refId": "A",
           "format": "time_series"
         }
       ],
-      "description": "The path label is normalised to known routes plus 'other', so cardinality stays bounded."
+      "description": "The route label is normalised to known routes plus 'other', so cardinality stays bounded."
     },
     {
       "id": 4,
@@ -219,24 +219,25 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (le, app) (rate({{.WorkloadMetric}}_bucket{app=~\"$app\"}[5m])))",
+          "expr": "histogram_quantile(0.50, sum by (le, app) (rate(http_server_request_duration_seconds_bucket{app=~\"$app\"}[5m])))",
           "legendFormat": "p50 {{app}}",
           "refId": "A",
           "format": "time_series"
         },
         {
-          "expr": "histogram_quantile(0.95, sum by (le, app) (rate({{.WorkloadMetric}}_bucket{app=~\"$app\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, app) (rate(http_server_request_duration_seconds_bucket{app=~\"$app\"}[5m])))",
           "legendFormat": "p95 {{app}}",
           "refId": "B",
           "format": "time_series"
         },
         {
-          "expr": "histogram_quantile(0.99, sum by (le, app) (rate({{.WorkloadMetric}}_bucket{app=~\"$app\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (le, app) (rate(http_server_request_duration_seconds_bucket{app=~\"$app\"}[5m])))",
           "legendFormat": "p99 {{app}}",
           "refId": "C",
           "format": "time_series"
         }
-      ]
+      ],
+      "description": "Quantiles are estimated from histogram buckets, and the first bucket ends at 5ms. Below that Grafana can only interpolate, so a fast app reads p50 2.5ms, p95 4.75ms and p99 4.95ms: treat those values as \"under 5ms\"."
     },
     {
       "id": 5,
@@ -295,8 +296,8 @@
       },
       "targets": [
         {
-          "expr": "sum by (http_response_status_code) (rate({{.WorkloadMetric}}_count{app=~\"$app\"}[1m]))",
-          "legendFormat": "{{code}}",
+          "expr": "sum by (app, http_response_status_code) (rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m]))",
+          "legendFormat": "{{app}} {{http_response_status_code}}",
           "refId": "A",
           "format": "time_series"
         }
@@ -360,12 +361,13 @@
       },
       "targets": [
         {
-          "expr": "sum by (app) (rate({{.WorkloadMetric}}_count{app=~\"$app\", http_response_status_code=~\"5..\"}[5m]))",
+          "expr": "sum by (app) (rate(http_server_request_duration_seconds_count{app=~\"$app\", http_response_status_code=~\"5..\"}[5m])) or 0 * sum by (app) (rate(http_server_request_duration_seconds_count{app=~\"$app\"}[5m]))",
           "legendFormat": "5xx {{app}}",
           "refId": "A",
           "format": "time_series"
         }
-      ]
+      ],
+      "description": "5xx responses per second. A line at 0 means the app is serving and failing nothing; no line means it is not serving at all."
     },
     {
       "id": 7,
@@ -424,19 +426,19 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(k6_http_reqs_total[1m]))",
+          "expr": "sum(rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\"}[1m]))",
           "legendFormat": "k6 sent (client)",
           "refId": "A",
           "format": "time_series"
         },
         {
-          "expr": "sum(rate({{.WorkloadMetric}}_count{app=~\"$app\"}[1m]))",
-          "legendFormat": "app handled (server)",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m]))",
+          "legendFormat": "handled by the app (server)",
           "refId": "B",
           "format": "time_series"
         }
       ],
-      "description": "Two lines that should overlap. A persistent gap means requests are being lost before they reach the app."
+      "description": "Two lines that should overlap when only k6 is loading the selected apps. k6 counts what it sent to them; the apps count what they handled, which also includes kubelet probes and any traffic that did not come from k6. A persistent gap beyond that means requests are lost before reaching the app."
     },
     {
       "id": 8,
@@ -495,19 +497,19 @@
       },
       "targets": [
         {
-          "expr": "k6_http_req_duration_p95",
-          "legendFormat": "p95 (client)",
+          "expr": "label_replace(label_replace(max by (url) (k6_http_req_duration_p95{url=~\"https?://$app\\\\..*\"}), \"app\", \"$1\", \"url\", \"https?://([^.]+)\\\\..*\"), \"route\", \"$1\", \"url\", \"https?://[^/]+(/.*)\")",
+          "legendFormat": "p95 {{app}} {{route}}",
           "refId": "A",
           "format": "time_series"
         },
         {
-          "expr": "k6_http_req_duration_p99",
-          "legendFormat": "p99 (client)",
+          "expr": "label_replace(label_replace(max by (url) (k6_http_req_duration_p99{url=~\"https?://$app\\\\..*\"}), \"app\", \"$1\", \"url\", \"https?://([^.]+)\\\\..*\"), \"route\", \"$1\", \"url\", \"https?://[^/]+(/.*)\")",
+          "legendFormat": "p99 {{app}} {{route}}",
           "refId": "B",
           "format": "time_series"
         }
       ],
-      "description": "Includes ingress and network time, so it is always >= the server-side histogram. k6's remote-write output reports durations in SECONDS."
+      "description": "Latency as the k6 client measured it, per route it hit. The k6 panels follow the App selector through the URL each request was sent to."
     },
     {
       "id": 9,
@@ -566,13 +568,13 @@
       },
       "targets": [
         {
-          "expr": "k6_http_req_failed_rate",
-          "legendFormat": "failed fraction",
+          "expr": "label_replace(label_replace((sum by (url) (rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\",expected_response=\"false\"}[1m])) or 0 * sum by (url) (rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\"}[1m]))) / sum by (url) (rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\"}[1m])), \"app\", \"$1\", \"url\", \"https?://([^.]+)\\\\..*\"), \"route\", \"$1\", \"url\", \"https?://[^/]+(/.*)\")",
+          "legendFormat": "{{app}} {{route}}",
           "refId": "A",
           "format": "time_series"
         }
       ],
-      "description": "k6's own view of failures: connection refused and timeouts included, which the app can never count."
+      "description": "The share of requests k6 sent in the last minute that did not get the response it expected, per route. Unlike the server-side error panel it includes requests that never reached the app."
     }
   ],
   "refresh": "10s",
@@ -594,7 +596,7 @@
           "uid": "prometheus"
         },
         "query": {
-          "query": "label_values({{.WorkloadMetric}}_count, app)",
+          "query": "label_values(http_server_request_duration_seconds_count, app)",
           "refId": "app"
         },
         "refresh": 2,

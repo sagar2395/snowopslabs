@@ -164,8 +164,8 @@ if ! kubectl wait --for=condition=Ready "node/${NEW_NODE}" --timeout="${READY_TI
   exit 1
 fi
 
-# A fresh node has an empty image store. Locally built lab images (${WORKLOAD_NAME:-go-api},
-# ${WORKLOAD_NAME:-go-api}) were side-loaded into the cluster at deploy time and are in no
+# A fresh node has an empty image store. Locally built lab images (every
+# app under apps/) were side-loaded into the cluster at deploy time and are in no
 # registry, so without re-importing them the app cannot start on the
 # replacement and lands in ImagePullBackOff.
 echo "==> Re-importing locally built images onto the new node"
@@ -239,4 +239,4 @@ echo ""
 echo "${NODE} (${node_ver}) replaced by ${NEW_NODE} (${TARGET_K3S_VERSION})."
 echo "Next: let the workload reschedule, then roll the remaining node."
 echo "  kubectl get nodes -o wide"
-echo "  kubectl -n ${WORKLOAD_NAMESPACE:-go-api} get pods -o wide"
+echo "  kubectl get pods --all-namespaces -o wide --field-selector spec.nodeName=${NEW_NODE}"

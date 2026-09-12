@@ -34,4 +34,4 @@ kubectl -n "$NS" rollout restart "deploy/$DEPLOY" >/dev/null
 kubectl -n "$NS" rollout status "deploy/$DEPLOY" --timeout=120s >/dev/null 2>&1 || true
 
 echo "Done."
-echo "Tip: run 'labctl traffic start' — the page needs requests to fail before it fires."
+echo "Tip: run 'labctl traffic start --app ${TARGET_WORKLOAD:-go-api}' — the page needs requests to fail before it fires."

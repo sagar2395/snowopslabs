@@ -7,9 +7,10 @@
 # PeerAuthentication survive teardown — and the next run starts with the split
 # already in place and its checks green before the learner has done anything.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-APP="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+APP="${WORKLOAD_NAME}"
 
 echo "Removing learner-applied mesh policy in '$NS'..."
 kubectl -n "$NS" delete virtualservice "${APP}-canary" --ignore-not-found >/dev/null 2>&1 || true

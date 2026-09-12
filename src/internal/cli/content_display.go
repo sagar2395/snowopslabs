@@ -4,10 +4,9 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/sagar2395/snowopslabs/internal/snippet"
 	"github.com/sagar2395/snowopslabs/pkg/scenario"
 )
 
@@ -46,57 +45,33 @@ func renderComponent(w io.Writer, c scenario.Component, indent string, resolve r
 	fmt.Fprintln(w)
 }
 
-// renderSnippets writes each reference snippet with its resolved body. Path
-// snippets are read from dir; every body is template-resolved so it prints as it
-// is used. Each snippet carries its own "apply with" hint (defaulting to
-// `kubectl apply -f -`) because not every snippet is a kubectl manifest — a Helm
-// values file, for instance, is applied differently, and labelling it as
-// kubectl-appliable would mislead the learner. A snippet whose file cannot be
-// read is reported inline rather than silently dropped (the loader already fails
-// validation on a missing path, so this is belt-and-braces).
+// renderSnippets writes each snippet as a reader sees it. An exercise snippet is
+// marked, with the command that applies it, because nothing else installs it.
 func renderSnippets(w io.Writer, snips []scenario.Snippet, dir string, resolve resolveFunc) {
 	if len(snips) == 0 {
 		return
 	}
 	fmt.Fprintf(w, "\nSnippets:\n")
-	for _, s := range snips {
-		apply := resolve(s.Apply)
-		if apply == "" {
-			apply = "kubectl apply -f -"
-		}
-		// The label and description name the workload too, so they are resolved
-		// alongside the body — a snippet titled "{{.WorkloadName}}" reads as an
-		// authoring bug to the learner.
-		fmt.Fprintf(w, "\n  # %s", resolve(s.Label))
-		if s.Description != "" {
-			fmt.Fprintf(w, " — %s", resolve(s.Description))
+	for _, raw := range snips {
+		sn, err := snippet.Resolve(dir, raw, resolve)
+		fmt.Fprintf(w, "\n  # %s", sn.Label)
+		if sn.Description != "" {
+			fmt.Fprintf(w, " — %s", sn.Description)
 		}
 		fmt.Fprintln(w)
-		fmt.Fprintf(w, "  # apply with: %s\n", apply)
-		body, err := snippetBody(s, dir, resolve)
+		if sn.Exercise {
+			apply := sn.Apply
+			if apply == "" {
+				apply = "kubectl apply -f -   (pipe the manifest below into it)"
+			}
+			fmt.Fprintf(w, "  # you apply this: %s\n", apply)
+		}
 		if err != nil {
 			fmt.Fprintf(w, "    (unavailable: %v)\n", err)
 			continue
 		}
-		for _, line := range strings.Split(strings.TrimRight(body, "\n"), "\n") {
+		for _, line := range strings.Split(strings.TrimRight(sn.YAML, "\n"), "\n") {
 			fmt.Fprintf(w, "    %s\n", line)
 		}
 	}
-}
-
-// snippetBody returns a snippet's template-resolved manifest text, reading it
-// from disk when the snippet references a path.
-func snippetBody(s scenario.Snippet, dir string, resolve resolveFunc) (string, error) {
-	raw := s.YAML
-	if s.Path != "" {
-		data, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(s.Path)))
-		if err != nil {
-			return "", err
-		}
-		raw = string(data)
-	}
-	if resolve != nil {
-		raw = resolve(raw)
-	}
-	return raw, nil
 }

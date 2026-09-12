@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Grades the promotion pipeline invariant: for every environment, the release
 # record (env-metadata.declared_tag) must match what is ACTUALLY running.
@@ -14,8 +15,8 @@ set -euo pipefail
 # This is the same invariant GitOps tools call drift: desired vs live state.
 
 ENVS="dev staging prod"
-APP="${WORKLOAD_NAME:-go-api}"
-REPO="${WORKLOAD_NAME:-go-api}"
+APP="${WORKLOAD_NAME}"
+REPO="${WORKLOAD_NAME}"
 fail=0
 
 jp() { kubectl get "$1" "$2" -n "$3" -o jsonpath="$4" 2>/dev/null || echo ""; }
@@ -71,7 +72,7 @@ for env_name in $ENVS; do
   # share one digest in the node's image store (the lab builds tag both vX.Y.Z
   # and :latest), the kubelet reports whichever tag it resolved — commonly
   # "docker.io/library/<app>:latest" for a pod that correctly requested
-  # ${WORKLOAD_NAME:-go-api}:v1.1.0. Comparing tags against that field reports drift that is not
+  # <app>:v1.1.0. Comparing tags against that field reports drift that is not
   # there.
   running_images=$(kubectl get pods -n "$ns" -l app="$APP" \
     --field-selector=status.phase=Running \
@@ -105,7 +106,7 @@ done
 if [ "$fail" = "0" ]; then
   echo ""
   echo "All environments consistent. Confirm the running binary agrees:"
-  echo "  for e in dev staging prod; do echo -n \"\$e: \"; curl -s ${WORKLOAD_NAME:-go-api}-\$e.\${DOMAIN_SUFFIX:-k3d.local}/version; echo; done"
+  echo "  for e in dev staging prod; do echo -n \"\$e: \"; curl -s ${WORKLOAD_NAME}-\$e.\${DOMAIN_SUFFIX:-k3d.local}/version; echo; done"
 fi
 
 exit "$fail"

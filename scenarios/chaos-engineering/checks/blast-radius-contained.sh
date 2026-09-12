@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Objective: re-run the experiment against the HARDENED service and prove the
 # outage is gone.
@@ -13,8 +14,8 @@ set -eu
 # Graded only once the workload is hardened AND an experiment has been run
 # against it, so it cannot be satisfied by a quiet cluster nobody attacked.
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+WORKLOAD="${WORKLOAD_NAME}"
 METRIC="${WORKLOAD_METRIC:-http_server_request_duration_seconds}"
 PROM="${PROMETHEUS_URL:-http://prometheus.${DOMAIN_SUFFIX:-k3d.local}}"
 WITNESS="chaos-experiment-witness"
@@ -50,18 +51,18 @@ if [ -z "$LAST_EXP" ] || [ "$LAST_EXP" -lt "$HARDENED" ] 2>/dev/null; then
   echo "  The first attack proved the outage; this one proves it is gone. Repeat it now that" >&2
   echo "  the service has somewhere to fail over to:" >&2
   echo "    kubectl delete podchaos pod-kill-${WORKLOAD} -n ${NS} --ignore-not-found" >&2
-  echo "    kubectl apply -f scenarios/chaos-engineering/manifests/chaos-experiments.yaml -l experiment=pod-kill" >&2
+  echo "    bash scenarios/chaos-engineering/scripts/inject.sh pod-kill --app ${WORKLOAD} --namespace ${NS}" >&2
   exit 1
 fi
 
 # Was there load to measure at all? Averaged over the window, so a momentary dip
 # does not read as "no traffic".
 RATE="$(promq "sum(rate(${METRIC}_count{app=\"${WORKLOAD}\"}[10m])) or vector(0)")"
-case "${RATE:-0}" in ''|0|0.*) LOW=1 ;; *) LOW=0 ;; esac
+case "${RATE:-0}" in '' | 0 | 0.*) LOW=1 ;; *) LOW=0 ;; esac
 if [ "$LOW" = "1" ]; then
   echo "PENDING: Prometheus sees almost no requests to ${WORKLOAD} (${RATE:-0}/s)." >&2
   echo "  Without load the blast radius is unmeasurable — an experiment nobody was using proves nothing." >&2
-  echo "    labctl traffic start --profile browse --rps 20 --duration 30m" >&2
+  echo "    labctl traffic start --app ${WORKLOAD_NAME} --profile browse --rps 20 --duration 30m" >&2
   echo "  Let it run a couple of minutes, then re-run the experiment and re-verify." >&2
   exit 1
 fi
@@ -69,7 +70,7 @@ fi
 # The grade: since hardening, the service never stopped serving. The window is
 # measured from that moment — capped at 15 minutes so it stays a recent claim,
 # floored at 3 so there is something to average over.
-ELAPSED=$(( NOW - HARDENED ))
+ELAPSED=$((NOW - HARDENED))
 if [ "$ELAPSED" -lt 120 ]; then
   echo "PENDING: ${WORKLOAD} was hardened ${ELAPSED}s ago — too recent to measure." >&2
   echo "  Any window that short still contains the outage you correctly caused on one replica." >&2
@@ -79,14 +80,14 @@ fi
 # Never look back past the moment of hardening: the flatline on a single replica
 # was the point of the first experiment, and counting it here would fail the
 # learner for having done the drill properly.
-WINDOW=$(( ELAPSED / 60 ))
+WINDOW=$((ELAPSED / 60))
 [ "$WINDOW" -gt 15 ] && WINDOW=15
 # The sub-interval matters more than the window. A pod kill takes the service
 # out for roughly ten seconds; sampled once a minute that outage is averaged
 # away and the floor never reaches zero, so the check would pass on a single
 # replica and grade nothing.
 FLOOR="$(promq "min_over_time((sum(rate(${METRIC}_count{app=\"${WORKLOAD}\"}[1m])) or vector(0))[${WINDOW}m:30s])")"
-case "${FLOOR:-0}" in ''|0|0.0*) ZERO=1 ;; *) ZERO=0 ;; esac
+case "${FLOOR:-0}" in '' | 0 | 0.0*) ZERO=1 ;; *) ZERO=0 ;; esac
 
 if [ "$ZERO" = "1" ]; then
   echo "FAIL: ${WORKLOAD}'s request rate hit zero in the ${WINDOW} minute(s) since it was hardened." >&2

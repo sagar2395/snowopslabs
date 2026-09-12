@@ -8,7 +8,7 @@
  "links": [],
  "panels": [
   {
-   "title": "{{.WorkloadName}}: Request Rate by Status Code",
+   "title": "$app: Request Rate by Status Code",
    "type": "timeseries",
    "gridPos": {
     "h": 8,
@@ -22,8 +22,8 @@
    },
    "targets": [
     {
-     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[1m])) by (http_response_status_code)",
-     "legendFormat": "{{code}}"
+     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"$app\"}[1m])) by (http_response_status_code)",
+     "legendFormat": "{{http_response_status_code}}"
     }
    ],
    "fieldConfig": {
@@ -55,7 +55,7 @@
    },
    "targets": [
     {
-     "expr": "(sum(rate({{.WorkloadMetric}}_count{http_response_status_code=~\"5..\",app=\"{{.WorkloadName}}\"}[5m])) / clamp_min(sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[5m])), 0.001)) or vector(0)",
+     "expr": "(sum(rate({{.WorkloadMetric}}_count{http_response_status_code=~\"5..\",app=\"$app\"}[5m])) / clamp_min(sum(rate({{.WorkloadMetric}}_count{app=\"$app\"}[5m])), 0.001)) or vector(0)",
      "legendFormat": "5xx rate"
     }
    ],
@@ -82,7 +82,7 @@
    }
   },
   {
-   "title": "{{.WorkloadName}}: p99 Latency (SLO < 1s)",
+   "title": "$app: p99 Latency (SLO < 1s)",
    "type": "timeseries",
    "gridPos": {
     "h": 8,
@@ -96,11 +96,11 @@
    },
    "targets": [
     {
-     "expr": "histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le))",
+     "expr": "histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])) by (le))",
      "legendFormat": "p99"
     },
     {
-     "expr": "histogram_quantile(0.50, sum(rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])) by (le))",
+     "expr": "histogram_quantile(0.50, sum(rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])) by (le))",
      "legendFormat": "p50"
     }
    ],
@@ -144,7 +144,7 @@
    },
    "targets": [
     {
-     "expr": "sum(kube_pod_status_ready{namespace=\"{{.WorkloadNamespace}}\", condition=\"true\"})",
+     "expr": "sum(kube_pod_status_ready{namespace=\"$namespace\", condition=\"true\"})",
      "legendFormat": "ready"
     }
    ],
@@ -185,8 +185,8 @@
    },
    "targets": [
     {
-     "expr": "max by (pod) (container_memory_working_set_bytes{namespace=\"{{.WorkloadNamespace}}\", container!=\"\"}) / max by (pod) (kube_pod_container_resource_limits{namespace=\"{{.WorkloadNamespace}}\", resource=\"memory\"})",
-     "legendFormat": "mem used / limit"
+     "expr": "max by (pod) (container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"}) / max by (pod) (kube_pod_container_resource_limits{namespace=\"$namespace\", resource=\"memory\"})",
+     "legendFormat": "{{pod}}"
     }
    ],
    "fieldConfig": {
@@ -226,11 +226,11 @@
    },
    "options": {
     "mode": "markdown",
-    "content": "Metrics say a request was slow. Logs say what it did. Traces say where the time went. The link between them is the **trace_id** `{{.WorkloadName}}` stamps on every access-log line.\n\n1. **Explore \u2192 Loki**: `{namespace=\"{{.WorkloadNamespace}}\"} | json` \u2014 expand a line and click its `trace_id`.\n2. Grafana opens that trace in Tempo. The span tree is the same request the log line described.\n3. Going the other way: pick a trace below, then use **Logs for this span** to land back on that pod's lines.\n\nThe app exports to **Alloy**, never to Tempo. Swapping the trace backend is a change to the collector's exporter alone \u2014 no application redeploy."
+    "content": "Metrics say a request was slow. Logs say what it did. Traces say where the time went. The link between them is the **trace_id** `$app` stamps on every access-log line.\n\n1. **Explore \u2192 Loki**: `{namespace=\"$namespace\"} | json` \u2014 expand a line and click its `trace_id`.\n2. Grafana opens that trace in Tempo. The span tree is the same request the log line described.\n3. Going the other way: pick a trace below, then use **Logs for this span** to land back on that pod's lines.\n\nThe app exports to **Alloy**, never to Tempo. Swapping the trace backend is a change to the collector's exporter alone \u2014 no application redeploy."
    }
   },
   {
-   "title": "Recent traces for {{.WorkloadName}}",
+   "title": "Recent traces for $app",
    "type": "table",
    "gridPos": {
     "h": 9,
@@ -251,7 +251,7 @@
       "uid": "tempo"
      },
      "queryType": "traceql",
-     "query": "{resource.service.name=\"{{.WorkloadName}}\"}",
+     "query": "{resource.service.name=\"$app\"}",
      "limit": 20,
      "tableType": "traces"
     }
@@ -266,11 +266,64 @@
  "tags": [
   "observability",
   "sre",
-  "golden-signals",
-  "{{.WorkloadName}}"
+  "golden-signals"
  ],
  "templating": {
-  "list": []
+  "list": [
+   {
+    "name": "app",
+    "label": "App",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+    "query": {
+     "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+     "refId": "app",
+     "qryType": 3
+    },
+    "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+    "regex": "/app=\"([^\"]+)\"/",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 1,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadName}}",
+     "value": "{{.WorkloadName}}"
+    },
+    "options": []
+   },
+   {
+    "name": "namespace",
+    "label": "Namespace",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "Where the selected app runs.",
+    "query": {
+     "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+     "refId": "namespace",
+     "qryType": 1
+    },
+    "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 0,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadNamespace}}",
+     "value": "{{.WorkloadNamespace}}"
+    },
+    "options": []
+   }
+  ]
  },
  "time": {
   "from": "now-30m",

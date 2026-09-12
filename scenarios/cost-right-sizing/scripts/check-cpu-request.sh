@@ -6,13 +6,14 @@
 # full-marks answer to a scenario about sizing requests correctly, and
 # under-provisioning is how workloads get throttled and evicted in production.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
 . "$DIR/_prom.sh"
 
-NAMESPACE="${WORKLOAD_NAMESPACE:-go-api}"
-APP="${WORKLOAD_NAME:-go-api}"
+NAMESPACE="${WORKLOAD_NAMESPACE}"
+APP="${WORKLOAD_NAME}"
 CONTAINER="${CONTAINER:-$APP}"
 MAX_CPU_MILLICORES="${MAX_CPU_MILLICORES:-100}"
 
@@ -62,7 +63,7 @@ if [ -z "$peak_cores" ]; then
   echo "FAIL: Prometheus returned no CPU usage for ${NAMESPACE}/${CONTAINER}, so the request" >&2
   echo "cannot be checked against what the workload actually needs." >&2
   echo "Right-sizing without a measurement is guessing. Drive load and try again:" >&2
-  echo "  labctl traffic start --profile steady --rps 25" >&2
+  echo "  labctl traffic start --app ${WORKLOAD_NAME} --profile steady --rps 25" >&2
   exit 1
 fi
 

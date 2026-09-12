@@ -6,9 +6,10 @@
 # they applied from the snippets — snippets belong to no component, so nothing
 # has ever removed them.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+WORKLOAD="${WORKLOAD_NAME}"
 STATE="security-baseline"
 
 BEFORE="$(kubectl -n "$NS" get configmap "$STATE" \

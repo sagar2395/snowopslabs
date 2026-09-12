@@ -18,7 +18,7 @@ read.
 - A cluster with the monitoring stack: `make init` then
   `labctl platform up monitoring/metrics monitoring/grafana`.
 - `go-api` deployed: `labctl app deploy go-api`.
-- Hostnames resolvable: `sudo labctl hosts add`.
+- Hostnames resolvable: `labctl hosts add`.
 
 ---
 
@@ -33,6 +33,39 @@ back to `*SelectorNilUsesHelmValues`, which restricts selection to
 `release=<release>`. Set all three `*SelectorNilUsesHelmValues: false` flags,
 and label every ServiceMonitor, PodMonitor and PrometheusRule
 `release: prometheus` anyway.
+
+**Platform dashboards are never template-resolved.** The files under
+`platform/monitoring/grafana/provisioning/dashboards/` ship to Grafana as a raw
+ConfigMap, so a `{{.WorkloadMetric}}` in one reaches Prometheus as literal text.
+They query the contract's metric name, `http_server_request_duration_seconds`,
+directly. A test fails on any labctl template there.
+
+**A legend that does not name its grouping label hides the data.** A query
+grouped `by (namespace)` with a legend of `available` draws one line per
+environment, all called "available". A legend naming a label the query does not
+return — `{{code}}` after the semconv rename to `http_response_status_code` —
+renders empty. `labctl validate` lints both; see
+[the schema](../reference/scenario-schema.md).
+
+**OpenCost re-exports kube-state-metrics.** OpenCost's `/metrics` carries its
+own copy of `kube_pod_container_resource_requests`, `kube_node_status_allocatable`
+and friends. Scraped with `honorLabels: true` they land next to the real ones
+with identical labels bar `job`, and every `sum()` over them doubles. The
+cost-right-sizing ServiceMonitor drops `kube_.*` in `metricRelabelings`. OpenCost
+also reports `container_cpu_allocation` twice per container, so dashboards take
+`max by (pod, container)` before summing.
+
+**k6 labels every series with the URL it hit, and its failure rate is not a
+ratio you can take the max of.** `k6_http_req_failed_rate` is split by `status`,
+so the series for `status="0"` is always 1 once any request failed. Compute the
+failed fraction from `k6_http_reqs_total{expected_response="false"}` over all
+requests instead, and filter by app with `url=~"https?://<app>\\..*"`. k6 also
+calls the Service inside the cluster, so it never crosses the ingress; a fault
+injected between the ingress and the app does not show on the k6 panels.
+
+**`x or vector(0)` adds a line when `x` has labels.** `vector(0)` has none, so it
+never matches and both are returned: two lines with one legend. Aggregate first,
+`sum(rate(x[5m])) or vector(0)`.
 
 **A scrapeTimeout above the scrapeInterval voids the ServiceMonitor.**
 prometheus-operator rejects it outright (`InvalidConfiguration`, visible only in
@@ -115,14 +148,17 @@ raw path appears, any client can create unbounded series.
 ## §2 — Load generation, and both sides of it
 
 ```bash
-labctl traffic start --profile steady --rps 25 --duration 15m
+labctl traffic start --app go-api --profile steady --rps 25 --duration 15m
 labctl traffic status
 ```
 
 **Expect:** the k6 Job Running, and a line reporting either
 `metrics: k6 -> Prometheus remote write (...)` or that no receiver was found.
 
-Open **Grafana → Application Request Metrics** (`/d/app-requests`).
+Open **Grafana → Application Request Metrics** (`/d/app-requests`). It is one
+dashboard for every app: pick one or more in the **App** selector, or open
+`/d/app-requests?var-app=go-api`. The k6 panels are not filtered by it — k6
+metrics carry no app label, so they show the whole traffic run.
 
 **Expect:** "Request rate by app" settles near 25 req/s within a minute, and on
 "Offered vs served" the k6 line and the app line sit on top of each other. A
@@ -264,7 +300,7 @@ labctl scenario verify observability-sre
 
 ```bash
 labctl traffic stop
-bash scenarios/observability-sre/scripts/disable-tracing.sh
+bash scenarios/observability-sre/scripts/disable-tracing.sh --app go-api --namespace go-api
 labctl scenario verify observability-sre
 ```
 
@@ -347,7 +383,7 @@ Uses the `env-promotion` scenario. The point is that the check grades live state
 not a bookkeeping record.
 
 ```bash
-bash scenarios/env-promotion/scripts/check-images-consistent.sh   # expect exit 0
+bash scenarios/env-promotion/scripts/check-images-consistent.sh --app go-api --namespace go-api   # expect exit 0
 ```
 
 Then break it three ways, re-running the check after each:

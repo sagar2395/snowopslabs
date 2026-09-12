@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Grades the triage half of a compliance rollout: not every violation is fixed,
 # and the ones you cannot fix must be exempted NARROWLY.
@@ -11,10 +12,10 @@ set -euo pipefail
 #      root with no limits, so the exception really covers the workload.
 #   3. The same Pod WITHOUT the label is still REJECTED. This is what separates
 #      a scoped exception from a hole: widening the exception to the namespace,
-#      demoting the policy, or adding ${WORKLOAD_NAME:-go-api} to the policy's exclude list all
+#      demoting the policy, or adding the workload to the policy's exclude list all
 #      satisfy (1) and (2) and fail here.
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
 DEPLOY="legacy-reporter"
 LABEL_KEY="compliance.snowops.net/exempt"
 LABEL_VAL="vendor-image"
@@ -63,7 +64,7 @@ $2
 spec:
   containers:
     - name: probe
-      image: ${WORKLOAD_NAME:-go-api}:v1.2.0
+      image: ${WORKLOAD_NAME}:v1.2.0
       securityContext:
         runAsNonRoot: false
         allowPrivilegeEscalation: true
@@ -84,7 +85,7 @@ if probe exception-probe-bare ""; then
   echo "      admitted while running as root with allowPrivilegeEscalation: true." >&2
   echo "      Enforcement is off for the whole namespace, not just for $DEPLOY. Check for:" >&2
   echo "        - a PolicyException matching the namespace instead of the label" >&2
-  echo "        - ${WORKLOAD_NAME:-go-api} added to a policy's exclude list" >&2
+  echo "        - ${WORKLOAD_NAME} added to a policy's exclude list" >&2
   echo "        - a policy quietly demoted back to Audit" >&2
   echo "      kubectl -n $NS get polex -o yaml; kubectl get clusterpolicy -o yaml | grep -A6 exclude" >&2
   exit 1

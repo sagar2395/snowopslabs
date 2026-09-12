@@ -18,7 +18,61 @@
   "list": []
  },
  "templating": {
-  "list": []
+  "list": [
+   {
+    "name": "app",
+    "label": "App",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+    "query": {
+     "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+     "refId": "app",
+     "qryType": 3
+    },
+    "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+    "regex": "/app=\"([^\"]+)\"/",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 1,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadName}}",
+     "value": "{{.WorkloadName}}"
+    },
+    "options": []
+   },
+   {
+    "name": "namespace",
+    "label": "Namespace",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "Where the selected app runs.",
+    "query": {
+     "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+     "refId": "namespace",
+     "qryType": 1
+    },
+    "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 0,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadNamespace}}",
+     "value": "{{.WorkloadNamespace}}"
+    },
+    "options": []
+   }
+  ]
  },
  "panels": [
   {
@@ -50,7 +104,7 @@
    },
    "fieldConfig": {
     "defaults": {
-     "unit": "none",
+     "unit": "short",
      "custom": {
       "drawStyle": "line",
       "lineWidth": 2,
@@ -89,12 +143,12 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "max(kube_pod_container_resource_requests{namespace=\"{{.WorkloadNamespace}}\",container=\"{{.WorkloadName}}\",resource=\"cpu\"})",
+     "expr": "max(kube_pod_container_resource_requests{namespace=\"$namespace\",container=\"$app\",resource=\"cpu\"})",
      "legendFormat": "requested (reserved & billed)"
     },
     {
      "refId": "B",
-     "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"{{.WorkloadNamespace}}\",container=\"{{.WorkloadName}}\"}[1m]))",
+     "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\",container=\"$app\"}[1m]))",
      "legendFormat": "actually used"
     }
    ]
@@ -153,12 +207,12 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "max(kube_pod_container_resource_requests{namespace=\"{{.WorkloadNamespace}}\",container=\"{{.WorkloadName}}\",resource=\"memory\"})",
+     "expr": "max(kube_pod_container_resource_requests{namespace=\"$namespace\",container=\"$app\",resource=\"memory\"})",
      "legendFormat": "requested (reserved & billed)"
     },
     {
      "refId": "B",
-     "expr": "max(container_memory_working_set_bytes{namespace=\"{{.WorkloadNamespace}}\",container=\"{{.WorkloadName}}\"})",
+     "expr": "max(container_memory_working_set_bytes{namespace=\"$namespace\",container=\"$app\"})",
      "legendFormat": "actually used"
     }
    ]
@@ -207,13 +261,13 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "(sum(rate(container_cpu_usage_seconds_total{namespace=\"{{.WorkloadNamespace}}\",container=\"{{.WorkloadName}}\"}[5m])) / max(kube_pod_container_resource_requests{namespace=\"{{.WorkloadNamespace}}\",container=\"{{.WorkloadName}}\",resource=\"cpu\"})) or vector(0)",
+     "expr": "(sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\",container=\"$app\"}[5m])) / max(kube_pod_container_resource_requests{namespace=\"$namespace\",container=\"$app\",resource=\"cpu\"})) or vector(0)",
      "legendFormat": "efficiency"
     }
    ]
   },
   {
-   "title": "OpenCost \u2014 {{.WorkloadNamespace}} CPU allocation",
+   "title": "OpenCost \u2014 $namespace CPU allocation",
    "type": "timeseries",
    "gridPos": {
     "h": 5,
@@ -225,10 +279,10 @@
     "type": "prometheus",
     "uid": "prometheus"
    },
-   "description": "OpenCost bills the greater of request and usage. Cutting an over-provisioned request is what moves this line.",
+   "description": "The cores OpenCost bills the namespace for: the larger of what each container requests and what it uses. OpenCost reports each container more than once, so each is counted once here.",
    "fieldConfig": {
     "defaults": {
-     "unit": "none",
+     "unit": "short",
      "custom": {
       "drawStyle": "line",
       "lineWidth": 2,
@@ -241,7 +295,7 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "sum(container_cpu_allocation{namespace=\"{{.WorkloadNamespace}}\"}) or vector(0)",
+     "expr": "sum(max by (pod, container) (container_cpu_allocation{namespace=\"$namespace\"})) or vector(0)",
      "legendFormat": "allocated cores"
     }
    ]
@@ -275,7 +329,7 @@
    "targets": [
     {
      "refId": "A",
-     "expr": "(sum(rate(container_cpu_cfs_throttled_periods_total{namespace=\"{{.WorkloadNamespace}}\",container=\"{{.WorkloadName}}\"}[5m])) / clamp_min(sum(rate(container_cpu_cfs_periods_total{namespace=\"{{.WorkloadNamespace}}\",container=\"{{.WorkloadName}}\"}[5m])), 0.001)) or vector(0)",
+     "expr": "(sum(rate(container_cpu_cfs_throttled_periods_total{namespace=\"$namespace\",container=\"$app\"}[5m])) / clamp_min(sum(rate(container_cpu_cfs_periods_total{namespace=\"$namespace\",container=\"$app\"}[5m])), 0.001)) or vector(0)",
      "legendFormat": "throttled fraction"
     }
    ]

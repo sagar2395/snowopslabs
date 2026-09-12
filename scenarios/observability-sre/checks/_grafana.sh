@@ -23,7 +23,9 @@ grafana_auth() {
 
 # ds_get <datasource-uid> <path> [curl args...]
 ds_get() {
-  uid="$1"; path="$2"; shift 2
+  uid="$1"
+  path="$2"
+  shift 2
   curl -s -m 25 -u "$(grafana_auth)" \
     "$@" "${GRAFANA_URL}/api/datasources/proxy/uid/${uid}${path}"
 }
@@ -38,4 +40,4 @@ ds_get() {
 # having: it rules out a run from yesterday, not a span from ten minutes ago.
 LOOKBACK_SECONDS="${LOOKBACK_SECONDS:-900}"
 window_start() { expr "$(date +%s)" - "$LOOKBACK_SECONDS"; }
-window_end()   { date +%s; }
+window_end() { date +%s; }

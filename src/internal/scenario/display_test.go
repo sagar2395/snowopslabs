@@ -3,6 +3,8 @@ package scenario
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -73,5 +75,67 @@ func TestResolvedForDisplayLeavesNoTemplateAReaderCouldSee(t *testing.T) {
 	// request is served from.
 	if s.Description != "drives {{.WorkloadName}} in {{.WorkloadNamespace}}" {
 		t.Errorf("the cached scenario was mutated: %q", s.Description)
+	}
+}
+
+// A snippet file is rendered for the app the scenario runs against. It used to
+// be expanded against the engine's default binding, so a scenario active on
+// echo-server showed its manifests for go-api.
+func TestResolvedForDisplayRendersSnippetFilesForTheBinding(t *testing.T) {
+	e := NewEngine(t.TempDir(), "k3d.local", "k3d")
+	dir := t.TempDir()
+	manifest := "# banner\nname: {{.WorkloadName}}\nthreshold: {{.Threshold}}\n"
+	if err := os.WriteFile(filepath.Join(dir, "deploy.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Scenario{
+		Name:       "demo",
+		Dir:        dir,
+		Parameters: []Parameter{{Name: "Threshold", Default: "25"}},
+		Snippets:   []Snippet{{Label: "deploy", Path: "deploy.yaml"}},
+	}
+
+	got := e.ResolvedForDisplay(s, e.ParamDefaults(s), workload.Default("echo-server"))
+
+	want := "name: echo-server\nthreshold: 25\n"
+	if body := got.Snippets[0].YAML; body != want {
+		t.Errorf("snippet body = %q, want %q", body, want)
+	}
+}
+
+func TestRenderFile(t *testing.T) {
+	e := NewEngine(t.TempDir(), "k3d.local", "k3d")
+	e.Workload = workload.Default("echo-server")
+	dir := t.TempDir()
+	body := "# kept: this is what kubectl receives\nname: {{.WorkloadName}}-pdb\nhost: app.{{.DomainSuffix}}\nmin: {{.MinReplicas}}\n"
+	if err := os.WriteFile(filepath.Join(dir, "pdb.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Scenario{Name: "demo", Dir: dir, Parameters: []Parameter{{Name: "MinReplicas", Default: "2"}}}
+
+	tests := []struct {
+		name    string
+		file    string
+		want    string
+		wantErr bool
+	}{
+		{name: "binding and parameter defaults filled in", file: "pdb.yaml",
+			want: "# kept: this is what kubectl receives\nname: echo-server-pdb\nhost: app.k3d.local\nmin: 2\n"},
+		{name: "missing file", file: "nope.yaml", wantErr: true},
+		{name: "path escaping the scenario", file: "../../etc/passwd", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := e.RenderFile(s, tt.file)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("RenderFile() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+	if e.resolvedParams != nil {
+		t.Errorf("RenderFile left activation parameters staged: %v", e.resolvedParams)
 	}
 }

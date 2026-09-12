@@ -1,4 +1,4 @@
-# APPLY THIS ONE YOURSELF
+# Exercise: nothing installs this file — the learner applies it.
 #
 # Re-applies the canary VirtualService (same name — this replaces it) with a
 # delay on requests that carry `x-canary: always`.

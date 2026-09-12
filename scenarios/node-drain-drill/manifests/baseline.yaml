@@ -1,11 +1,11 @@
-# APPLY THIS ONE YOURSELF
+# Exercise: nothing installs this file — the learner applies it.
 #
 # The PodDisruptionBudget is the whole point of the drill. Nothing stages it:
 # without it, `kubectl drain` evicts every {{.WorkloadName}} pod on the node at once and
 # the service drops requests. With it, the eviction of one pod blocks until a
 # replacement is Ready elsewhere, so the drain proceeds without an outage.
 #
-#   kubectl apply -f scenarios/node-drain-drill/manifests/baseline.yaml
+#   labctl scenario render node-drain-drill manifests/baseline.yaml --app <app> | kubectl apply -f -
 #
 # maxUnavailable: 1 is the conservative choice. Try minAvailable instead, or a
 # larger maxUnavailable, and watch how the drain's pace changes.

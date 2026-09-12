@@ -304,8 +304,8 @@ seconds; at three replicas the rate never leaves the floor.
 **Explore after activation:**
 - Chaos dashboard at `http://grafana.k3d.local/d/chaos-engineering`
 - Chaos Mesh UI at `http://chaos.k3d.local`
-- Load with `labctl traffic start --profile browse --rps 20` — never a curl loop
-- Run one experiment: `bash scenarios/chaos-engineering/scripts/inject.sh pod-kill`
+- Load with `labctl traffic start --app <app> --profile browse --rps 20` — never a curl loop
+- Run one experiment: `bash scenarios/chaos-engineering/scripts/inject.sh pod-kill --app <app> --namespace <namespace>`
   (with no argument it lists what is available)
 
 **Traps this scenario documents:**
@@ -645,7 +645,7 @@ the workload now holds none · **success rate ≥ 99.5%** across the drain (prom
 no node left cordoned.
 
 **Run the drill:**
-- Apply your PDB: `kubectl apply -f scenarios/node-drain-drill/manifests/baseline.yaml`
+- Apply your PDB: `labctl scenario render node-drain-drill manifests/baseline.yaml --app <app> | kubectl apply -f -`
 - Start traffic: `labctl traffic start --profile steady --rps 20`
 - See placement, then `kubectl cordon <node>` and
   `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data`
@@ -688,7 +688,7 @@ actually flowing (promql), **success rate >= 99%** across the upgrade window
 
 **Run the drill:**
 - Start traffic: `labctl traffic start --profile steady --rps 20`
-- Apply your PDB: `kubectl apply -f scenarios/cluster-upgrade-drill/manifests/baseline.yaml`
+- Apply your PDB: `labctl scenario render cluster-upgrade-drill manifests/baseline.yaml --app <app> | kubectl apply -f -`
 - Per worker node, cordon and drain it yourself:
   `kubectl cordon <node>` then
   `kubectl drain <node> --ignore-daemonsets --delete-emptydir-data --timeout=120s`
@@ -909,7 +909,7 @@ about sizing requests correctly.
 2. `labctl traffic start --profile steady --rps 25` — without load the peak is
    meaningless and the floor cannot bite
 3. Read the gap on `http://grafana.k3d.local/d/cost-right-sizing`, and the cost in
-   the OpenCost UI at `http://opencost.k3d.local` (`sudo labctl hosts add` once;
+   the OpenCost UI at `http://opencost.k3d.local` (`labctl hosts add` once;
    otherwise `kubectl -n opencost port-forward svc/opencost 9090 &`)
 4. Right-size above the observed peak and under the ceiling:
    `kubectl -n <workload-ns> set resources deployment <workload> --requests=cpu=<peak+headroom>,memory=<peak+headroom>`

@@ -10,9 +10,10 @@
 # Recording rather than forcing: this scenario does not get to decide how the
 # shared app is configured, only to put it back the way it was.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+WORKLOAD="${WORKLOAD_NAME}"
 STATE="security-baseline"
 
 kubectl -n "$NS" get deploy "$WORKLOAD" >/dev/null 2>&1 || {

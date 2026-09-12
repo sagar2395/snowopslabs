@@ -9,7 +9,7 @@
   "links": [],
   "panels": [
     {
-      "title": "Kyverno Policy Violations (Enforce)",
+      "title": "Admissions blocked by Enforce policies (time range)",
       "type": "stat",
       "gridPos": {
         "h": 4,
@@ -23,7 +23,7 @@
       },
       "targets": [
         {
-          "expr": "sum(kyverno_policy_results_total{rule_result=\"fail\",policy_validation_mode=\"enforce\"}) or vector(0)",
+          "expr": "sum(increase(kyverno_policy_results_total{rule_result=\"fail\",policy_validation_mode=\"enforce\"}[$__range])) or vector(0)",
           "legendFormat": "Blocked"
         }
       ],
@@ -50,10 +50,11 @@
             "mode": "thresholds"
           }
         }
-      }
+      },
+      "description": "Counted over the dashboard time range. The raw counter only grows until Kyverno restarts, so reading it directly mixes this drill with everything before it."
     },
     {
-      "title": "Kyverno Policy Violations (Audit)",
+      "title": "Violations recorded by Audit policies (time range)",
       "type": "stat",
       "gridPos": {
         "h": 4,
@@ -67,7 +68,7 @@
       },
       "targets": [
         {
-          "expr": "sum(kyverno_policy_results_total{rule_result=\"fail\",policy_validation_mode=\"audit\"}) or vector(0)",
+          "expr": "sum(increase(kyverno_policy_results_total{rule_result=\"fail\",policy_validation_mode=\"audit\"}[$__range])) or vector(0)",
           "legendFormat": "Audit Violations"
         }
       ],
@@ -94,10 +95,11 @@
             "mode": "thresholds"
           }
         }
-      }
+      },
+      "description": "Counted over the dashboard time range. The raw counter only grows until Kyverno restarts, so reading it directly mixes this drill with everything before it."
     },
     {
-      "title": "Policies Passing",
+      "title": "Policy checks passed (time range)",
       "type": "stat",
       "gridPos": {
         "h": 4,
@@ -111,7 +113,7 @@
       },
       "targets": [
         {
-          "expr": "sum(kyverno_policy_results_total{rule_result=\"pass\"}) or vector(0)",
+          "expr": "sum(increase(kyverno_policy_results_total{rule_result=\"pass\"}[$__range])) or vector(0)",
           "legendFormat": "Passing"
         }
       ],
@@ -130,7 +132,8 @@
             "mode": "thresholds"
           }
         }
-      }
+      },
+      "description": "Counted over the dashboard time range. The raw counter only grows until Kyverno restarts, so reading it directly mixes this drill with everything before it."
     },
     {
       "title": "cert-manager Certificates",
@@ -239,7 +242,7 @@
       }
     },
     {
-      "title": "Policy Violations by Policy Name",
+      "title": "Policy violations by policy (time range)",
       "type": "table",
       "gridPos": {
         "h": 8,
@@ -253,7 +256,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (policy_name, resource_namespace, policy_validation_mode) (kyverno_policy_results_total{rule_result=\"fail\"})",
+          "expr": "sum by (policy_name, resource_namespace, policy_validation_mode) (increase(kyverno_policy_results_total{rule_result=\"fail\"}[$__range])) > 0",
           "format": "table",
           "instant": true
         }

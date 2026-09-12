@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2001  # sed is the clearest way to indent a multi-line block
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Grades the last mile of the certificate task: a Certificate that reached Ready
 # has proved cert-manager works, but nothing is actually protected until the
@@ -10,14 +11,14 @@ set -euo pipefail
 # CN=TRAEFIK DEFAULT CERT when no route matches, or with the lab-signed leaf
 # once the Ingress references the Secret. Only the second one passes.
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-INGRESS="${WORKLOAD_NAME:-go-api}"
-HOST="${WORKLOAD_NAME:-go-api}.${DOMAIN_SUFFIX:-k3d.local}"
-SECRET="${WORKLOAD_NAME:-go-api}-tls-secret"
+NS="${WORKLOAD_NAMESPACE}"
+INGRESS="${WORKLOAD_NAME}"
+HOST="${WORKLOAD_NAME}.${DOMAIN_SUFFIX:-k3d.local}"
+SECRET="${WORKLOAD_NAME}-tls-secret"
 
 if ! kubectl -n "$NS" get ingress "$INGRESS" >/dev/null 2>&1; then
   echo "FAIL: ingress/$INGRESS not found in $NS." >&2
-  echo "      Deploy the app: labctl app deploy ${WORKLOAD_NAME:-go-api}" >&2
+  echo "      Deploy the app: labctl app deploy ${WORKLOAD_NAME}" >&2
   exit 1
 fi
 

@@ -115,14 +115,17 @@ references:
 
 snippets:
   - label: "1. Canary VirtualService — the 90/10 weighted split"
-    description: "APPLY THIS ONE YOURSELF. Nothing stages this; until it exists the Service round-robins both versions evenly and the subsets go unused."
+    description: "The weighted route is what sends 10% of requests to v2 and the rest to v1. Until it exists the Service round-robins both versions evenly and the subsets go unused. Promote the canary by shifting the weights (they must sum to 100) and re-applying."
     path: manifests/virtualservice.yaml
+    exercise: true
   - label: "2. Latency fault for opted-in requests"
-    description: "APPLY THIS ONE YOURSELF. Replaces the VirtualService above, adding a delayed route matched on 'x-canary: always'."
+    description: "Replaces the VirtualService above, adding a delayed route matched on 'x-canary: always'. The delay gets a header-matched route of its own because an Istio fault applies to a whole route, and that route comes first because Istio takes the first match."
     path: manifests/fault-injection.yaml
+    exercise: true
   - label: "3. STRICT mTLS on the canary"
-    description: "APPLY THIS ONE YOURSELF. After this, only clients with a sidecar identity can reach the canary pods."
+    description: "After this, only clients with a sidecar identity can reach the canary pods: a plaintext client is refused at the proxy before it reaches the app. The meshed load client keeps working — enrolment, not network position, is what grants access."
     path: manifests/peerauthentication.yaml
+    exercise: true
 
 explore:
   urls:
@@ -130,7 +133,7 @@ explore:
       url: "http://grafana.{{.DomainSuffix}}/d/mesh-traffic"
   commands:
     - label: "Apply the weighted split (do this first — nothing else stages it)"
-      command: "kubectl apply -f scenarios/mesh-traffic-management/manifests/virtualservice.yaml"
+      command: "labctl scenario render mesh-traffic-management manifests/virtualservice.yaml --app {{.WorkloadName}} | kubectl apply -f -"
     - label: "Which version is serving? The staged client is already generating load"
       command: "kubectl -n {{.WorkloadNamespace}} logs deploy/{{.WorkloadName}}-v2 -c {{.WorkloadName}} --tail=5"
     - label: "Observed split by version, straight from mesh telemetry"

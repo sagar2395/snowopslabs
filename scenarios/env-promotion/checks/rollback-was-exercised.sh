@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Grades the objective the drill previously only suggested: recovering prod from
 # a bad release.
@@ -13,7 +14,7 @@ set -euo pipefail
 # the same operation.
 
 NS="env-prod"
-APP="${WORKLOAD_NAME:-go-api}"
+APP="${WORKLOAD_NAME}"
 
 if ! kubectl -n "$NS" get deploy "$APP" >/dev/null 2>&1; then
   echo "NOT COMPLETE: no ${APP} Deployment in ${NS}." >&2

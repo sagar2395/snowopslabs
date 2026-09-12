@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -eu
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Grades the LESSON: the rotation reached the pod without a redeploy.
 #
@@ -14,7 +15,7 @@ set -eu
 # nothing to have propagated in place, and passing would mean "the pod you just
 # installed has not restarted yet" — which was never in doubt.
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
 ROOT_TOKEN="${VAULT_DEV_ROOT_TOKEN:-root}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -32,7 +33,7 @@ if [ -z "$CHECKPOINT" ]; then
 fi
 
 CURRENT="$(kubectl exec -n vault vault-0 -- sh -c \
-  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv get -field=api-key secret/${WORKLOAD_NAME:-go-api}" 2>/dev/null || true)"
+  "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv get -field=api-key secret/${WORKLOAD_NAME}" 2>/dev/null || true)"
 if [ "$CURRENT" = "$BASELINE" ]; then
   echo "PENDING: nothing has been rotated yet, so no propagation has been asked of the pod." >&2
   echo "Rotate in Vault first, then re-verify." >&2

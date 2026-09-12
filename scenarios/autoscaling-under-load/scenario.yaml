@@ -84,7 +84,7 @@ checks:
 
   - name: scaledobject-present
     pending: true
-    remediation: "You have not applied the ScaledObject yet — that is the exercise. Take it from 'labctl scenario info autoscaling-under-load' (the snippet marked APPLY THIS ONE YOURSELF) and apply it: kubectl apply -f - <<<'...'"
+    remediation: "You have not applied the ScaledObject yet — that is the exercise. Copy its apply command from the Implementation tab (marked 'You apply this'), or from 'labctl scenario info autoscaling-under-load', and run it."
     type: kubectl
     resource: scaledobject/{{.WorkloadName}}
     namespace: "{{.WorkloadNamespace}}"
@@ -112,7 +112,7 @@ checks:
     jsonpath: "{.status.currentReplicas}"
     operator: ">"
     value: "{{.MinReplicas}}"
-    remediation: "{{.WorkloadName}} has not scaled above its floor of {{.MinReplicas}}. Drive the spike and re-verify while it is held: labctl traffic start --profile spike --rps 10. If it still does not scale, read the autoscaler's own view: kubectl -n {{.WorkloadNamespace}} describe scaledobject {{.WorkloadName}}"
+    remediation: "{{.WorkloadName}} has not scaled above its floor of {{.MinReplicas}}. Drive the spike and re-verify while it is held: labctl traffic start --app {{.WorkloadName}} --profile spike --rps 10. If it still does not scale, read the autoscaler's own view: kubectl -n {{.WorkloadNamespace}} describe scaledobject {{.WorkloadName}}"
 
   # Tail amplification, not absolute latency. p99/p50 asks "did the tail pull
   # away from the typical request" — which is what saturation looks like — and
@@ -148,9 +148,10 @@ references:
     url: "https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/"
 
 snippets:
-  - label: "KEDA ScaledObject for {{.WorkloadName}} — APPLY THIS ONE YOURSELF"
+  - label: "KEDA ScaledObject for {{.WorkloadName}}"
     description: "The exercise. Apply it, then drive the spike. It scales {{.WorkloadName}} on its Prometheus request rate: desiredReplicas = ceil(total RPS ÷ threshold), clamped between minReplicaCount and maxReplicaCount. The defaults scale 1→6 at 25 RPS per replica — override the parameters at activation to change how aggressively it reacts."
     path: manifests/scaledobject.yaml
+    exercise: true
   - label: "Inspect the HPA KEDA created"
     description: "Not a manifest to apply — a quick way to watch the desired/current replica maths live."
     yaml: |
@@ -164,10 +165,10 @@ explore:
     - label: "Prometheus"
       url: "http://prometheus.{{.DomainSuffix}}"
   commands:
-    - label: "1. Apply the autoscaler yourself — the snippet above, marked APPLY THIS ONE YOURSELF"
+    - label: "1. Apply the autoscaler yourself — the snippet marked 'You apply this'"
       command: "labctl scenario info autoscaling-under-load   # copy the ScaledObject, then: kubectl apply -f -"
     - label: "2. Drive the spike (baseline 10 RPS -> 10x spike for ~2m)"
-      command: "labctl traffic start --profile spike --rps 10"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile spike --rps 10"
     - label: "3. Watch KEDA scale {{.WorkloadName}} up"
       command: "kubectl -n {{.WorkloadNamespace}} get hpa keda-hpa-{{.WorkloadName}} -w"
     - label: "4. Watch replicas change"

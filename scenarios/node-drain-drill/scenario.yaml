@@ -58,7 +58,7 @@ checks:
     resource: pdb/{{.WorkloadName}}-drill-pdb
     namespace: "{{.WorkloadNamespace}}"
     pending: true
-    remediation: "You have not applied the PodDisruptionBudget yet — it is what makes the drain safe. Copy it from 'labctl scenario info node-drain-drill': kubectl apply -f scenarios/node-drain-drill/manifests/baseline.yaml"
+    remediation: "You have not applied the PodDisruptionBudget yet — it is what makes the drain safe. Apply it: labctl scenario render node-drain-drill manifests/baseline.yaml --app {{.WorkloadName}} | kubectl apply -f -"
 
   # Not pending: a collision here is cluster state the learner must clear before
   # the drill can work at all, not a step of the drill.
@@ -83,7 +83,7 @@ checks:
     operator: ">"
     value: "0.5"
     pending: true
-    remediation: "Prometheus sees almost no requests to {{.WorkloadName}}, so the availability grade below would be meaningless. Start load and let it run a couple of minutes: labctl traffic start --profile steady --rps 20. If Prometheus itself is unreachable, you drained the node its storage is pinned to — uncordon it and wait for the pod to return before verifying."
+    remediation: "Prometheus sees almost no requests to {{.WorkloadName}}, so the availability grade below would be meaningless. Start load and let it run a couple of minutes: labctl traffic start --app {{.WorkloadName}} --profile steady --rps 20. If Prometheus itself is unreachable, you drained the node its storage is pinned to — uncordon it and wait for the pod to return before verifying."
 
   # The drill's proof of work, read from the cluster rather than from a metric:
   # draining the node that holds Prometheus's volume takes the observer down
@@ -118,8 +118,9 @@ references:
 
 snippets:
   - label: "PodDisruptionBudget that makes the drain non-disruptive"
-    description: "APPLY THIS ONE YOURSELF. Nothing stages this: without it, draining evicts every {{.WorkloadName}} pod on the node at once and the service drops requests."
+    description: "Without it, draining evicts every {{.WorkloadName}} pod on the node at once and the service drops requests. With it, each eviction waits until a replacement is Ready elsewhere. maxUnavailable: 1 is the conservative choice — try minAvailable or a larger value and watch the drain's pace change."
     path: manifests/baseline.yaml
+    exercise: true
 
 explore:
   urls:
@@ -127,9 +128,9 @@ explore:
       url: "http://grafana.{{.DomainSuffix}}/d/node-drain-drill"
   commands:
     - label: "1. Apply your PodDisruptionBudget (nothing stages it)"
-      command: "kubectl apply -f scenarios/node-drain-drill/manifests/baseline.yaml"
+      command: "labctl scenario render node-drain-drill manifests/baseline.yaml --app {{.WorkloadName}} | kubectl apply -f -"
     - label: "2. Start steady background traffic"
-      command: "labctl traffic start --profile steady --rps 20"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile steady --rps 20"
     - label: "3. See where the pods are before you drain — a node with all of them has nowhere to move"
       command: "kubectl -n {{.WorkloadNamespace}} get pods -o wide"
     - label: "4. Check what else that node holds — pods with node-local storage cannot move"

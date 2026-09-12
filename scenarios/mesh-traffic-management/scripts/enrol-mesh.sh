@@ -8,8 +8,9 @@
 # only labels the namespace if it exists at install time, so a namespace created
 # (or recreated) afterwards is never enrolled.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
 
 echo "Enrolling namespace '$NS' into the mesh (istio-injection=enabled)..."
 kubectl label namespace "$NS" istio-injection=enabled --overwrite

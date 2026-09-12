@@ -66,7 +66,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
@@ -89,14 +90,14 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(container_cpu_usage_seconds_total[5m])) by (pod, namespace)",
+          "expr": "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))",
           "format": "time_series",
           "hide": false,
           "legendFormat": "{{ namespace }} / {{ pod }}",
           "refId": "A"
         }
       ],
-      "title": "Pod CPU Usage (by pod, namespace)",
+      "title": "Pod CPU used (cores)",
       "type": "timeseries"
     },
     {
@@ -146,7 +147,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "bytes"
         },
         "overrides": []
       },
@@ -169,14 +171,14 @@
       },
       "targets": [
         {
-          "expr": "sum(container_memory_working_set_bytes) by (pod, namespace) / 1024 / 1024",
+          "expr": "sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\"})",
           "format": "time_series",
           "hide": false,
           "legendFormat": "{{ namespace }} / {{ pod }}",
           "refId": "A"
         }
       ],
-      "title": "Pod Memory Usage (MB)",
+      "title": "Pod memory working set",
       "type": "timeseries"
     },
     {
@@ -276,7 +278,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "Bps"
         },
         "overrides": []
       },
@@ -299,14 +302,14 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(container_network_receive_bytes_total[5m])) by (pod, namespace)",
+          "expr": "sum by (namespace, pod) (rate(container_network_receive_bytes_total[5m]))",
           "format": "time_series",
           "hide": false,
           "legendFormat": "{{ namespace }} / {{ pod }}",
           "refId": "A"
         }
       ],
-      "title": "Pod Network RX",
+      "title": "Pod network received",
       "type": "timeseries"
     }
   ],

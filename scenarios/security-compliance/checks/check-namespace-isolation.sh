@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-# Grades the isolation POSTURE of the ${WORKLOAD_NAME:-go-api} namespace, not the presence of a
+# Grades the isolation POSTURE of the workload's namespace, not the presence of a
 # NetworkPolicy object.
 #
 # The distinction matters: NetworkPolicies are additive, so `default-deny-all`
@@ -10,7 +11,7 @@ set -euo pipefail
 #
 # Everything here is kubectl and POSIX shell — no jq, no python.
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
 MON="${MONITORING_NAMESPACE:-monitoring}"
 NOTES=""
 
@@ -109,7 +110,7 @@ PORT="${WORKLOAD_PORT:-8080}"
 code=$(kubectl -n "$PROBE_NS" run "$PROBE" \
   --image=curlimages/curl:8.11.1 --restart=Never --rm -i --quiet --timeout=90s \
   --command -- curl -s -o /dev/null -w '%{http_code}' --max-time 8 \
-  "http://${WORKLOAD_NAME:-go-api}.${NS}.svc.cluster.local:${PORT}/health" 2>/dev/null || true)
+  "http://${WORKLOAD_NAME}.${NS}.svc.cluster.local:${PORT}/health" 2>/dev/null || true)
 kubectl -n "$PROBE_NS" delete pod "$PROBE" --ignore-not-found --wait=false >/dev/null 2>&1 || true
 
 case "$code" in

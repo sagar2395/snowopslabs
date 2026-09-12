@@ -74,7 +74,7 @@
    }
   },
   {
-   "title": "Total Experiments Run",
+   "title": "Experiments defined",
    "type": "stat",
    "gridPos": {
     "h": 4,
@@ -110,7 +110,7 @@
    }
   },
   {
-   "title": "Pod Restarts (Last 15m)",
+   "title": "Pods restarted or replaced (last 15m)",
    "type": "stat",
    "gridPos": {
     "h": 4,
@@ -124,8 +124,8 @@
    },
    "targets": [
     {
-     "expr": "sum(increase(kube_pod_container_status_restarts_total{namespace=\"{{.WorkloadNamespace}}\"}[15m])) or vector(0)",
-     "legendFormat": "Restarts"
+     "expr": "(sum(increase(kube_pod_container_status_restarts_total{namespace=\"$namespace\"}[15m])) or vector(0)) + (count(time() - kube_pod_created{namespace=\"$namespace\"} < 900) or vector(0))",
+     "legendFormat": "pods"
     }
    ],
    "fieldConfig": {
@@ -151,7 +151,8 @@
       "mode": "thresholds"
      }
     }
-   }
+   },
+   "description": "A container restart (an OOMKill, a failed probe) and a pod created in the last 15 minutes (a pod-kill replaces the pod rather than restarting it) both count."
   },
   {
    "title": "Unavailable Replicas",
@@ -168,7 +169,7 @@
    },
    "targets": [
     {
-     "expr": "sum(kube_deployment_status_replicas_unavailable{namespace=\"{{.WorkloadNamespace}}\"}) or vector(0)",
+     "expr": "sum(kube_deployment_status_replicas_unavailable{namespace=\"$namespace\"}) or vector(0)",
      "legendFormat": "Unavailable"
     }
    ],
@@ -198,9 +199,9 @@
    }
   },
   {
-   "title": "PDB Disruptions Allowed ({{.WorkloadName}})",
+   "title": "PDB Disruptions Allowed ($app)",
    "type": "stat",
-   "description": "How many {{.WorkloadName}} pods the PodDisruptionBudget will let a drain evict. 0 means a node drain blocks forever \u2014 scale the Deployment out until this is at least 1.",
+   "description": "How many $app pods the PodDisruptionBudget will let a drain evict. 0 means a node drain blocks forever \u2014 scale the Deployment out until this is at least 1.",
    "gridPos": {
     "h": 4,
     "w": 4,
@@ -213,7 +214,7 @@
    },
    "targets": [
     {
-     "expr": "max(kube_poddisruptionbudget_status_pod_disruptions_allowed{namespace=\"{{.WorkloadNamespace}}\"}) or vector(0)",
+     "expr": "max(kube_poddisruptionbudget_status_pod_disruptions_allowed{namespace=\"$namespace\"}) or vector(0)",
      "legendFormat": "allowed"
     }
    ],
@@ -239,7 +240,7 @@
    }
   },
   {
-   "title": "HTTP Request Rate ({{.WorkloadName}})",
+   "title": "HTTP Request Rate ($app)",
    "type": "timeseries",
    "gridPos": {
     "h": 8,
@@ -253,8 +254,8 @@
    },
    "targets": [
     {
-     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[1m])) by (http_response_status_code)",
-     "legendFormat": "{{code}}"
+     "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"$app\"}[1m])) by (http_response_status_code)",
+     "legendFormat": "{{http_response_status_code}}"
     }
    ],
    "fieldConfig": {
@@ -305,7 +306,7 @@
    }
   },
   {
-   "title": "HTTP Request Latency p99 ({{.WorkloadName}})",
+   "title": "HTTP request latency: p50 / p95 / p99 ($app)",
    "type": "timeseries",
    "gridPos": {
     "h": 8,
@@ -319,15 +320,15 @@
    },
    "targets": [
     {
-     "expr": "histogram_quantile(0.99, sum by (le) (rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])))",
+     "expr": "histogram_quantile(0.99, sum by (le) (rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])))",
      "legendFormat": "p99"
     },
     {
-     "expr": "histogram_quantile(0.95, sum by (le) (rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])))",
+     "expr": "histogram_quantile(0.95, sum by (le) (rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])))",
      "legendFormat": "p95"
     },
     {
-     "expr": "histogram_quantile(0.50, sum by (le) (rate({{.WorkloadMetric}}_bucket{app=\"{{.WorkloadName}}\"}[5m])))",
+     "expr": "histogram_quantile(0.50, sum by (le) (rate({{.WorkloadMetric}}_bucket{app=\"$app\"}[5m])))",
      "legendFormat": "p50"
     }
    ],
@@ -358,7 +359,7 @@
      }
     }
    },
-   "description": "{{.WorkloadName}}'s own handler timings. This is SERVER-side latency: it is blind to network faults, so a NetworkChaos delay leaves it flat. Measure those client-side with curl's time_starttransfer through the ingress."
+   "description": "$app's own handler timings. This is SERVER-side latency: it is blind to network faults, so a NetworkChaos delay leaves it flat. Measure those client-side with curl's time_starttransfer through the ingress."
   },
   {
    "title": "Pod Restart Timeline",
@@ -375,7 +376,7 @@
    },
    "targets": [
     {
-     "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"{{.WorkloadNamespace}}\"}[1m])",
+     "expr": "increase(kube_pod_container_status_restarts_total{namespace=\"$namespace\"}[1m])",
      "legendFormat": "{{namespace}}/{{pod}}"
     }
    ],
@@ -410,11 +411,11 @@
    },
    "targets": [
     {
-     "expr": "kube_deployment_status_replicas_ready{namespace=\"{{.WorkloadNamespace}}\"}",
+     "expr": "kube_deployment_status_replicas_ready{namespace=\"$namespace\"}",
      "legendFormat": "{{deployment}} ready"
     },
     {
-     "expr": "kube_deployment_spec_replicas{namespace=\"{{.WorkloadNamespace}}\"}",
+     "expr": "kube_deployment_spec_replicas{namespace=\"$namespace\"}",
      "legendFormat": "{{deployment}} desired"
     }
    ],
@@ -463,11 +464,11 @@
    },
    "targets": [
     {
-     "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"{{.WorkloadNamespace}}\", container!=\"\"}[5m])) by (namespace, pod)",
+     "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\", container!=\"\"}[5m])) by (namespace, pod)",
      "legendFormat": "{{namespace}}/{{pod}}"
     },
     {
-     "expr": "sum(kube_pod_container_resource_limits{namespace=\"{{.WorkloadNamespace}}\", resource=\"cpu\"}) by (namespace, pod)",
+     "expr": "sum(kube_pod_container_resource_limits{namespace=\"$namespace\", resource=\"cpu\"}) by (namespace, pod)",
      "legendFormat": "{{namespace}}/{{pod}} limit"
     }
    ],
@@ -524,11 +525,11 @@
    },
    "targets": [
     {
-     "expr": "sum(container_memory_working_set_bytes{namespace=\"{{.WorkloadNamespace}}\", container!=\"\"}) by (namespace, pod) / 1024 / 1024",
+     "expr": "sum(container_memory_working_set_bytes{namespace=\"$namespace\", container!=\"\"}) by (namespace, pod)",
      "legendFormat": "{{namespace}}/{{pod}}"
     },
     {
-     "expr": "sum(kube_pod_container_resource_limits{namespace=\"{{.WorkloadNamespace}}\", resource=\"memory\"}) by (namespace, pod) / 1024 / 1024",
+     "expr": "sum(kube_pod_container_resource_limits{namespace=\"$namespace\", resource=\"memory\"}) by (namespace, pod)",
      "legendFormat": "{{namespace}}/{{pod}} limit"
     }
    ],
@@ -539,7 +540,7 @@
       "lineWidth": 2,
       "fillOpacity": 15
      },
-     "unit": "decmbytes"
+     "unit": "bytes"
     },
     "overrides": [
      {
@@ -585,7 +586,7 @@
    },
    "targets": [
     {
-     "expr": "increase(kube_pod_container_status_last_terminated_reason{namespace=\"{{.WorkloadNamespace}}\", reason=\"OOMKilled\"}[5m])",
+     "expr": "increase(kube_pod_container_status_last_terminated_reason{namespace=\"$namespace\", reason=\"OOMKilled\"}[5m])",
      "legendFormat": "{{namespace}}/{{pod}} ({{container}})"
     }
    ],
@@ -617,13 +618,13 @@
    },
    "options": {
     "mode": "markdown",
-    "content": "Everything above is measured **inside** {{.WorkloadName}}: its own histogram, its own restarts. That view has a blind spot, and two of this scenario's failure modes live in it.\n\nA killed pod records nothing \u2014 it is not there to record. A 300ms network delay never touches handler time, so the p99 above stays flat while every caller waits. A partition leaves the pod `1/1 Ready` with perfect metrics while nothing can reach it.\n\nThe panels below are the **load generator's** view: failures and latency as a client experiences them. Start traffic with `labctl traffic start --profile browse --rps 20 --duration 30m` or they are empty, honestly."
+    "content": "Everything above is measured **inside** $app: its own histogram, its own restarts. That view has a blind spot, and two of this scenario's failure modes live in it.\n\nA killed pod records nothing \u2014 it is not there to record. A 300ms network delay never touches handler time, so the p99 above stays flat while every caller waits. A partition leaves the pod `1/1 Ready` with perfect metrics while nothing can reach it.\n\nThe panels below are the **load generator's** view: failures and latency as a client experiences them. Start traffic with `labctl traffic start --profile browse --rps 20 --duration 30m` or they are empty, honestly."
    }
   },
   {
    "title": "Client-observed failure rate \u2014 the blast radius",
    "type": "timeseries",
-   "description": "The share of requests the generator could not complete. A pod kill on a single replica sends this straight up; on three replicas it barely moves. That difference is what scaling out bought you.",
+   "description": "The share of requests k6 sent in the last minute that failed. A pod-kill against one replica shows as a short spike; a working PodDisruptionBudget and enough replicas keep it near zero.",
    "gridPos": {
     "h": 8,
     "w": 12,
@@ -667,16 +668,16 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "k6_http_req_failed_rate or vector(0)",
+     "expr": "((sum (rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\",expected_response=\"false\"}[1m])) or 0 * sum (rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\"}[1m]))) / sum (rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\"}[1m]))) or vector(0)",
      "legendFormat": "failed fraction",
      "refId": "A"
     }
    ]
   },
   {
-   "title": "Client-observed latency \u2014 where a network delay shows up",
+   "title": "Client-observed latency (k6)",
    "type": "timeseries",
-   "description": "Compare with the app's own p99 above. Under a NetworkChaos delay these climb by the injected amount while the app's histogram does not move at all \u2014 the delay is on the wire, not in the handler.",
+   "description": "k6 calls the Service inside the cluster, so it does not cross the ingress where network-delay and network-partition act. Measure those with the curl command on the Explore tab, which goes through the ingress.",
    "gridPos": {
     "h": 8,
     "w": 12,
@@ -689,7 +690,7 @@
    },
    "fieldConfig": {
     "defaults": {
-     "unit": "ms",
+     "unit": "s",
      "min": 0,
      "custom": {
       "drawStyle": "line",
@@ -720,7 +721,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "k6_http_req_duration_p99 or vector(0)",
+     "expr": "max(k6_http_req_duration_p99{url=~\"https?://$app\\\\..*\"}) or vector(0)",
      "legendFormat": "p99",
      "refId": "A"
     },
@@ -729,7 +730,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "k6_http_req_duration_p95 or vector(0)",
+     "expr": "max(k6_http_req_duration_p95{url=~\"https?://$app\\\\..*\"}) or vector(0)",
      "legendFormat": "p95",
      "refId": "B"
     },
@@ -738,7 +739,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "k6_http_req_duration_p50 or vector(0)",
+     "expr": "max(k6_http_req_duration_p50{url=~\"https?://$app\\\\..*\"}) or vector(0)",
      "legendFormat": "p50",
      "refId": "C"
     }
@@ -753,7 +754,61 @@
   "experiments"
  ],
  "templating": {
-  "list": []
+  "list": [
+   {
+    "name": "app",
+    "label": "App",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+    "query": {
+     "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+     "refId": "app",
+     "qryType": 3
+    },
+    "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+    "regex": "/app=\"([^\"]+)\"/",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 1,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadName}}",
+     "value": "{{.WorkloadName}}"
+    },
+    "options": []
+   },
+   {
+    "name": "namespace",
+    "label": "Namespace",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "Where the selected app runs.",
+    "query": {
+     "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+     "refId": "namespace",
+     "qryType": 1
+    },
+    "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 0,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadNamespace}}",
+     "value": "{{.WorkloadNamespace}}"
+    },
+    "options": []
+   }
+  ]
  },
  "time": {
   "from": "now-30m",

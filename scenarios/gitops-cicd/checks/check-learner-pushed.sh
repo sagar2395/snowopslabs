@@ -37,7 +37,10 @@ fi
 # The root commit is the seed. Reading it back beats hardcoding the seed values
 # here, where they would quietly rot the day the seed ConfigMap changes.
 seed_rev=$(git_repo rev-list --max-parents=0 HEAD | head -1 || echo "")
-[ -n "$seed_rev" ] || { echo "PENDING: could not identify the seed commit." >&2; exit 1; }
+[ -n "$seed_rev" ] || {
+  echo "PENDING: could not identify the seed commit." >&2
+  exit 1
+}
 
 declared_now=$(git_repo show "HEAD:demo/deployment.yaml" |
   awk '/^ *image:/ {i=$2} /^ *replicas:/ {r=$2} END {print i, r}' || true)

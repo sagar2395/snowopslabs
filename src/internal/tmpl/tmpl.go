@@ -12,9 +12,11 @@ package tmpl
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -55,6 +57,21 @@ type Context struct {
 	// "http_server_request_duration_seconds". Named rather than assumed, because
 	// each language's instrumentation library picks its own.
 	WorkloadMetric string
+
+	// SinceActivation is how long this run has been going — since the scenario
+	// was activated or the fault injected — as a PromQL range such as "95m". A
+	// fixed window forgets work done early; an open one counts a previous run's.
+	SinceActivation string
+}
+
+// Since renders the time from start to now as a PromQL range, rounded up to
+// whole minutes so start falls inside it. With nothing active there is no run
+// to window, and the smallest valid range stands in for it.
+func Since(start, now time.Time) string {
+	if start.IsZero() || !now.After(start) {
+		return "1m"
+	}
+	return fmt.Sprintf("%dm", int(math.Ceil(now.Sub(start).Minutes())))
 }
 
 // Vars renders the context as the map the lenient expander substitutes from.
@@ -73,6 +90,7 @@ func (c Context) Vars() map[string]string {
 		"WorkloadService":     c.WorkloadService,
 		"WorkloadPort":        c.WorkloadPort,
 		"WorkloadMetric":      c.WorkloadMetric,
+		"SinceActivation":     c.SinceActivation,
 	}
 }
 

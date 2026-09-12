@@ -9,8 +9,9 @@
 # containerd store cannot be removed from outside the node, so it stays until
 # the node is replaced. Saying so beats implying a clean slate that is not there.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-APP="${WORKLOAD_NAME:-go-api}"
+APP="${WORKLOAD_NAME}"
 STATE="${PROJECT_ROOT:-.}/.labctl/env-promotion/pre-existing-tags"
 
 if ! command -v docker >/dev/null 2>&1; then

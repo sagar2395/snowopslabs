@@ -7,7 +7,7 @@ import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
 import { Tabs, type TabItem } from '../components/Tabs'
-import { Collapsible } from '../components/Collapsible'
+import { SnippetList } from '../components/SnippetList'
 import { useJobRunner } from '../hooks/useJobRunner'
 import { WorkloadPicker } from '../components/WorkloadPicker'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
@@ -318,6 +318,7 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
                   detail={detail}
                   verifyResult={verifyResults[detail.name]}
                   onCopy={copyCmd}
+                  notify={notify}
                 />
 
                 <div className="card-footer">
@@ -359,10 +360,11 @@ export function Scenarios({ notify, requestConfirm }: ScenariosProps) {
  *  from the content it acts on. Four tabs match how the sections are used: read
  *  it, see how it is built, poke at the running cluster, grade it. A tab with
  *  nothing behind it is not rendered. */
-function ScenarioDetailTabs({ detail, verifyResult, onCopy }: {
+function ScenarioDetailTabs({ detail, verifyResult, onCopy, notify }: {
   detail: Scenario
   verifyResult?: ScenarioVerifyResult
   onCopy: (text: string) => void
+  notify: NotifyFn
 }) {
   const components = allComponents(detail)
   const snippets = detail.snippets ?? []
@@ -464,27 +466,12 @@ function ScenarioDetailTabs({ detail, verifyResult, onCopy }: {
           {snippets.length > 0 && (
             <div className="modal-section">
               <h3>How it&apos;s implemented <span className="hint-text">(expand a file to read it)</span></h3>
-              <div className="collapse-group">
-                {snippets.map((sn, i) => (
-                  <Collapsible
-                    key={sn.label}
-                    title={sn.label}
-                    aside={sn.path ? repoPath(detail.name, sn.path) : undefined}
-                    defaultOpen={i === 0}
-                  >
-                    {sn.description && <div className="snippet-desc">{sn.description}</div>}
-                    {sn.yaml && (
-                      <>
-                        <div className="snippet-head">
-                          <span className="hint-text">{sn.yaml.split('\n').length} lines</span>
-                          <button className="cmd-copy" onClick={() => onCopy(sn.yaml!)}>Copy</button>
-                        </div>
-                        <pre className="snippet-code">{sn.yaml}</pre>
-                      </>
-                    )}
-                  </Collapsible>
-                ))}
-              </div>
+              <SnippetList
+                snippets={snippets}
+                notify={notify}
+                workload={bound}
+                sourcePath={path => repoPath(detail.name, path)}
+              />
             </div>
           )}
         </>

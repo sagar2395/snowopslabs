@@ -110,9 +110,14 @@ var scenarioUpCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Scenario %s is already active. Re-run with --force to reinstall.\n", name)
 			return nil
 		}
-		return runScenarioOp(cmd, "activate", name, func(ctx context.Context, svc *scnsvc.Service) (string, error) {
+		err = runScenarioOp(cmd, "activate", name, func(ctx context.Context, svc *scnsvc.Service) (string, error) {
 			return svc.ActivateWithParams(ctx, name, scenarioUpForce, scenarioUpParams)
 		})
+		if err != nil {
+			return err
+		}
+		warnMissingHosts(cmd.Context(), os.Stderr, cfg.DomainSuffix)
+		return nil
 	},
 }
 
@@ -399,6 +404,43 @@ func printVerifyRemediation(results []checks.Result) {
 	}
 }
 
+// bindForScenario binds a read-only command to the app it describes: the one
+// --app names, or else the app the scenario was activated for.
+func bindForScenario(cmd *cobra.Command, name string) error {
+	if f := cmd.Flags().Lookup("app"); f != nil && f.Changed {
+		return nil
+	}
+	return rebindTo(scenes.ActiveApp(name))
+}
+
+var scenarioRenderCmd = &cobra.Command{
+	Use:   "render <scenario-name> <file>",
+	Short: "Print a scenario file with its template variables filled in",
+	Long: `Prints a file from the scenario's directory as the engine would apply it:
+{{.WorkloadName}}, {{.DomainSuffix}} and the scenario's parameters are filled in
+for the app named by --app, or the app the scenario was activated for. Use it to
+apply a manifest the scenario leaves to you:
+
+  labctl scenario render node-drain-drill manifests/baseline.yaml --app go-api | kubectl apply -f -`,
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		s, err := scenes.Get(args[0])
+		if err != nil {
+			return err
+		}
+		if err := bindForScenario(cmd, s.Name); err != nil {
+			return err
+		}
+		body, err := scenes.RenderFile(s, args[1])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), body)
+		return err
+	},
+}
+
 var scenarioInfoCmd = &cobra.Command{
 	Use:   "info [scenario-name]",
 	Short: "Show detailed information about a scenario",
@@ -406,6 +448,9 @@ var scenarioInfoCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		s, err := scenes.Get(args[0])
 		if err != nil {
+			return err
+		}
+		if err := bindForScenario(cmd, s.Name); err != nil {
 			return err
 		}
 
@@ -535,6 +580,7 @@ func init() {
 	scenarioCmd.AddCommand(scenarioResetCmd)
 	scenarioCmd.AddCommand(scenarioStatusCmd)
 	scenarioCmd.AddCommand(scenarioInfoCmd)
+	scenarioCmd.AddCommand(scenarioRenderCmd)
 	scenarioCmd.AddCommand(scenarioVerifyCmd)
 	rootCmd.AddCommand(scenarioCmd)
 }

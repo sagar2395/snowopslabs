@@ -60,6 +60,8 @@ func (c *Catalog) crossReference() {
 	}
 
 	c.checkSnippetPaths()
+	c.checkScriptBindings()
+	c.checkDashboards()
 }
 
 // checkSnippetPaths verifies that every snippet with a `path` points at a file

@@ -87,7 +87,7 @@ checks:
     operator: ">="
     value: "5"
     pending: true
-    remediation: "{{.WorkloadName}} is idle, so its measured peak is meaningless and the sizing floor cannot bite. Drive steady traffic before you size anything: labctl traffic start --profile steady --rps 25 --duration 20m"
+    remediation: "{{.WorkloadName}} is idle, so its measured peak is meaningless and the sizing floor cannot bite. Drive steady traffic before you size anything: labctl traffic start --app {{.WorkloadName}} --profile steady --rps 25 --duration 20m"
 
   - name: cpu-request-right-sized
     type: script
@@ -137,7 +137,6 @@ snippets:
   - label: "The over-provisioned 'before' state, and how it is applied"
     description: "inflate.sh is the exact inverse of the fix you are about to perform: one 'kubectl set resources' putting the requests 40x/32x above what the workload needs. Read it to see precisely what was done to the Deployment."
     path: scripts/inflate.sh
-    apply: "bash scenarios/cost-right-sizing/scripts/inflate.sh   (a script, not a manifest)"
 
 explore:
   urls:
@@ -149,11 +148,11 @@ explore:
       url: "http://grafana.{{.DomainSuffix}}/d/pod-resources"
   commands:
     - label: "0. Add the ingress DNS entries once (opencost.{{.DomainSuffix}} etc.) to /etc/hosts, then open http://opencost.{{.DomainSuffix}}"
-      command: "sudo labctl hosts add"
+      command: "labctl hosts add"
     - label: "0b. FALLBACK only if you haven't run 'labctl hosts add' — port-forward the UI instead, then open http://localhost:9090"
       command: "kubectl -n opencost port-forward svc/opencost 9090 &"
     - label: "1a. Drive steady traffic so 'healthy under load' is actually exercised (also warms the ingress route)"
-      command: "labctl traffic start --profile steady --rps 10"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile steady --rps 10"
     - label: "1b. Confirm the inflated state — checks fail while over-provisioned"
       command: "labctl scenario verify cost-right-sizing"
     - label: "2. Read the PEAK over the load window — this is the number to size above"

@@ -8,7 +8,7 @@
 #
 # A fault's alert rule names the namespace it watches, but the workload a fault
 # breaks is a binding now (ADR-0014), so the rule has to follow it. The engine
-# resolves ${WORKLOAD_NAME:-go-api} in fault.yaml and in the manifests it applies
+# resolves {{.WorkloadName}} in fault.yaml and in the manifests it applies
 # itself; this file is applied by the inject script instead, so the substitution
 # happens here.
 #

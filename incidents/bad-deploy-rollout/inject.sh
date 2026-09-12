@@ -40,7 +40,7 @@ CONTAINER="$(kubectl -n "$NS" get deploy "$DEPLOY" -o 'jsonpath={.spec.template.
 # only when it has no "/" after it.
 REPO="$CURRENT_IMAGE"
 case "${CURRENT_IMAGE##*:}" in
-  */*) : ;; # "host:5000/repo" — no tag to strip
+  */*) : ;;              # "host:5000/repo" — no tag to strip
   "$CURRENT_IMAGE") : ;; # no colon at all
   *) REPO="${CURRENT_IMAGE%:*}" ;;
 esac

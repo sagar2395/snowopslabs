@@ -176,20 +176,22 @@ snippets:
     description: "Read validate.failureAction on each rule: that single field is the difference between a report and a rejection. failureAction is per-rule (spec.validationFailureAction is deprecated), so a policy can be promoted one rule at a time — which is how a real team rolls enforcement out. Note the exclude list: platform namespaces legitimately need root and host paths, and enforcing pod-security on them would wedge the cluster."
     path: manifests/kyverno-policies.yaml
   - label: "Default-deny NetworkPolicies with explicit allow rules"
-    description: "Locks the {{.WorkloadName}} namespace to default-deny in BOTH directions, then re-opens exactly what it needs: DNS egress, pod-to-pod inside the namespace, the mesh control plane, ingress from Traefik, ingress from Prometheus. NetworkPolicies are additive and there is no 'deny' rule — so a single allow-all policy added later cancels the whole baseline without touching it. That is what 'namespace-isolation-enforced' grades, and why it is not an existence check."
+    description: "Locks the {{.WorkloadName}} namespace to default-deny in BOTH directions, then re-opens exactly what it needs: DNS egress, pod-to-pod inside the namespace, the mesh control plane, ingress from Traefik, ingress from Prometheus. NetworkPolicies are additive and there is no 'deny' rule — so a single allow-all policy added later cancels the whole baseline without touching it. That is what 'namespace-isolation-enforced' grades, and why it is not an existence check. The mesh control-plane rule is the one people forget: without egress to istiod every injected sidecar stays unready."
     path: manifests/network-policies.yaml
   - label: "legacy-reporter — the workload you are not allowed to fix"
     description: "A stand-in for the vendor image every Audit rollout turns up: a fixed manifest the team does not own, violating three of the four policies. It is what makes the policy report a triage exercise instead of a one-line fix. Note the compliance.snowops.net/exempt label — an exemption should match an intent, so it survives a rename and reads as a decision."
     path: manifests/legacy-workload.yaml
-  - label: "PolicyException for legacy-reporter — APPLY THIS ONE YOURSELF"
+  - label: "PolicyException for legacy-reporter"
     description: "The grown-up answer to 'this workload cannot comply'. It matches a LABEL, not a namespace and not a name, so everything else in {{.WorkloadName}} stays enforced — that scope is exactly what the grading checks. ruleNames must include the autogen- variants, or the Pod is exempt while the Deployment is still rejected."
     path: manifests/policy-exception.yaml
+    exercise: true
   - label: "The lab CA chain (selfsigned-issuer → lab-ca → lab-ca-issuer)"
     description: "Installed by the scenario. A self-signed leaf is not what production looks like; here selfsigned-issuer signs a root ONCE, and every workload certificate is issued off that root by lab-ca-issuer — a real chain."
     path: manifests/cert-issuers.yaml
-  - label: "{{.WorkloadName}}-tls Certificate — APPLY THIS ONE YOURSELF"
+  - label: "{{.WorkloadName}}-tls Certificate"
     description: "The certificate task. cert-manager watches the Certificate, asks lab-ca-issuer for a leaf, and writes it into the Secret {{.WorkloadName}}-tls-secret. Note duration/renewBefore: cert-manager rotates the leaf 15 days before it expires, which is the whole reason to run it rather than issue certificates by hand."
     path: manifests/workload-tls-certificate.yaml
+    exercise: true
 
 references:
   - label: "Kyverno — validate rules and failureAction"

@@ -5,8 +5,9 @@
 # is observed, not read from the objects, so clearing them does not undo work
 # you have already done.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
 
 kubectl -n "$NS" delete podchaos,networkchaos,stresschaos --all --ignore-not-found
 echo "All chaos experiments removed from ${NS}."

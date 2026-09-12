@@ -342,6 +342,12 @@ var incidentInfoCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// The active fault is described for the app it was injected into.
+		if a, err := incEng.Active(); err == nil && a != nil && a.Fault == f.Name {
+			if err := rebindTo(a.App); err != nil {
+				return err
+			}
+		}
 		fmt.Printf("Name:        %s\n", f.Name)
 		fmt.Printf("Display:     %s\n", f.DisplayName)
 		fmt.Printf("Category:    %s\n", f.Category)

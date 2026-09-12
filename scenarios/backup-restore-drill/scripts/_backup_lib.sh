@@ -10,7 +10,11 @@
 # learner's benefit ("back up THIS namespace"), and falls back to the bound
 # workload's namespace when run by the check runner, which passes no arguments.
 backup_ns() {
-  echo "${1:-${WORKLOAD_NAMESPACE:-${WORKLOAD_NAME:-go-api}}}"
+  if [ -z "${1:-${WORKLOAD_NAMESPACE:-}}" ]; then
+    echo "ERROR: name the namespace to act on: $(basename "$0") <namespace>" >&2
+    exit 2
+  fi
+  echo "${1:-${WORKLOAD_NAMESPACE}}"
 }
 
 # Archives and drill state live under .labctl (gitignored runtime state).

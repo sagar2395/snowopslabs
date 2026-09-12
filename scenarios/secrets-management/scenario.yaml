@@ -130,7 +130,7 @@ references:
 
 snippets:
   - label: "The same secret, mounted as a file and taken as an env var"
-    description: "A file-mounted secret is the reason rotation works without a redeploy: the kubelet rewrites the file in place when the Secret changes, and the process re-reads it. The same secret consumed via envFrom would be frozen at process start — that is the distinction this scenario exists to teach."
+    description: "A file-mounted secret is the reason rotation works without a redeploy: the kubelet rewrites the file in place when the Secret changes, and the process re-reads it. The same secret consumed via envFrom would be frozen at process start — that is the distinction this scenario exists to teach. A second container reads the same secret as an env var and never sees a rotation: the contrast between the two is the lesson."
     path: manifests/consumer.yaml
 
 explore:

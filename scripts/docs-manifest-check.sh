@@ -9,7 +9,10 @@
 # The check is skipped, not failed, when the site is not checked out.
 set -eu
 
-root=$(unset CDPATH; cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(
+  unset CDPATH
+  cd -- "$(dirname -- "$0")/.." && pwd
+)
 cd "$root"
 
 web=${SNOWOPSLABS_WEB:-../snowopslabs-web}

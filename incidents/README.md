@@ -116,9 +116,10 @@ starting.
 `references` and `snippets` use the same shape as scenarios (see
 [scenario schema → References and snippets](../docs/reference/scenario-schema.md#references-and-snippets)):
 a reference is `{label, url, note?}`; a snippet is `{label, description?, yaml |
-path}` with exactly one of `yaml`/`path` (a `path` is relative to the incident
-directory). Both are template-resolved and shown by `labctl incident info
-<name>`. `labctl validate` fails on a dangling snippet `path`.
+path, exercise?, apply?}` with exactly one of `yaml`/`path` (a `path` is relative
+to the incident directory). Both are template-resolved for the app the fault is
+injected into and shown by `labctl incident info <name>`, with long comment
+blocks trimmed from the body. `labctl validate` fails on a dangling snippet `path`.
 
 ### Paging (`expectAlert`, on-call drills)
 

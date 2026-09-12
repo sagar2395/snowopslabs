@@ -19,6 +19,7 @@ import (
 
 	"github.com/sagar2395/snowopslabs/internal/config"
 	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/sagar2395/snowopslabs/internal/snippet"
 	"github.com/sagar2395/snowopslabs/internal/tmpl"
 	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
@@ -159,6 +160,9 @@ type Engine struct {
 	faults     map[string]*Fault
 	loadErrors map[string]error
 	stateDir   string
+	// injectedAt is when the incident being graded was injected, set only while
+	// Status runs; {{.SinceActivation}} is measured from it.
+	injectedAt time.Time
 }
 
 // NewEngine scans incidents/ under the project root.
@@ -299,18 +303,9 @@ func (e *Engine) resolvedFor(f *Fault, bound workload.Workload) *Fault {
 	if len(f.Snippets) > 0 {
 		snips := make([]scenario.Snippet, len(f.Snippets))
 		for i, sn := range f.Snippets {
-			sn.Label = resolveTemplate(sn.Label)
-			sn.Description = resolveTemplate(sn.Description)
-			sn.Apply = resolveTemplate(sn.Apply)
-			if sn.YAML == "" && sn.Path != "" {
-				// The UI has no access to the fault directory, so the body has to
-				// travel with the snippet or it renders an empty code block.
-				if body, err := os.ReadFile(filepath.Join(f.Dir, sn.Path)); err == nil {
-					sn.YAML = string(body)
-				}
-			}
-			sn.YAML = resolveTemplate(sn.YAML)
-			snips[i] = sn
+			// The UI has no access to the fault directory, so the body travels
+			// with the snippet. A file that cannot be read renders without one.
+			snips[i], _ = snippet.Resolve(f.Dir, sn, resolveTemplate)
 		}
 		c.Snippets = snips
 	}
@@ -623,6 +618,8 @@ func (e *Engine) Status(ctx context.Context, runner *checks.Runner, user string)
 	// binding — a check pointed at the wrong namespace passes, and a passing
 	// check clears the incident and scores it as solved.
 	defer e.bindToRecorded(active)()
+	e.injectedAt = active.InjectedAt
+	defer func() { e.injectedAt = time.Time{} }()
 	f, err := e.Get(active.Fault)
 	if err != nil {
 		return nil, fmt.Errorf("active incident %q no longer exists in the library: %w", active.Fault, err)
@@ -736,6 +733,7 @@ func (e *Engine) templateContextFor(bound workload.Workload) tmpl.Context {
 		WorkloadService:     w.Service(),
 		WorkloadPort:        w.Port,
 		WorkloadMetric:      w.Metric,
+		SinceActivation:     tmpl.Since(e.injectedAt, time.Now()),
 	}
 }
 

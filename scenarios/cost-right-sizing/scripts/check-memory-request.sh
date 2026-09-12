@@ -4,13 +4,14 @@
 # bounds exist; for memory the downside is worse, because there is no
 # throttling — the kernel OOM-kills the container.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
 . "$DIR/_prom.sh"
 
-NAMESPACE="${WORKLOAD_NAMESPACE:-go-api}"
-APP="${WORKLOAD_NAME:-go-api}"
+NAMESPACE="${WORKLOAD_NAMESPACE}"
+APP="${WORKLOAD_NAME}"
 CONTAINER="${CONTAINER:-$APP}"
 MAX_MEMORY_MIB="${MAX_MEMORY_MIB:-256}"
 
@@ -60,7 +61,7 @@ peak_mib="$(echo "${peak_bytes:-0}" | awk '{printf "%d", $1 / (1024*1024)}')"
 if [ -z "$peak_bytes" ]; then
   echo "FAIL: Prometheus returned no memory usage for ${NAMESPACE}/${CONTAINER}, so the request" >&2
   echo "cannot be checked against what the workload actually needs." >&2
-  echo "  labctl traffic start --profile steady --rps 25" >&2
+  echo "  labctl traffic start --app ${WORKLOAD_NAME} --profile steady --rps 25" >&2
   exit 1
 fi
 

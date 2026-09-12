@@ -6,7 +6,8 @@
 # every node on one version, which is precisely what a finished roll looks like.
 # The checkpoint stage-ha.sh writes is the only thing that tells them apart.
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
+. "$(dirname "$0")/../../_lib/workload.sh"
+NS="${WORKLOAD_NAMESPACE}"
 STATE="upgrade-drill-baseline"
 
 checkpoint() {

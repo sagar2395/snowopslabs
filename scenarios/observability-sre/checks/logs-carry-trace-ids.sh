@@ -6,13 +6,15 @@
 # dashboards. It is also the step that silently does not work: logs ship fine
 # without tracing configured, and every line is then a dead end.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
 . "$DIR/_grafana.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-FROM="$(window_start)000000000"; TO="$(window_end)000000000"
+NS="${WORKLOAD_NAMESPACE}"
+FROM="$(window_start)000000000"
+TO="$(window_end)000000000"
 
 RESULT="$(ds_get loki "/loki/api/v1/query_range" \
   --get --data-urlencode "query={namespace=\"${NS}\"} |= \`trace_id\`" \
@@ -42,9 +44,9 @@ if printf '%s' "$ANY" | grep -q '"values"'; then
   echo "FAIL: ${NS} logs reach Loki, but no line carries a trace_id." >&2
   echo "  The app only stamps a trace_id once it is exporting spans, so wire it" >&2
   echo "  to the collector and send some traffic:" >&2
-  echo "    kubectl -n ${NS} set env deployment/${WORKLOAD_NAME:-go-api} \\" >&2
+  echo "    kubectl -n ${NS} set env deployment/${WORKLOAD_NAME} \\" >&2
   echo "      OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy.${MONITORING_NAMESPACE}.svc.cluster.local:4318" >&2
-  echo "    labctl traffic start --profile steady --rps 25" >&2
+  echo "    labctl traffic start --app ${WORKLOAD_NAME} --profile steady --rps 25" >&2
   exit 1
 fi
 

@@ -13,10 +13,12 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/sagar2395/snowopslabs/internal/snippet"
 	"github.com/sagar2395/snowopslabs/internal/tmpl"
 	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
@@ -94,6 +96,9 @@ type Engine struct {
 	// {{.ParamName}} during that Up. Both follow the SetOutput serialisation rule.
 	activationParams map[string]string
 	resolvedParams   map[string]string
+	// activatedAt is when the scenario being graded was activated, scoped like
+	// resolvedParams; {{.SinceActivation}} is measured from it.
+	activatedAt time.Time
 }
 
 // SetActivationParams stages parameter overrides for the next Up (nil clears).
@@ -294,9 +299,9 @@ func (e *Engine) withActivationParams(s *Scenario) func() {
 	if params == nil {
 		params, _ = e.effectiveParams(s)
 	}
-	prev := e.resolvedParams
-	e.resolvedParams = params
-	return func() { e.resolvedParams = prev }
+	prevParams, prevAt := e.resolvedParams, e.activatedAt
+	e.resolvedParams, e.activatedAt = params, e.activationTime(s.Name)
+	return func() { e.resolvedParams, e.activatedAt = prevParams, prevAt }
 }
 
 // BindTo binds the engine to an app by name, returning the function that
@@ -665,7 +670,8 @@ func (e *Engine) scan() {
 	scenariosDir := filepath.Join(e.ProjectRoot, "scenarios")
 	if entries, err := os.ReadDir(scenariosDir); err == nil {
 		for _, entry := range entries {
-			if !entry.IsDir() {
+			// "_"-prefixed directories hold shared scripts, not scenarios.
+			if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") {
 				continue
 			}
 			e.loadInto(filepath.Join(scenariosDir, entry.Name()), "", entry.Name())
@@ -1232,6 +1238,7 @@ func (e *Engine) templateContextFor(bound workload.Workload) tmpl.Context {
 		WorkloadService:     w.Service(),
 		WorkloadPort:        w.Port,
 		WorkloadMetric:      w.Metric,
+		SinceActivation:     tmpl.Since(e.activatedAt, time.Now()),
 	}
 }
 
@@ -1248,47 +1255,17 @@ func (e *Engine) ParamDefaults(s *Scenario) map[string]string {
 	return m
 }
 
-// SnippetContent returns a snippet's display text — its inline YAML or the
-// contents of its Path file — template-resolved with the scenario's parameter
-// defaults so {{.Param}} placeholders show real values. Path reads are confined
-// to the scenario directory. A file's leading comment banner is stripped so the
-// UI shows clean code (the banner's explanation belongs in the snippet's
-// description); inline comments on individual fields are kept.
-func (e *Engine) SnippetContent(s *Scenario, sn Snippet) (string, error) {
-	defaults := e.ParamDefaults(s)
-	if sn.YAML != "" {
-		return e.resolveTemplateWith(sn.YAML, defaults), nil
-	}
-	if sn.Path == "" {
-		return "", nil
-	}
-	full := filepath.Join(s.Dir, filepath.Clean(sn.Path))
-	if !strings.HasPrefix(full, filepath.Clean(s.Dir)+string(os.PathSeparator)) {
-		return "", fmt.Errorf("snippet path %q escapes the scenario directory", sn.Path)
-	}
-	data, err := os.ReadFile(full)
+// RenderFile returns a file from the scenario's directory with its template
+// variables expanded against the engine's binding and the scenario's
+// activation parameters (their defaults when it is not active) — the text the
+// engine itself would apply, for a learner to pipe into kubectl.
+func (e *Engine) RenderFile(s *Scenario, rel string) (string, error) {
+	raw, err := snippet.ReadFile(s.Dir, rel)
 	if err != nil {
 		return "", err
 	}
-	return e.resolveTemplateWith(stripLeadingCommentBanner(string(data)), defaults), nil
-}
-
-// stripLeadingCommentBanner drops a manifest's leading block of "#" comment and
-// blank lines — the header that documents the file for repo readers — so the
-// snippet shown in the UI starts at the first real line of config. Inline
-// comments further down (e.g. after a YAML field) are untouched.
-func stripLeadingCommentBanner(src string) string {
-	lines := strings.Split(src, "\n")
-	i := 0
-	for i < len(lines) {
-		trimmed := strings.TrimSpace(lines[i])
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			i++
-			continue
-		}
-		break
-	}
-	return strings.Join(lines[i:], "\n")
+	defer e.withActivationParams(s)()
+	return e.resolveTemplate(raw), nil
 }
 
 // ingressClassOr falls back to traefik (the k3d default) when no class is set,
@@ -1358,6 +1335,17 @@ func (e *Engine) activationRecord(name string) activationState {
 		return activationState{} // the legacy "active" marker
 	}
 	return st
+}
+
+// activationTime is when a scenario was activated, or zero when it is not. Up
+// writes the marker once, as its last step, so the file's mtime is that moment —
+// and a re-activation rewrites it, starting a new run.
+func (e *Engine) activationTime(name string) time.Time {
+	fi, err := os.Stat(filepath.Join(e.stateDir, name+".active"))
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
 }
 
 // activeParams returns the parameters a scenario was activated with, or nil.

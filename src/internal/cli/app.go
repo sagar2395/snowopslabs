@@ -3,6 +3,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -32,7 +33,11 @@ var appDeployCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appName := args[0]
 		fmt.Printf("Deploying %s...\n", appName)
-		return exec.RunScript("src/engine/deploy.sh", "deploy", appName)
+		if err := exec.RunScript("src/engine/deploy.sh", "deploy", appName); err != nil {
+			return err
+		}
+		warnMissingHosts(cmd.Context(), os.Stderr, cfg.DomainSuffix)
+		return nil
 	},
 }
 

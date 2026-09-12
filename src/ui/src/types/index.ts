@@ -211,16 +211,6 @@ export interface ScenarioCheck {
   value?: string
 }
 
-/** An applyable manifest fragment a scenario surfaces for hands-on learning.
- *  `yaml` carries the display content (inlined from `path` by the server, with
- *  parameter defaults resolved); `path` names its source file. */
-export interface ScenarioSnippet {
-  label: string
-  description?: string
-  yaml?: string
-  path?: string
-}
-
 export interface ScenarioStage {
   name: string
   description?: string
@@ -241,7 +231,7 @@ export interface Scenario {
   parameters?: ScenarioParameter[]
   objectives?: string[]
   checks?: ScenarioCheck[]
-  snippets?: ScenarioSnippet[]
+  snippets?: ContentSnippet[]
   /** Apps the scenario names literally — the only app prerequisites a user has
    *  to satisfy. An app that came from the binding is in `workload`, not here. */
   pinnedApps?: string[]
@@ -489,10 +479,22 @@ export interface ResultRecord {
 
 // ── Incidents ─────────────────────────────────────────────────────────────────
 
-/** A doc/tool reference or an applyable manifest snippet a fault can surface
- *  (M2). Loosely typed — the view only reads label/url/description. */
+/** A doc/tool link a scenario or fault surfaces. */
 export interface ContentReference { label: string; url: string; note?: string }
-export interface ContentSnippet { label: string; description?: string; yaml?: string; path?: string }
+
+/** A file or fragment a scenario or fault shows the learner. `yaml` is the body
+ *  as the server renders it: read from `path`, trimmed of long comment blocks and
+ *  resolved for the bound workload. */
+export interface ContentSnippet {
+  label: string
+  description?: string
+  yaml?: string
+  path?: string
+  /** Nothing installs an exercise snippet: applying it is the learner's task. */
+  exercise?: boolean
+  /** Ready-to-run command for an exercise, when it has one. */
+  applyCommand?: string
+}
 
 /** One fault from the incident catalog (GET /api/v2/incidents → faults[]). */
 export interface Fault {

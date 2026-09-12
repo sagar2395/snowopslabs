@@ -19,7 +19,61 @@
   "list": []
  },
  "templating": {
-  "list": []
+  "list": [
+   {
+    "name": "app",
+    "label": "App",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+    "query": {
+     "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+     "refId": "app",
+     "qryType": 3
+    },
+    "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+    "regex": "/app=\"([^\"]+)\"/",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 1,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadName}}",
+     "value": "{{.WorkloadName}}"
+    },
+    "options": []
+   },
+   {
+    "name": "namespace",
+    "label": "Namespace",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "Where the selected app runs.",
+    "query": {
+     "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+     "refId": "namespace",
+     "qryType": 1
+    },
+    "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 0,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadNamespace}}",
+     "value": "{{.WorkloadNamespace}}"
+    },
+    "options": []
+   }
+  ]
  },
  "panels": [
   {
@@ -83,7 +137,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count(kube_configmap_info{namespace=\"{{.WorkloadNamespace}}\"}) or vector(0)",
+     "expr": "count(kube_configmap_info{namespace=\"$namespace\"}) or vector(0)",
      "legendFormat": "ConfigMaps",
      "refId": "A"
     },
@@ -92,7 +146,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count(kube_secret_info{namespace=\"{{.WorkloadNamespace}}\"}) or vector(0)",
+     "expr": "count(kube_secret_info{namespace=\"$namespace\"}) or vector(0)",
      "legendFormat": "Secrets",
      "refId": "B"
     },
@@ -101,7 +155,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count(kube_deployment_created{namespace=\"{{.WorkloadNamespace}}\"}) or vector(0)",
+     "expr": "count(kube_deployment_created{namespace=\"$namespace\"}) or vector(0)",
      "legendFormat": "Deployments",
      "refId": "C"
     },
@@ -110,7 +164,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count(kube_service_info{namespace=\"{{.WorkloadNamespace}}\"}) or vector(0)",
+     "expr": "count(kube_service_info{namespace=\"$namespace\"}) or vector(0)",
      "legendFormat": "Services",
      "refId": "D"
     },
@@ -119,7 +173,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "count(kube_persistentvolumeclaim_info{namespace=\"{{.WorkloadNamespace}}\"}) or vector(0)",
+     "expr": "count(kube_persistentvolumeclaim_info{namespace=\"$namespace\"}) or vector(0)",
      "legendFormat": "PVCs",
      "refId": "E"
     }
@@ -156,7 +210,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "kube_persistentvolumeclaim_info{namespace=\"{{.WorkloadNamespace}}\"}",
+     "expr": "kube_persistentvolumeclaim_info{namespace=\"$namespace\"}",
      "instant": true,
      "format": "table",
      "refId": "A"
@@ -236,8 +290,8 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "(time() - kube_persistentvolume_created) * on(persistentvolume) group_left() (kube_persistentvolume_claim_ref{claim_namespace=\"{{.WorkloadNamespace}}\",name=\"restore-data\"})",
-     "legendFormat": "bound volume age",
+     "expr": "(time() - kube_persistentvolume_created) * on(persistentvolume) group_left() (kube_persistentvolume_claim_ref{claim_namespace=\"$namespace\",name=\"restore-data\"})",
+     "legendFormat": "volume {{persistentvolume}}",
      "refId": "A"
     },
     {
@@ -245,7 +299,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "time() - kube_persistentvolumeclaim_created{namespace=\"{{.WorkloadNamespace}}\",persistentvolumeclaim=\"restore-data\"}",
+     "expr": "time() - kube_persistentvolumeclaim_created{namespace=\"$namespace\",persistentvolumeclaim=\"restore-data\"}",
      "legendFormat": "claim age",
      "refId": "B"
     }
@@ -298,7 +352,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum(kube_persistentvolumeclaim_status_phase{namespace=\"{{.WorkloadNamespace}}\",persistentvolumeclaim=\"restore-data\",phase=\"Bound\"}) or vector(0)",
+     "expr": "sum(kube_persistentvolumeclaim_status_phase{namespace=\"$namespace\",persistentvolumeclaim=\"restore-data\",phase=\"Bound\"}) or vector(0)",
      "legendFormat": "claim bound",
      "refId": "A"
     },
@@ -307,7 +361,7 @@
       "type": "prometheus",
       "uid": "prometheus"
      },
-     "expr": "sum(kube_deployment_status_replicas_available{namespace=\"{{.WorkloadNamespace}}\",deployment=\"data-writer\"}) or vector(0)",
+     "expr": "sum(kube_deployment_status_replicas_available{namespace=\"$namespace\",deployment=\"data-writer\"}) or vector(0)",
      "legendFormat": "data-writer replicas available",
      "refId": "B"
     }

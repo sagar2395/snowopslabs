@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # unstage-ha.sh — undo stage-ha.sh and remove the PodDisruptionBudget the
-# learner applied, so 'scenario down' leaves nothing behind. ${WORKLOAD_NAME:-go-api} itself is an
+# learner applied, so 'scenario down' leaves nothing behind. The workload itself is an
 # app prerequisite and stays running.
 
-APP_NAMESPACE="${APP_NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
+APP_NAMESPACE="${WORKLOAD_NAMESPACE}"
 
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
+WORKLOAD="${WORKLOAD_NAME}"
 STATE="upgrade-drill-baseline"
 
 kubectl -n "$APP_NAMESPACE" delete pdb "${WORKLOAD}-upgrade-pdb" --ignore-not-found

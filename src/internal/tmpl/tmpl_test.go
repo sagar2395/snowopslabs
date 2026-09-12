@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func testContext() Context {
@@ -20,6 +21,29 @@ func testContext() Context {
 		WorkloadService:     "go-api.go-api.svc.cluster.local",
 		WorkloadPort:        "8080",
 		WorkloadMetric:      "http_server_request_duration_seconds",
+		SinceActivation:     "95m",
+	}
+}
+
+func TestSince(t *testing.T) {
+	now := time.Date(2026, 9, 11, 20, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name  string
+		start time.Time
+		want  string
+	}{
+		{"nothing active", time.Time{}, "1m"},
+		{"start in the future (clock skew)", now.Add(time.Minute), "1m"},
+		{"seconds ago rounds up", now.Add(-10 * time.Second), "1m"},
+		{"a partial minute rounds up so start is inside", now.Add(-(94*time.Minute + time.Second)), "95m"},
+		{"whole minutes", now.Add(-2 * time.Hour), "120m"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := Since(tt.start, now); got != tt.want {
+				t.Errorf("Since() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

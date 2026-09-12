@@ -12,9 +12,9 @@ import (
 // Every hostname labctl builds a URL for has to be one it also puts in
 // /etc/hosts. Alertmanager was not, so `incident status` could never reach the
 // pager and every expectAlert fault reported that its page had not fired.
-func TestKnownSubdomainsCoverEveryURLTheCLIBuilds(t *testing.T) {
-	known := make(map[string]bool, len(knownSubdomains))
-	for _, s := range knownSubdomains {
+func TestPlatformSubdomainsCoverEveryURLTheCLIBuilds(t *testing.T) {
+	known := make(map[string]bool, len(platformSubdomains))
+	for _, s := range platformSubdomains {
 		known[s] = true
 	}
 
@@ -33,7 +33,7 @@ func TestKnownSubdomainsCoverEveryURLTheCLIBuilds(t *testing.T) {
 		}
 		for _, m := range pattern.FindAllStringSubmatch(string(data), -1) {
 			if !known[m[1]] {
-				t.Errorf("%s builds a URL for %q but knownSubdomains has no entry, so the host will not resolve", path, m[1])
+				t.Errorf("%s builds a URL for %q but platformSubdomains has no entry, so the host will not resolve", path, m[1])
 			}
 		}
 		return nil

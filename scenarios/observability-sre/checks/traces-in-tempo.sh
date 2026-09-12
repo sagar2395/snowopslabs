@@ -6,14 +6,16 @@
 # a wrong endpoint, a collector that is down, an app with no traffic — and a
 # check that reads the variable calls all of those a pass.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=/dev/null
 . "$DIR/_grafana.sh"
 
-SERVICE="${WORKLOAD_NAME:-go-api}"
+SERVICE="${WORKLOAD_NAME}"
 
-FROM="$(window_start)"; TO="$(window_end)"
+FROM="$(window_start)"
+TO="$(window_end)"
 VALUES="$(ds_get tempo "/api/search/tag/service.name/values?start=${FROM}&end=${TO}" 2>/dev/null || true)"
 
 if [ -z "$VALUES" ]; then
@@ -33,8 +35,8 @@ echo "FAIL: Tempo has recorded no spans for service.name=${SERVICE} in the last 
 echo "  Tempo knows about: ${VALUES}" >&2
 echo "  Two things have to be true, in order:" >&2
 echo "    1. ${SERVICE} exports to the collector —" >&2
-echo "       kubectl -n ${WORKLOAD_NAMESPACE:-go-api} set env deployment/${SERVICE} \\" >&2
+echo "       kubectl -n ${WORKLOAD_NAMESPACE} set env deployment/${SERVICE} \\" >&2
 echo "         OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy.${MONITORING_NAMESPACE}.svc.cluster.local:4318" >&2
 echo "    2. Requests are arriving, so there is something to trace —" >&2
-echo "       labctl traffic start --profile steady --rps 25" >&2
+echo "       labctl traffic start --app ${WORKLOAD_NAME} --profile steady --rps 25" >&2
 exit 1

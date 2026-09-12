@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 package catalog
 
-import "github.com/sagar2395/snowopslabs/internal/tmpl"
+import (
+	"time"
+
+	"github.com/sagar2395/snowopslabs/internal/tmpl"
+)
 
 // TemplateContext is the typed set of variables content templates may reference.
 // The definition lives in internal/tmpl so the validator and the two run-time
@@ -23,6 +27,7 @@ func DefaultTemplateContext(projectRoot string) TemplateContext {
 		WorkloadService:     "go-api.go-api.svc.cluster.local",
 		WorkloadPort:        "8080",
 		WorkloadMetric:      "http_server_request_duration_seconds",
+		SinceActivation:     tmpl.Since(time.Time{}, time.Now()),
 	}
 }
 

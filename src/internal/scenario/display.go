@@ -2,6 +2,7 @@
 package scenario
 
 import (
+	"github.com/sagar2395/snowopslabs/internal/snippet"
 	"github.com/sagar2395/snowopslabs/internal/tmpl"
 	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
@@ -107,15 +108,9 @@ func (e *Engine) ResolvedForDisplay(s *Scenario, params map[string]string, bound
 	if s.Snippets != nil {
 		snips := make([]Snippet, len(s.Snippets))
 		for i, sn := range s.Snippets {
-			// The UI has no access to the scenario directory, so a snippet stored
-			// as a file has to travel with its body or it renders empty.
-			if body, err := e.SnippetContent(s, sn); err == nil {
-				sn.YAML = body
-			}
-			sn.Label = resolve(sn.Label)
-			sn.Description = resolve(sn.Description)
-			sn.Apply = resolve(sn.Apply)
-			snips[i] = sn
+			// The UI has no access to the scenario directory, so the body travels
+			// with the snippet. A file that cannot be read renders without one.
+			snips[i], _ = snippet.Resolve(s.Dir, sn, resolve)
 		}
 		c.Snippets = snips
 	}

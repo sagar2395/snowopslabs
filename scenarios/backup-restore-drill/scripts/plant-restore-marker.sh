@@ -13,8 +13,9 @@
 # Idempotent on purpose: an existing marker is left exactly as it is, so
 # re-activating mid-drill does not silently invalidate the learner's archive.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-${WORKLOAD_NAME:-go-api}}"
+NS="${WORKLOAD_NAMESPACE}"
 
 if kubectl -n "$NS" get configmap restore-marker >/dev/null 2>&1; then
   echo "restore-marker already present in ${NS}; leaving it untouched."

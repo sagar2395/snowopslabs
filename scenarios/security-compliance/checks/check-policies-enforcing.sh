@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Grades the Audit -> Enforce promotion, the half of policy work that actually
 # changes cluster behaviour.
@@ -13,7 +14,7 @@ set -euo pipefail
 #      A policy object that exists but does not bite cannot pass this.
 
 POLICIES="deny-privilege-escalation require-non-root-user"
-NS="${WORKLOAD_NAMESPACE:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
 fail=0
 
 for p in $POLICIES; do

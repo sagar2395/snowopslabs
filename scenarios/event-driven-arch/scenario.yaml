@@ -136,10 +136,11 @@ checks:
 
   # A backlog has to have existed before draining it means anything. Without
   # this the drained check is green at t=0, when the group is a few seconds old
-  # and nothing has piled up yet.
+  # and nothing has piled up yet. Windowed to this activation, so a backlog
+  # drained long before verify still counts and a previous run's does not.
   - name: backlog-was-observed
     type: promql
-    query: 'max_over_time((sum(kafka_consumergroup_lag{consumergroup="order-processors",topic="orders"}) or vector(0))[30m:1m])'
+    query: 'max_over_time((sum(kafka_consumergroup_lag{consumergroup="order-processors",topic="orders"}) or vector(0))[{{.SinceActivation}}:1m])'
     operator: ">="
     value: "1500"
     pending: true

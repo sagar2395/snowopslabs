@@ -8,9 +8,10 @@
 # based "was a node cordoned" check therefore has a hole exactly where the drill
 # happens, and reports that nothing was drained.
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-NS="${WORKLOAD_NAMESPACE:-go-api}"
-APP="${WORKLOAD_NAME:-go-api}"
+NS="${WORKLOAD_NAMESPACE}"
+APP="${WORKLOAD_NAME}"
 CM="${APP}-drain-drill-baseline"
 
 BEFORE="$(kubectl -n "$NS" get configmap "$CM" -o 'jsonpath={.data.nodes}' 2>/dev/null || true)"

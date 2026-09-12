@@ -16,7 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NS="$(backup_ns "")"
 LOG="$(bootid_log "$NS")"
 
-HOW=$(cat <<TXT
+HOW=$(
+  cat <<TXT
   Destroy the volume and restore the objects, then re-verify:
     kubectl -n ${NS} delete deploy data-writer
     kubectl -n ${NS} delete pvc restore-data
