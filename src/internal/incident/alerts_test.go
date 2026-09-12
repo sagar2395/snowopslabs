@@ -213,7 +213,7 @@ func TestRepoFaults_AlertRulesConsistent(t *testing.T) {
 // A detection windowed with {{.SinceActivation}} grades this incident only: the
 // range opens at injection, so an alert from an earlier run cannot satisfy it.
 func TestStatus_SinceActivationOpensAtInjection(t *testing.T) {
-	e, root := testEngine(t, "fault-a")
+	_, root := testEngine(t, "fault-a")
 	yaml := strings.Replace(testFaultYAML, "%s", "fault-a", 1)
 	yaml = yaml[:strings.Index(yaml, "detection:")] + "detection:\n" +
 		"  name: fired-this-run\n  type: promql\n" +
@@ -222,7 +222,7 @@ func TestStatus_SinceActivationOpensAtInjection(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "incidents", "fault-a", "fault.yaml"), []byte(yaml), 0644); err != nil {
 		t.Fatal(err)
 	}
-	e = NewEngine(root, "k3d.local")
+	e := NewEngine(root, "k3d.local")
 
 	var gotQuery string
 	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
