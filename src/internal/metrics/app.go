@@ -13,9 +13,8 @@ import (
 // and the run engine (which records run metrics through the run.Metrics
 // interface this type satisfies).
 //
-// It deliberately knows nothing about net/http routing or the run engine's
-// types — callers pass plain strings — so neither of those packages has to
-// import a metrics library, and this package stays a leaf.
+// Callers pass plain strings, so this package does not depend on net/http
+// routing or the run engine.
 type App struct {
 	reg *Registry
 

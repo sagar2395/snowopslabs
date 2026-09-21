@@ -2,26 +2,35 @@
 
 // Package schemas embeds the JSON Schema documents for SnowOps Labs's declarative
 // content (scenario, incident, learning path, challenge, and the shared check).
-// They are the authoring reference consumed by editors and external tooling; the
-// authoritative, error-reporting validation lives in the Go loaders under
-// internal/catalog. Keeping the two in the same repo lets a test assert they do
-// not drift (see ADR-0002).
+// Editors and external tools use them while authoring. The validation labctl
+// itself applies is in internal/catalog, and a test checks the two agree
+// (ADR-0009).
 package schemas
 
 import _ "embed"
 
+// Check is the JSON Schema for a check.
+//
 //go:embed check.schema.json
 var Check []byte
 
+// Scenario is the JSON Schema for scenario.yaml.
+//
 //go:embed scenario.schema.json
 var Scenario []byte
 
+// Incident is the JSON Schema for an incident's fault.yaml.
+//
 //go:embed incident.schema.json
 var Incident []byte
 
+// Path is the JSON Schema for a learning path's path.yaml.
+//
 //go:embed path.schema.json
 var Path []byte
 
+// Challenge is the JSON Schema for challenge.yaml.
+//
 //go:embed challenge.schema.json
 var Challenge []byte
 

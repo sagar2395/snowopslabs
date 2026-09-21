@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package httpapi serves the /api/v2 REST API, the WebSocket and SSE event
+// streams, and the embedded web UI. Errors are returned as RFC 7807
+// problem+json (ADR-0006).
 package httpapi
 
 import (
@@ -51,8 +55,8 @@ type Server struct {
 	// runStore is the durable run store the run console reads.
 	runStore *store.Store
 
-	// authEnabled mirrors LABCTL_AUTH at construction time;
-	// when false, the middleware is a pass-through and behaviour is unchanged.
+	// authEnabled is LABCTL_AUTH as it was when the server was built. When
+	// false, the auth middleware passes every request through.
 	authEnabled bool
 	users       *auth.Store
 	sessions    *auth.SessionStore
@@ -64,8 +68,7 @@ type Server struct {
 	metrics *metrics.App
 }
 
-// ServerOption configures optional Server behaviour without changing the
-// constructor signature (existing callers pass none).
+// ServerOption configures optional Server behaviour.
 type ServerOption func(*Server)
 
 // WithMetrics enables the Prometheus /metrics endpoint and per-request
@@ -86,9 +89,9 @@ func WithUIDir(dir string) ServerOption {
 	return func(s *Server) { s.uiDir = dir }
 }
 
-// NewServer creates a new API server. The embeddedUI parameter should be the
-// embedded ui/dist filesystem (from go:embed). If nil or empty, the server
-// falls back to serving UI files from the project's ui/dist/ directory.
+// NewServer creates the API server. embeddedUI is the embedded ui/dist
+// filesystem; if it is nil or empty, the server serves the UI from the
+// project's ui/dist/ directory.
 func NewServer(cfg *config.Config, exec *executor.Executor, registry *platform.Registry, scenes *scenario.Engine, incidents *incident.Engine, svcs *services.Registry, rtm *runtime.Manager, embeddedUI fs.FS, opts ...ServerOption) *Server {
 	s := &Server{
 		cfg:       cfg,
@@ -103,14 +106,13 @@ func NewServer(cfg *config.Config, exec *executor.Executor, registry *platform.R
 		},
 		uiFS: embeddedUI,
 	}
-	// Apply options before setupRoutes so the route table reflects them (the
-	// /metrics endpoint and request instrumentation are conditional on them).
+	// Apply options before setupRoutes, which registers /metrics only if
+	// WithMetrics was given.
 	for _, opt := range opts {
 		opt(s)
 	}
-	// Open the durable run store best-effort unless a test injected one. A
-	// failure here leaves the /runs endpoints returning 503 rather than
-	// preventing the server from booting — the rest of the UI is unaffected.
+	// Open the run store unless one was supplied. If it fails, the /runs
+	// endpoints return 503 and the rest of the server still works.
 	if s.runStore == nil {
 		if path, err := store.DefaultPath(); err == nil {
 			if st, err := store.Open(context.Background(), path); err == nil {
@@ -124,8 +126,8 @@ func NewServer(cfg *config.Config, exec *executor.Executor, registry *platform.R
 		s.authEnabled = true
 		s.sessions = auth.NewSessionStore(0)
 		s.loginLimit = newLoginLimiter(loginMaxAttempts, loginWindow)
-		// Load users best-effort; an unreadable file leaves an empty store and
-		// the server logs a warning at start rather than refusing to boot.
+		// An unreadable users file leaves an empty store; the server logs a
+		// warning at start and keeps running.
 		if store, err := auth.LoadStore(auth.DefaultUsersPath(cfg.ProjectRoot)); err == nil {
 			s.users = store
 		} else {
@@ -157,9 +159,8 @@ func (s *Server) StartTLS(addr, certFile, keyFile string) error {
 }
 
 func (s *Server) httpServer(addr string) *http.Server {
-	// WriteTimeout is deliberately unset: the event stream (WebSocket and SSE)
-	// is a long-lived response that a write deadline would sever. Read/idle
-	// timeouts still bound slow-loris and idle connections.
+	// No WriteTimeout: it would cut off the long-lived WebSocket and SSE
+	// streams. The read and idle timeouts still limit slow and idle clients.
 	return &http.Server{
 		Addr:        addr,
 		Handler:     s.router,
@@ -208,9 +209,9 @@ func (s *Server) setupRoutes() {
 	s.router.PathPrefix("/").Handler(spaHandler(s.resolveUIFS()))
 }
 
-// resolveUIFS decides where the UI is served from and records a startup banner
-// (UIInfo) naming the source and the built bundle, so a stale server process is
-// obvious rather than silently serving old code.
+// resolveUIFS decides where the UI is served from and records, for UIInfo,
+// the source and the bundle's hash, so a server serving an old build is easy
+// to spot.
 func (s *Server) resolveUIFS() http.FileSystem {
 	if s.uiDir != "" {
 		s.uiSource = fmt.Sprintf("UI from disk (live): %s [%s]", s.uiDir, uiBundleName(http.Dir(s.uiDir)))
@@ -244,8 +245,8 @@ func (s *Server) UIInfo() string { return s.uiSource }
 
 var uiBundleRe = regexp.MustCompile(`assets/index-[A-Za-z0-9_-]+\.(?:js|css)`)
 
-// uiBundleName reads index.html and returns the hashed entry-bundle filename,
-// which changes on every UI build — the fingerprint that tells two builds apart.
+// uiBundleName reads index.html and returns the entry bundle's filename, whose
+// hash changes on every UI build.
 func uiBundleName(fsys http.FileSystem) string {
 	f, err := fsys.Open("index.html")
 	if err != nil {
@@ -287,9 +288,8 @@ func spaHandler(fsys http.FileSystem) http.Handler {
 	})
 }
 
-// registerAPI wires the shared middleware chain and the full route table onto
-// the /api/v2 subrouter, the only API surface. A future version would mount a
-// second prefix here rather than branching inside handlers.
+// registerAPI adds the middleware chain and every route to the /api/v2
+// subrouter.
 func (s *Server) registerAPI(api *mux.Router) {
 	// Middleware, outermost first. The request ID is set before anything can
 	// reject the request, so even CORS/auth failures carry a correlation ID.
@@ -299,9 +299,8 @@ func (s *Server) registerAPI(api *mux.Router) {
 	api.Use(s.accessLogMiddleware)
 	api.Use(corsMiddleware)
 	api.Use(jsonMiddleware)
-	// Auth middleware is a pass-through when LABCTL_AUTH is off, so the local
-	// experience is unchanged. When on, it gates every /api route except the
-	// auth endpoints below and enforces operator-only mutations.
+	// With LABCTL_AUTH on, every route except the auth endpoints needs a
+	// session, and operator-only changes need the operator role.
 	api.Use(s.authMiddleware)
 	// Request instrumentation, innermost so it measures the handler itself.
 	// Only active when metrics are enabled.
@@ -434,8 +433,8 @@ func respondJSON(w http.ResponseWriter, status int, data any) {
 	_ = json.NewEncoder(w).Encode(data)
 }
 
-// respondError writes an RFC 7807 problem+json body. code becomes the stable
-// machine-readable `type` slug clients branch on.
+// respondError writes an RFC 7807 problem+json error. code becomes the `type`
+// slug clients branch on; it must be listed in knownProblemSlugs.
 func respondError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
 	respondProblem(w, r, status, code, msg)
 }

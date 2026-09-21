@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package scenario
 
-// Repo-wide scenario validation: every scenario.yaml checked into this
-// repository must parse, validate against the schema, and pass static
-// preflight (asset files, prerequisite dirs). This runs in CI on every PR,
-// so a broken or malformed scenario can never reach main.
+// These tests check every scenario.yaml in the repository: it must parse,
+// pass schema validation, and pass the file checks in preflight.
 
 import (
 	"os"
@@ -84,8 +83,8 @@ func TestRepoScenarios_PreflightPassesStatically(t *testing.T) {
 	}
 }
 
-// TestRepoScenarios_ObservabilityIsV2 pins the task-040 acceptance criteria:
-// the reference v2 migration must keep its stages, objectives, and checks.
+// TestRepoScenarios_ObservabilityIsV2 checks that observability-sre, the
+// reference v2 scenario, keeps its stages, objectives and checks.
 func TestRepoScenarios_ObservabilityIsV2(t *testing.T) {
 	root := repoRoot(t)
 	engine := NewEngine(root, "k3d.local", "")

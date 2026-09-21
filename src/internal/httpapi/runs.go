@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -12,15 +13,13 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
-// The run console is a read-mostly view over the durable run store:
-// list recorded runs, open one to watch its timeline and live transcript, and
-// cancel one that is still going. The store is the same database labctl writes
-// through the run engine, so the console shows runs whichever process created
-// them — the HTTP server itself does not execute runs (ADR-0006: consumers
-// stream from a cursor rather than attaching to a live process).
+// The run console endpoints list recorded runs, show one run's steps and
+// transcript, and cancel a run in progress. They read the same run store the
+// CLI writes, so they show runs from any labctl process. The HTTP server does
+// not execute these runs itself (ADR-0006).
 
-// runView is the API shape of a run. store.Run is exposed through this DTO so
-// the wire format is explicit and stable, and durations are milliseconds.
+// runView is the API representation of a store.Run. Durations are in
+// milliseconds.
 type runView struct {
 	ID         string     `json:"id"`
 	Kind       string     `json:"kind"`
@@ -140,10 +139,8 @@ func (s *Server) handleRunGet(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, detail)
 }
 
-// handleRunLogs returns a run's transcript from the ?after cursor forward, along
-// with the cursor for the next poll and whether the run is finished. This is the
-// same cursor-forward read the CLI uses, so a reconnecting client never skips or
-// duplicates a line (ADR-0006).
+// handleRunLogs returns a run's transcript after the ?after cursor, the cursor
+// for the next poll, and whether the run has finished (ADR-0006).
 func (s *Server) handleRunLogs(w http.ResponseWriter, r *http.Request) {
 	if s.runStore == nil {
 		respondError(w, r, http.StatusServiceUnavailable, "unavailable", "the run store is not available")
@@ -174,10 +171,9 @@ func (s *Server) handleRunLogs(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, out)
 }
 
-// handleRunCancel records a cancellation request for a run. Like `labctl runs
-// cancel`, when the server is not the process executing the run it writes the
-// intent and terminal state to the store; the owning engine (if any) observes it
-// and stops. Being explicit beats pretending to kill a process we don't own.
+// handleRunCancel cancels a run. Like `labctl runs cancel`, when the run
+// belongs to another process it writes the cancellation to the store, and the
+// engine running it, if any, stops it.
 func (s *Server) handleRunCancel(w http.ResponseWriter, r *http.Request) {
 	if s.runStore == nil {
 		respondError(w, r, http.StatusServiceUnavailable, "unavailable", "the run store is not available")

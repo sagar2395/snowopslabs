@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -12,7 +13,7 @@ func TestExpandVars(t *testing.T) {
 	cases := []struct {
 		in, suffix, want string
 	}{
-		// ${VAR:-default} default form — the case that broke module 2.
+		// ${VAR:-default} form.
 		{"http://go-api.${DOMAIN_SUFFIX:-k3d.local}/health", "prod.internal", "http://go-api.prod.internal/health"},
 		// default applies when the suffix is empty.
 		{"http://go-api.${DOMAIN_SUFFIX:-k3d.local}/health", "", "http://go-api.k3d.local/health"},

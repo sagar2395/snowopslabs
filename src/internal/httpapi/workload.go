@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -11,13 +12,9 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/workload"
 )
 
-// WorkloadResp is the binding a piece of content will run against: which app,
-// deployed where, reachable how.
-//
-// It travels with every scenario and fault the API serves. Content names the
-// binding rather than an app (ADR-0014), so without this the UI could only show
-// the resolved strings and had no way to say what produced them — or to offer
-// another app.
+// WorkloadResp is the workload a scenario or fault runs against: which app,
+// deployed where, and how to reach it. Every scenario and fault response
+// includes it, so the UI can show and change the app.
 type WorkloadResp struct {
 	App       string `json:"app"`
 	Namespace string `json:"namespace"`
@@ -37,36 +34,22 @@ func workloadResp(w workload.Workload) WorkloadResp {
 	}
 }
 
-// bindMu serialises the operations that CHANGE the engines' workload binding —
-// activation, injection, teardown, verification. The engines are shared, so two
-// of those against different apps must not interleave.
+// bindMu serialises operations that need a workload binding: activation,
+// injection, teardown and verification. They set WORKLOAD_* on the shared
+// executor, so two of them for different apps must not overlap.
 //
-// Read paths must never take it. An injection holds it for minutes, and a list
-// endpoint that waited on it made the whole UI hang for the length of the
-// injection it was displaying. Reads resolve against an explicit binding from
-// boundWorkload instead, which mutates nothing.
+// Read handlers must not take it: an injection can hold it for minutes. They
+// use boundWorkload instead.
 var bindMu sync.Mutex
 
 // workloadEnvKeys are the script-environment variables a binding owns.
 var workloadEnvKeys = []string{"WORKLOAD_NAME", "WORKLOAD_NAMESPACE", "WORKLOAD_PORT", "WORKLOAD_METRIC"}
 
-// withWorkload binds both engines to app for the duration of one operation and
-// returns the restore function. An empty app keeps the current binding, so a
-// client that does not care about the workload behaves exactly as before.
-//
-// The executor environment is bound too: component and fault scripts read
-// WORKLOAD_* from it, so a binding that stopped at the engines would grade one
-// app while the scripts acted on another.
-// withWorkload prepares the engines for one mutating operation bound to app, and
-// returns them alongside the function that ends the operation.
-//
-// The engines it hands back are clones: the shared ones are never rebound, so a
-// list request served while an injection runs is unaffected by it. What is
-// genuinely shared — the executor environment the scripts read WORKLOAD_* from —
-// is what the lock protects, and it is restored on release.
-//
-// An empty app keeps the current binding, so a client that does not care about
-// the workload behaves exactly as before.
+// withWorkload takes bindMu and returns copies of both engines bound to app,
+// plus a release function that restores the executor environment and unlocks.
+// The shared engines are never rebound. It also sets WORKLOAD_* on the shared
+// executor, because component and fault scripts read the app from there. An
+// empty app keeps the current binding.
 func (s *Server) withWorkload(app string) (*scenario.Engine, *incident.Engine, func(), error) {
 	bindMu.Lock()
 
@@ -124,9 +107,9 @@ func (s *Server) withWorkload(app string) (*scenario.Engine, *incident.Engine, f
 	return scenes, incidents, release, nil
 }
 
-// boundWorkload resolves an app name to a binding without touching the engines,
-// falling back to whatever is currently bound. Read handlers use it to describe
-// content against the right app while another request is mid-injection.
+// boundWorkload returns the binding for the named app without changing the
+// engines, or the current binding if the name is empty or unknown. Read
+// handlers use it instead of withWorkload.
 func (s *Server) boundWorkload(app string) workload.Workload {
 	current := workload.Workload{}
 	if s.scenes != nil {
@@ -144,8 +127,8 @@ func (s *Server) boundWorkload(app string) workload.Workload {
 	return cfg.Workload()
 }
 
-// activeIncidentWorkload is the binding the active fault was injected into, or
-// the current one when nothing is active.
+// activeIncidentWorkload returns the binding the active fault was injected
+// into, or the current binding when no incident is active.
 func (s *Server) activeIncidentWorkload() workload.Workload {
 	app := ""
 	if s.incidents != nil {

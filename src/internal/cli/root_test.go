@@ -14,11 +14,8 @@ import (
 
 // TestMainStaysTrivial guards ADR-0005's entrypoint rule.
 //
-// cmd/labctl contributes no statements to the coverage profile, so the coverage
-// gate never evaluates it. That is only acceptable while there is nothing there
-// worth evaluating. This test makes "nothing worth evaluating" an enforced
-// property rather than a hope: main() must do one thing, and any logic that
-// creeps in belongs in internal/cli where it can be tested.
+// The coverage gate does not measure cmd/labctl, so main must contain no
+// logic: it only calls internal/cli, where code is tested.
 func TestMainStaysTrivial(t *testing.T) {
 	path := filepath.Join("..", "..", "cmd", "labctl", "main.go")
 	src, err := os.ReadFile(path)
@@ -37,10 +34,8 @@ func TestMainStaysTrivial(t *testing.T) {
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
 		if !ok {
-			// Any var/const/type declaration is state that wants testing — with
-			// one allowed exception: `var version`, stamped by the linker via
-			// -X main.version at release time. It carries no logic and cannot
-			// live in internal/cli (ldflags target the main package).
+			// No declarations except `var version`, which the linker sets
+			// with -X main.version and so must be in package main.
 			if gen, ok := decl.(*ast.GenDecl); ok && gen.Tok != token.IMPORT {
 				if !isVersionVar(gen) {
 					otherDecls = append(otherDecls, gen.Tok.String())
@@ -64,8 +59,7 @@ func TestMainStaysTrivial(t *testing.T) {
 			"where the coverage gate applies (ADR-0005)", strings.Join(otherDecls, ", "))
 	}
 
-	// One statement: hand off to internal/cli. Anything more is logic hiding
-	// in the one package nothing measures.
+	// main must be a single call into internal/cli.
 	if n := len(mainFn.Body.List); n > 1 {
 		t.Errorf("main() has %d statements, want 1 — cmd/labctl is an entrypoint only (ADR-0005). "+
 			"Move the logic into internal/cli so it can be tested.", n)
@@ -85,12 +79,9 @@ func isVersionVar(gen *ast.GenDecl) bool {
 	return vs.Names[0].Name == "version"
 }
 
-// TestPersistentPreRunSkipsEnvironmentDependentCommands ensures the commands
-// that must work in a broken environment are exempt from the heavy
-// initialisation in PersistentPreRunE.
-//
-// doctor is the obvious one: a command whose job is diagnosing a broken
-// environment is useless if a broken environment stops it from starting.
+// TestPersistentPreRunSkipsEnvironmentDependentCommands checks that commands
+// which must work in a broken environment, such as doctor, skip the setup in
+// PersistentPreRunE.
 func TestPersistentPreRunSkipsEnvironmentDependentCommands(t *testing.T) {
 	path := "root.go"
 	src, err := os.ReadFile(path)

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -101,7 +102,7 @@ func TestWSLDoctorNotes(t *testing.T) {
 	if len(notes) == 0 {
 		t.Fatal("expected WSL doctor notes")
 	}
-	// The Windows hosts-file caveat is the whole point — assert it is present.
+	// The note about the Windows hosts file must be present.
 	found := false
 	for _, n := range notes {
 		if strings.Contains(n, `drivers\etc\hosts`) {

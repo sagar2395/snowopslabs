@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -42,8 +43,8 @@ func TestEtagFor_StableAndContentSensitive(t *testing.T) {
 	}
 }
 
-// A catalog read must carry an ETag, and a follow-up request that echoes it in
-// If-None-Match must get 304 with no body — the whole point of conditional GET.
+// A catalog read must carry an ETag, and a request that sends it back in
+// If-None-Match must get 304 with no body.
 func TestCatalogRead_ETagThen304(t *testing.T) {
 	s := newChallengeServer(t)
 	s.setupRoutes()

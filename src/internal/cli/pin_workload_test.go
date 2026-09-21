@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -7,9 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Challenges and learning paths compose scenarios and incidents by reference, so
-// the workload binding flows into them unless it is pinned. They are scored and
-// timed, and a score is only comparable against a fixed workload.
+// Challenges and learning paths must always use the default workload, so
+// their scores stay comparable.
 func TestPinsWorkload(t *testing.T) {
 	newTree := func(parent string, child string) *cobra.Command {
 		p := &cobra.Command{Use: parent}

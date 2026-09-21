@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -13,20 +14,15 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/toolchain"
 )
 
-// The durable-engine service commands (`labctl lab`, `labctl platform`) share
-// this bootstrap: they each open the run store, build a run engine over the real
-// toolchain, submit work through their service, and stream the recorded run to
-// the terminal. Keeping the wiring here means lab and platform stay identical in
-// how they start, stream, and clean up — only their domain (Kind, lock key,
-// script) differs.
+// The commands that run through the run engine (lab, platform, scenario,
+// incident) share this setup: open the run store, build a run engine, submit
+// work through a service, and stream the run to the terminal.
 
-// newRunEngine opens the default run store and builds an UN-started run engine
-// over the real toolchain, rooted at the project. The engine is returned
-// un-started on purpose: a mutating command calls Start (which reconciles
-// orphaned runs), while a read-only status command must not — starting an engine
-// for a status read would cancel an operation running in another terminal.
-// cleanup shuts the engine down (a no-op if it was never started) and closes the
-// store; callers must always defer it.
+// newRunEngine opens the default run store and builds a run engine that is not
+// yet started. Commands that change state call Start; read-only commands must
+// not, because Start cancels runs it thinks were interrupted, including one
+// running in another terminal. Always defer cleanup, which shuts the engine
+// down and closes the store.
 func newRunEngine(ctx context.Context) (*run.Engine, *store.Store, func(), error) {
 	dbPath, err := store.DefaultPath()
 	if err != nil {
@@ -41,10 +37,8 @@ func newRunEngine(ctx context.Context) (*run.Engine, *store.Store, func(), error
 		_ = st.Close()
 		return nil, nil, nil, err
 	}
-	// The inventory recorder keeps the store's component inventory in step with
-	// what the engine installs/uninstalls, so teardown knows exactly
-	// what to remove. It ignores run kinds it doesn't recognise, so it is safe to
-	// attach for lab runs too.
+	// Keep the component inventory up to date with installs and uninstalls.
+	// The recorder ignores other run kinds.
 	recorder := inventory.NewRecorder(st)
 	eng, err := run.New(st, toolchain.NewExec(), resolver,
 		run.WithWorkingDir(cfg.ProjectRoot),
@@ -66,9 +60,9 @@ func shutdownEngine(eng *run.Engine) error {
 	return eng.Shutdown(ctx)
 }
 
-// scriptEnv mirrors the config values the executor path propagates, so the
-// runtime and platform scripts see the same environment whichever path drives
-// them (golden rule 3: scripts read ${VAR:-default}, never source .env).
+// scriptEnv returns the environment scripts run with through the run engine:
+// the same values scriptExec passes, since scripts read their settings from
+// the environment and never source .env.
 func scriptEnv() map[string]string {
 	return map[string]string{
 		"CLUSTER_NAME":         cfg.ClusterName,
@@ -81,9 +75,8 @@ func scriptEnv() map[string]string {
 		"PROFILE":              cfg.Profile,
 		"MONITORING_NAMESPACE": cfg.MonitoringNamespace,
 
-		// The workload a scenario or fault is bound to, so a component script
-		// acts on the chosen application instead of hardcoding one (ADR-0014).
-		// Incident scripts additionally get TARGET_* from the fault's own target.
+		// The bound workload (ADR-0014). Incident scripts also get TARGET_*
+		// from the fault's target.
 		"WORKLOAD_NAME":      scenes.Workload.Name,
 		"WORKLOAD_NAMESPACE": scenes.Workload.Namespace,
 		"WORKLOAD_PORT":      scenes.Workload.Port,
@@ -95,17 +88,15 @@ func scriptEnv() map[string]string {
 // verb names the operation in the start line and the failure message, e.g.
 // "lab up" or "install ingress/traefik".
 func runEngineOperation(ctx context.Context, out io.Writer, eng *run.Engine, st *store.Store, verb string, submit func() (string, error)) error {
-	// Only a mutating op starts the engine (and thus orphan reconciliation).
 	if err := eng.Start(ctx); err != nil {
 		return err
 	}
 	return streamSubmittedRun(ctx, out, st, verb, submit)
 }
 
-// streamSubmittedRun submits one operation via submit, streams its transcript to
-// out, and returns a non-nil error if the run did not succeed (so the command
-// exits non-zero). It assumes the engine is already started — a batch (teardown)
-// starts the engine once and streams many runs through this.
+// streamSubmittedRun submits one operation, streams its transcript to out, and
+// returns an error if the run did not succeed. The engine must already be
+// started.
 func streamSubmittedRun(ctx context.Context, out io.Writer, st *store.Store, verb string, submit func() (string, error)) error {
 	id, err := submit()
 	if err != nil {

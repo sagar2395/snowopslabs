@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -122,7 +123,6 @@ After completing the task, run this again to verify the check and advance.`,
 			m := p.Modules[idx]
 			out := cmd.OutOrStdout()
 
-			// Print intro if present.
 			intro, err := eng.IntroText(p, m)
 			if err == nil && intro != "" {
 				fmt.Fprintln(out, intro)
@@ -136,7 +136,6 @@ After completing the task, run this again to verify the check and advance.`,
 				return nil
 			}
 
-			// Run the completion check.
 			fmt.Fprintf(out, "Verifying check %q...\n", m.Check.Name)
 			c := checksCheck(m.Check, p.Dir(), cfg.DomainSuffix)
 			runner := checks.NewRunner()
@@ -181,7 +180,6 @@ func learnProgressCmd() *cobra.Command {
 				return printPathProgress(eng, args[0], w)
 			}
 
-			// Show all paths.
 			paths, err := eng.Paths()
 			if err != nil {
 				return err
@@ -261,11 +259,10 @@ func progressSummary(p *learn.Path, prog *learn.Progress) string {
 	return fmt.Sprintf("%d/%d", len(prog.CompletedIdxs), len(p.Modules))
 }
 
-// expandVars resolves shell-style variable references in learning-path check
-// fields — both ${VAR} and the ${VAR:-default} default form — using the
-// configured DOMAIN_SUFFIX first and then the process environment. This lets
-// path authors write portable URLs like http://go-api.${DOMAIN_SUFFIX:-k3d.local}
-// without the raw ${...} leaking into url.Parse (which rejects the ":-" as a port).
+// expandVars expands ${VAR} and ${VAR:-default} in learning-path check
+// fields, using the configured domain suffix for DOMAIN_SUFFIX and the process
+// environment for everything else. Authors can then write URLs such as
+// http://go-api.${DOMAIN_SUFFIX:-k3d.local}.
 func expandVars(s, domainSuffix string) string {
 	return os.Expand(s, func(name string) string {
 		key, def := name, ""

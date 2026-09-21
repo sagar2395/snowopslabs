@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package compare
 
 import (
@@ -13,13 +14,9 @@ import (
 	"time"
 )
 
-// Store persists comparison reports as append-only JSONL, the same shape the
-// results history uses.
-//
-// ADR-0014 §6 requires results persisted per (scenario, workload) pair, and the
-// reason is the fairness rule: a number is only comparable against another taken
-// under the same conditions, so the conditions are stored with it and a report
-// is never split into per-app rows that could be recombined across runs.
+// Store keeps comparison reports in an append-only JSONL file. Each line is a
+// whole report with its conditions, so results from different runs are never
+// mixed.
 type Store struct{ path string }
 
 // NewStore returns a store backed by <dir>/comparisons.jsonl.
@@ -41,8 +38,7 @@ func reportID(r *Report) string {
 	return r.StartedAt.UTC().Format("20060102-150405") + "-" + r.Scenario
 }
 
-// Append records a report. A run that measured nothing is not recorded — an
-// empty comparison in the history is noise a reader has to rule out.
+// Append records a report. A report with no measurements is not recorded.
 func (s *Store) Append(r *Report) (string, error) {
 	if r == nil || len(r.Measurements) == 0 {
 		return "", nil
@@ -63,9 +59,8 @@ func (s *Store) Append(r *Report) (string, error) {
 		_ = f.Close()
 		return "", err
 	}
-	// Closed explicitly, not deferred: on a write, Close is where a buffered
-	// error surfaces, and swallowing it would report a run as recorded that is
-	// not on disk.
+	// Close explicitly and check the error: a failed write can surface only
+	// at Close.
 	if err := f.Close(); err != nil {
 		return "", err
 	}
@@ -74,9 +69,7 @@ func (s *Store) Append(r *Report) (string, error) {
 
 // List returns every recorded report, newest first.
 //
-// A line that will not parse is skipped rather than failing the read: the file
-// is appended to by every run, and one truncated write should not make the
-// whole history unreadable.
+// A line that does not parse, such as a truncated write, is skipped.
 func (s *Store) List() ([]*Report, []string, error) {
 	f, err := os.Open(s.path)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -85,7 +78,6 @@ func (s *Store) List() ([]*Report, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	// Read-only: nothing is lost if the close fails.
 	defer func() { _ = f.Close() }()
 
 	var reps []*Report

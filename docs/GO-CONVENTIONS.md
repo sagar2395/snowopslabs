@@ -161,6 +161,15 @@ gets its own copies.
   `go doc` shows it there.
 - Say why, not what. Keep comments under three lines and leave out task and
   ticket numbers ([invariants](AGENT-CONTEXT.md#invariants)).
+- Describe the code as it is now. A reader should understand it without
+  knowing its history, so leave out "used to", "v1", "the old path" and
+  accounts of past bugs. Put that story in the commit message.
+- Delete comments that repeat the code, such as `// Get pods` above a call
+  to `GetPods`.
+- Every package has exactly one `// Package x ...` comment, in its main file.
+  Leave a blank line between the `// SPDX-License-Identifier` header and
+  `package`. Without it, Go treats the licence line as the package's
+  documentation.
 
 ## 9. Linting
 

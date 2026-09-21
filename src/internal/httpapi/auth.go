@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -11,15 +12,14 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/results"
 )
 
-// actingUser returns the user to attribute result records to: the authenticated
-// API user when auth is on, otherwise the OS username (so behaviour is unchanged
-// when auth is disabled).
+// actingUser returns the user to record results under: the authenticated API
+// user when auth is on, otherwise the OS username.
 func actingUser(r *http.Request) string {
 	return results.UserOr(auth.UserFromContext(r.Context()))
 }
 
 // authMiddleware enforces authentication and role-based access when auth is
-// enabled. When disabled it is a transparent pass-through (no behaviour change).
+// enabled. When auth is off it passes every request through.
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.authEnabled {
@@ -48,9 +48,9 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// isAuthEndpoint reports whether path is one of the always-open auth endpoints,
-// under either the /api or /api/v2 prefix (checked longest-first). These must
-// stay reachable without a session, or nobody could ever log in.
+// isAuthEndpoint reports whether path is one of the auth endpoints, under the
+// /api or /api/v2 prefix. They must be reachable without a session so users
+// can log in.
 func isAuthEndpoint(path string) bool {
 	for _, prefix := range []string{"/api/v2", "/api"} {
 		if rest, ok := strings.CutPrefix(path, prefix); ok {
@@ -63,15 +63,11 @@ func isAuthEndpoint(path string) bool {
 	return false
 }
 
-// isSecureRequest reports whether the request arrived over a secure transport,
-// so the session cookie can carry the Secure flag when — and only when — the
-// browser would send it back. Direct TLS sets r.TLS; a TLS-terminating proxy
-// signals it via X-Forwarded-Proto. Plain localhost HTTP stays non-Secure so
-// the cookie still works there.
-//
-// Forging X-Forwarded-Proto only ever adds Secure to the forger's own cookie;
-// stripping it from someone else's needs the proxy hop, which sees the traffic
-// anyway.
+// isSecureRequest reports whether the request arrived over TLS, directly
+// (r.TLS) or through a TLS-terminating proxy (X-Forwarded-Proto: https). The
+// session cookie gets the Secure flag only then, so it still works over plain
+// HTTP on localhost. A forged header can only add Secure to the sender's own
+// cookie.
 func isSecureRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
@@ -128,8 +124,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusBadRequest, "invalid_request", "username and password are required")
 		return
 	}
-	// Rate-limit by client address before doing any (expensive, memory-hard)
-	// password verification, so a credential-stuffing loop is cut off cheaply.
+	// Rate-limit by client address before the expensive password check.
 	limitKey := clientAddr(r)
 	if s.loginLimit != nil {
 		if ok, retryAfter := s.loginLimit.allow(limitKey); !ok {
@@ -154,8 +149,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//nolint:gosec // G124: HttpOnly and SameSite=Strict always apply; Secure
-	// tracks TLS so the cookie still works over localhost HTTP. Spoofing
-	// X-Forwarded-Proto can only ADD Secure to the spoofer's own cookie.
+	// follows the transport; see isSecureRequest.
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.CookieName,
 		Value:    sess.Token,

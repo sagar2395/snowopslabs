@@ -3,12 +3,9 @@
 // Package metrics is a tiny, dependency-free metrics registry that renders the
 // Prometheus text exposition format (version 0.0.4).
 //
-// It exists so labctl can expose an optional /metrics endpoint without pulling
-// in prometheus/client_golang and its transitive dependencies — the project is
-// deliberately cgo-free and thin on dependencies (ADR-0002). The metric set is
-// small and its label cardinality is bounded and known, so a hand-rolled
-// registry is enough; if the surface grows past what this comfortably handles,
-// swapping in client_golang behind the same call sites is a contained change.
+// It lets labctl serve an optional /metrics endpoint without depending on
+// prometheus/client_golang. labctl has few metrics with few label values, so a
+// small registry is enough.
 package metrics
 
 import (
@@ -70,8 +67,8 @@ type counterChild struct {
 	val float64
 }
 
-// NewCounterVec registers a counter family. Panics on a malformed name or
-// duplicate label — a programming error, caught the first time it runs.
+// NewCounterVec registers a counter family. It panics on a malformed name or a
+// duplicate label, which are programming errors.
 func (r *Registry) NewCounterVec(name, help string, labels ...string) *CounterVec {
 	mustValidName(name)
 	mustValidLabels(labels)
@@ -169,8 +166,10 @@ func (g *GaugeVec) Add(delta float64, labelValues ...string) {
 	g.mu.Unlock()
 }
 
-// Inc and Dec are Add(±1) on an unlabeled gauge (no label values).
+// Inc adds 1 to the identified gauge.
 func (g *GaugeVec) Inc(labelValues ...string) { g.Add(1, labelValues...) }
+
+// Dec subtracts 1 from the identified gauge.
 func (g *GaugeVec) Dec(labelValues ...string) { g.Add(-1, labelValues...) }
 
 func (g *GaugeVec) render(sb *strings.Builder) {
@@ -352,9 +351,8 @@ var helpEscaper = strings.NewReplacer(`\`, `\\`, "\n", `\n`)
 func escapeLabelValue(s string) string { return labelValueEscaper.Replace(s) }
 func escapeHelp(s string) string       { return helpEscaper.Replace(s) }
 
-// labelKey joins label values into a map key that cannot collide across
-// different value tuples (a real separator byte that cannot appear mid-value
-// is unnecessary — values are joined with a NUL, which argv never contains).
+// labelKey joins label values with NUL bytes into a map key. Label values
+// never contain NUL, so different value lists cannot produce the same key.
 func labelKey(values []string) string { return strings.Join(values, "\x00") }
 
 func lessLabels(a, b []string) bool {
@@ -366,7 +364,7 @@ func lessLabels(a, b []string) bool {
 	return len(a) < len(b)
 }
 
-// ── Name validation (cheap guard against malformed metric definitions) ────────
+// ── Name validation ──────────────────────────────────────────────────────────
 
 func mustValidName(name string) {
 	if !validIdent(name) {
@@ -387,8 +385,8 @@ func mustValidLabels(labels []string) {
 	}
 }
 
-// validIdent matches Prometheus's [a-zA-Z_][a-zA-Z0-9_]* (colons are legal in
-// metric names but reserved for recording rules, so we disallow them here).
+// validIdent matches [a-zA-Z_][a-zA-Z0-9_]*. Prometheus allows colons in
+// metric names but reserves them for recording rules, so they are rejected.
 func validIdent(s string) bool {
 	if s == "" {
 		return false

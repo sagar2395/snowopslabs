@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -43,8 +44,7 @@ var uiCmd = &cobra.Command{
 		if uiTLSCert != "" {
 			scheme = "https"
 		}
-		// Show localhost for a loopback bind (friendlier link); otherwise the
-		// actual bind host so the user knows what is exposed.
+		// Show "localhost" for a loopback bind, otherwise the bind address.
 		host := uiBind
 		if httpapi.IsLoopbackHost(uiBind) {
 			host = "localhost"
@@ -54,7 +54,6 @@ var uiCmd = &cobra.Command{
 		fmt.Printf("Starting labctl web UI at %s\n", url)
 		fmt.Println("Press Ctrl+C to stop.")
 
-		// Try to open browser
 		go openBrowser(url)
 
 		ln, err := net.Listen("tcp", addr)
@@ -63,7 +62,6 @@ var uiCmd = &cobra.Command{
 		}
 		_ = ln.Close()
 
-		// Use embedded UI assets (sub-directory "dist" within the embed.FS)
 		uiFS, _ := fs.Sub(webui.DistFS, "dist")
 
 		// Optional Prometheus endpoint, off unless LABCTL_METRICS=true.
@@ -77,7 +75,7 @@ var uiCmd = &cobra.Command{
 		}
 
 		server := httpapi.NewServer(cfg, scriptExec, reg, scenes, incEng, svcReg, rtm, uiFS, opts...)
-		// Name the exact bundle being served so a stale process is obvious.
+		// Print which UI build is served, so an old one is easy to spot.
 		fmt.Printf("Serving %s\n", server.UIInfo())
 		if uiTLSCert != "" {
 			return server.StartTLS(addr, uiTLSCert, uiTLSKey)
@@ -87,10 +85,8 @@ var uiCmd = &cobra.Command{
 }
 
 func openBrowser(url string) {
-	// Opening the browser is fire-and-forget (Start, not Wait): the launched
-	// process outlives this call, so a context would have nothing to cancel.
-	// We try candidate openers in order and stop at the first that launches —
-	// on WSL the Windows openers are tried before the Linux xdg-open fallback.
+	// Start each opener without waiting for it, and stop at the first that
+	// launches. There is nothing to cancel, so no context is used.
 	candidates := browserCommands(runtime.GOOS, isWSL(), url)
 	var lastErr error
 	for _, c := range candidates {

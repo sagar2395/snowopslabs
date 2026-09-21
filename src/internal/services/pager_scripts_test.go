@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package services
 
 // Executes the services/pager shell scripts against a stub kubectl so
@@ -19,9 +20,7 @@ func repoRoot(t *testing.T) string {
 		t.Fatalf("getwd: %v", err)
 	}
 	for {
-		// The content root carries the root Makefile alongside scenarios/;
-		// the shell services now live under src/services/ (see the script path
-		// in runPagerScript).
+		// The content root has both scenarios/ and the root Makefile.
 		if dirInfo, err := os.Stat(filepath.Join(dir, "scenarios")); err == nil && dirInfo.IsDir() {
 			if mk, err := os.Stat(filepath.Join(dir, "Makefile")); err == nil && !mk.IsDir() {
 				return dir

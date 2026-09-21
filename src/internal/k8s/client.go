@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package k8s reads cluster state by running kubectl: cluster info, pods,
+// deployments, autoscalers, namespaces and Helm releases.
 package k8s
 
 import (
@@ -66,7 +69,6 @@ type HPAStatus struct {
 func GetClusterInfo(ctx context.Context) (*ClusterInfo, error) {
 	info := &ClusterInfo{}
 
-	// Get current context
 	ctxOut, err := kubectl(ctx, "config", "current-context")
 	if err != nil {
 		return info, nil //nolint:nilerr // no current-context means not connected — report empty info, not an error
@@ -74,13 +76,12 @@ func GetClusterInfo(ctx context.Context) (*ClusterInfo, error) {
 	info.Context = ctxOut
 	info.Connected = true
 
-	// Get server URL
 	serverOut, err := kubectl(ctx, "config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
 	if err == nil {
 		info.Server = serverOut
 	}
 
-	// Get k8s version via structured JSON (--short is deprecated since 1.24).
+	// JSON output, because kubectl deprecated --short.
 	info.K8sVersion = "unknown"
 	versionJSON, err := kubectl(ctx, "version", "-o", "json")
 	if err == nil {
@@ -94,7 +95,6 @@ func GetClusterInfo(ctx context.Context) (*ClusterInfo, error) {
 		}
 	}
 
-	// Get node count
 	nodesOut, err := kubectl(ctx, "get", "nodes", "--no-headers")
 	if err == nil && nodesOut != "" {
 		info.NodeCount = len(strings.Split(strings.TrimSpace(nodesOut), "\n"))
@@ -161,13 +161,11 @@ func GetAppStatus(ctx context.Context, appName, namespace string) (*AppStatus, e
 		Namespace: namespace,
 	}
 
-	// Check if the namespace exists
 	_, err := kubectl(ctx, "get", "namespace", namespace, "--no-headers")
 	if err != nil {
 		return status, nil //nolint:nilerr // a missing namespace means the app is simply not deployed
 	}
 
-	// Get deployment info
 	deplOut, err := kubectl(ctx, "get", "deployment", "-n", namespace, "--no-headers",
 		"-o", "custom-columns=NAME:.metadata.name,REPLICAS:.spec.replicas,READY:.status.readyReplicas,AVAILABLE:.status.availableReplicas")
 	if err == nil && deplOut != "" {
@@ -184,7 +182,6 @@ func GetAppStatus(ctx context.Context, appName, namespace string) (*AppStatus, e
 		}
 	}
 
-	// Get pods
 	pods, err := GetNamespacePods(ctx, namespace)
 	if err == nil {
 		status.Pods = pods
@@ -226,9 +223,8 @@ type hpaMetric struct {
 	} `json:"resource"`
 }
 
-// parseHPAList finds the HPA whose scaleTargetRef points at deploymentName and
-// returns its structured status. Kept as a pure function (no kubectl) so it can
-// be unit-tested with fixture JSON.
+// parseHPAList finds the HPA in `kubectl get hpa -o json` output whose
+// scaleTargetRef is deploymentName, and returns its status.
 func parseHPAList(raw, deploymentName string) (*HPAStatus, error) {
 	var list struct {
 		Items []struct {
@@ -323,9 +319,8 @@ func metricNameAndValue(m hpaMetric, target bool) (name, value string) {
 // word (e.g. "s0-prometheus-go_api_requests_per_second" or "s0-kafka-lag").
 var kedaScalerPrefix = regexp.MustCompile(`^s\d+-(?:prometheus|kafka|cron|cpu|memory)-`)
 
-// cleanMetricName strips KEDA's scaler prefix so the UI shows the raw metric a
-// learner declared, not KEDA's internal registration name. The bare "s0-" form
-// (no scaler-type word) is stripped too.
+// cleanMetricName strips KEDA's scaler prefix, so the UI shows the metric name
+// the learner wrote.
 func cleanMetricName(name string) string {
 	if cleaned := kedaScalerPrefix.ReplaceAllString(name, ""); cleaned != name {
 		return cleaned
@@ -333,10 +328,9 @@ func cleanMetricName(name string) string {
 	return regexp.MustCompile(`^s\d+-`).ReplaceAllString(name, "")
 }
 
-// humanizeQuantity renders a Kubernetes quantity as a plain decimal. HPA metric
-// values below 1 come back in milli notation ("300m" = 0.3), which is opaque to
-// most users; this converts the common milli and plain-integer cases and leaves
-// anything else (binary suffixes, unusual units) untouched.
+// humanizeQuantity converts a milli quantity ("300m") or plain integer to a
+// decimal ("0.3"). Anything else, such as binary suffixes, is returned
+// unchanged.
 func humanizeQuantity(q string) string {
 	if before, ok := strings.CutSuffix(q, "m"); ok {
 		if n, err := strconv.ParseInt(before, 10, 64); err == nil {
@@ -359,8 +353,7 @@ func NamespaceHealth(ctx context.Context, namespace string) (ready, total int, e
 	}
 	for _, p := range pods {
 		total++
-		// A finished Job pod is not a fault; counting it as unready would
-		// leave every namespace that ever ran one permanently degraded.
+		// A finished Job pod is not unhealthy, so it is not counted.
 		if p.Status == "Succeeded" || (p.Status == "Running" && allContainersReady(p.Ready)) {
 			ready++
 		}
@@ -391,16 +384,10 @@ func ServiceExists(ctx context.Context, namespace, name string) bool {
 	return err == nil
 }
 
-// HelmReleaseExists reports whether a Helm 3 release named `release` currently
-// exists in `namespace`. Helm 3 records each release as one or more Secrets
-// labelled `owner=helm,name=<release>`, so a matching Secret means the release
-// is present on the cluster.
-//
-// This is how we tell apart components that SHARE a namespace: prometheus,
-// grafana, loki and tempo all install into the monitoring namespace, so plain
-// namespace existence reads "installed" for all four the moment any one of them
-// lands. A missing namespace makes kubectl error, which returns false — exactly
-// what we want after a cluster teardown.
+// HelmReleaseExists reports whether a Helm release named release exists in
+// namespace, by looking for the Secrets Helm labels owner=helm,name=<release>.
+// It tells apart components that share a namespace, such as the monitoring
+// stack. A missing namespace or unreachable cluster returns false.
 func HelmReleaseExists(ctx context.Context, namespace, release string) bool {
 	if namespace == "" || release == "" {
 		return false

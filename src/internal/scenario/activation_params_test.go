@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package scenario
 
 import (
@@ -29,8 +30,8 @@ func TestActiveParamsRoundTrip(t *testing.T) {
 	}
 }
 
-// An activation from an older build wrote the literal text "active". It must
-// still read as active, with no parameters, rather than as a corrupt file.
+// A marker containing the plain text "active" reads as active with no
+// parameters.
 func TestActiveParamsReadsLegacyMarker(t *testing.T) {
 	dir := t.TempDir()
 	e := &Engine{stateDir: dir}
@@ -91,8 +92,7 @@ func TestActiveParamsMissingScenario(t *testing.T) {
 	}
 }
 
-// A scenario with no parameters keeps the plain marker, so nothing changes for
-// the scenarios that never had any.
+// A scenario with no parameters and no app gets the plain "active" marker.
 func TestMarkActiveWithoutParamsStaysPlain(t *testing.T) {
 	dir := t.TempDir()
 	e := &Engine{stateDir: dir}
@@ -108,10 +108,8 @@ func TestMarkActiveWithoutParamsStaysPlain(t *testing.T) {
 	}
 }
 
-// Down re-renders the same manifests the install rendered, so it must resolve
-// the same parameters. It did not, and a manifest carrying a {{.Param}} was
-// handed to `kubectl delete` unresolved: the delete failed, teardown reported
-// success, and the object was left behind.
+// Down renders the same manifests as the install, so it must expand
+// {{.Param}} with the same values, or `kubectl delete` gets a broken manifest.
 func TestWithActivationParamsScopesAndRestores(t *testing.T) {
 	e := &Engine{stateDir: t.TempDir()}
 	s := &Scenario{
@@ -140,8 +138,8 @@ func TestWithActivationParamsScopesAndRestores(t *testing.T) {
 	restore()
 }
 
-// The manifest that exposed this: unquoted so the CRD sees an integer, which
-// means it is only valid YAML once the parameter is substituted.
+// The parameter is unquoted so the CRD sees an integer, which makes the
+// manifest valid YAML only after substitution.
 func TestParamsResolveInsideAManifestBody(t *testing.T) {
 	e := &Engine{stateDir: t.TempDir()}
 	s := &Scenario{Name: "demo", Parameters: []Parameter{
@@ -158,9 +156,8 @@ func TestParamsResolveInsideAManifestBody(t *testing.T) {
 	}
 }
 
-// Verify and Down run in a later process than Up, so the binding cannot come
-// from ambient config: a scenario brought up against java-api was otherwise
-// graded and torn down against whatever APP_NAME happened to say.
+// Verify and Down must use the app the scenario was activated against, not
+// the current APP_NAME.
 func TestActivationRecordsTheAppItRanAgainst(t *testing.T) {
 	root := t.TempDir()
 	e := NewEngine(root, "k3d.local", "k3d")

@@ -122,10 +122,8 @@ func TestNewResolver(t *testing.T) {
 	})
 }
 
-// TestResolverContainment is the security-relevant test in this package. v1
-// joined a caller-supplied path onto the project root and ran the result, so a
-// traversal escaped happily. Content can come from an external root the user
-// pointed at, which makes this check load-bearing.
+// TestResolverContainment checks that no script path, relative, absolute or
+// via a symlink, can resolve outside the configured roots.
 func TestResolverContainment(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()

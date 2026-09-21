@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -31,15 +32,15 @@ func compareStore() *compare.Store {
 	return compare.NewStore(filepath.Join(cfg.ProjectRoot, ".labctl", "history"))
 }
 
-// cliLab drives a comparison through the same engines the equivalent commands
-// use, so a measured run and a hand-run one cannot diverge.
+// cliLab implements compare.Lab using the same engines as the scenario and
+// traffic commands.
 type cliLab struct {
 	cmd  *cobra.Command
 	keep bool
 }
 
-// Bind rebinds every engine to the named app, which is what makes the next
-// scenario activation act on that workload rather than the default one.
+// Bind binds every engine to the named app, so the next scenario activation
+// uses it.
 func (l *cliLab) Bind(app string) (workload.Workload, error) {
 	if err := bindWorkload(app, true); err != nil {
 		return workload.Workload{}, err
@@ -69,11 +70,8 @@ func (l *cliLab) ScenarioDown(_ context.Context, name string, _ workload.Workloa
 func (l *cliLab) TrafficStart(_ context.Context, w workload.Workload, profile string, rps int, d time.Duration) error {
 	o := traffic.Options{
 		Profile: profile,
-		// The workload's own in-cluster URL, so the load path is identical for
-		// every app in the comparison — an ingress hostname would add a hop
-		// only some apps have. Workload.URL() already composes the FQDN and
-		// port; building the host by hand appended the namespace twice and k6
-		// spent a whole run resolving go-api.go-api.svc.cluster.local.go-api…
+		// Target the in-cluster URL, not the ingress, so every app is reached
+		// the same way.
 		Target:   w.URL(),
 		RPS:      rps,
 		Duration: d.String(),
@@ -133,8 +131,8 @@ var compareRunCmd = &cobra.Command{
 			o.Scenario, strings.Join(o.Apps, ", "), o.Warmup, o.Window,
 			(per * time.Duration(len(o.Apps))).Round(time.Minute))
 
-		// The same runner the scenario's own checks use, so a comparison and a
-		// check cannot disagree about which Prometheus they are reading.
+		// The same runner scenario checks use, so both read the same
+		// Prometheus.
 		runner := newCheckRunner()
 
 		rep, err := compare.Run(cmd.Context(), o, &cliLab{cmd: cmd, keep: compareOpts.keep}, runner, compare.RealSleeper)
@@ -196,8 +194,8 @@ var compareShowCmd = &cobra.Command{
 func init() {
 	compareRunCmd.Flags().StringSliceVar(&compareOpts.apps, "apps", nil,
 		"apps to measure, in order; the first is the baseline (e.g. go-api,java-api)")
-	// steady by default: a comparison wants a flat offered rate, so that a
-	// difference in the numbers is the workload rather than the load shape.
+	// "steady" by default: a constant request rate, so differences come from
+	// the workload rather than the load.
 	compareRunCmd.Flags().StringVar(&compareOpts.profile, "profile", "steady", "traffic profile")
 	compareRunCmd.Flags().IntVar(&compareOpts.rps, "rps", 40, "offered request rate, identical for every app")
 	compareRunCmd.Flags().DurationVar(&compareOpts.warmup, "warmup", time.Minute,

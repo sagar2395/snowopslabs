@@ -12,10 +12,8 @@ import (
 	"strings"
 )
 
-// Built-in, open resolvers. These wrap the mechanisms the CLI already uses (git
-// via the git CLI, local dirs via a copy), exposed behind the Resolver interface
-// so additional content sources can be added to a Chain without touching the
-// engine. See docs/adr/0008-content-extensibility-seam.md.
+// Built-in resolvers: git (using the git CLI) and local directories (by
+// copying). See docs/adr/0008-content-extensibility-seam.md.
 
 // GitRunner runs a git command in dir; tests inject a stub.
 type GitRunner func(ctx context.Context, dir string, args ...string) error
@@ -64,8 +62,7 @@ func (r GitResolver) Resolve(ctx context.Context, ref, destDir string) error {
 	return os.RemoveAll(filepath.Join(destDir, ".git"))
 }
 
-// LocalResolver copies a pack from a local directory (or a file:// path). Useful
-// for offline development and as the simplest reference resolver.
+// LocalResolver copies a pack from a local directory or a file:// path.
 type LocalResolver struct{}
 
 // CanResolve handles file:// refs and existing local directories.

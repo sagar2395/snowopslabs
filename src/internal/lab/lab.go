@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Package lab implements lab-state snapshots and reset. A
-// snapshot records *intent* — which platform components, apps, and
-// scenarios were active — not cluster bytes. Restore replays the existing
-// idempotent install paths; reset tears everything down to post-init
-// (cluster + ingress only). Snapshots live in .labctl/snapshots/ (runtime
-// state, never committed).
+
+// Package lab saves, restores and resets lab state.
+//
+// A snapshot records which platform components, apps and scenarios were
+// active, not the cluster's data. Restore reinstalls them through the normal
+// idempotent install paths. Reset removes everything except the cluster and its
+// ingress. Snapshots are stored in .labctl/snapshots/, which is not committed.
 package lab
 
 import (
@@ -124,9 +125,9 @@ func (st *Store) Delete(name string) error {
 	return nil
 }
 
-// Collect assembles the current lab state: platform from the registry's
-// install markers, scenarios from the scenario engine's state, and apps by
-// live kubectl probe (so apps deployed outside labctl are captured too).
+// Collect builds a snapshot of the current lab: platform components from the
+// registry's install markers, scenarios from the scenario engine, and apps by
+// asking kubectl, so apps deployed outside labctl are included.
 func Collect(ctx context.Context, name, profile, domainSuffix, projectRoot string,
 	reg *platform.Registry, scenes *scenario.Engine) (*Snapshot, []string) {
 
@@ -182,8 +183,8 @@ func (a Action) String() string {
 	return a.Kind + " " + a.Target
 }
 
-// categoryPriority orders platform installs: ingress carries everything
-// else's URLs, monitoring carries the dashboards scenarios assume.
+// categoryPriority orders platform installs: ingress first, because every
+// other URL depends on it, then monitoring, which scenarios' dashboards need.
 func categoryPriority(component string) int {
 	switch strings.SplitN(component, "/", 2)[0] {
 	case "ingress":
@@ -207,9 +208,9 @@ func sortPlatform(components []string) []string {
 	return out
 }
 
-// RestorePlan converts a snapshot into ordered actions: platform first
-// (ingress → monitoring → rest), then apps, then scenarios. Every step is
-// idempotent, so restoring over a partially-converged lab is safe.
+// RestorePlan turns a snapshot into ordered actions: platform (ingress, then
+// monitoring, then the rest), then apps, then scenarios. Every step is
+// idempotent, so restoring over a partly restored lab is safe.
 func RestorePlan(s *Snapshot) []Action {
 	var plan []Action
 	for _, p := range sortPlatform(s.Platform) {
@@ -224,9 +225,9 @@ func RestorePlan(s *Snapshot) []Action {
 	return plan
 }
 
-// ResetPlan tears the lab back to post-init: stop traffic, deactivate
-// scenarios, destroy apps, uninstall platform components in reverse
-// priority — keeping the ingress category (it is part of "post-init").
+// ResetPlan returns the actions that take the lab back to its state after
+// `labctl init`: stop traffic, deactivate scenarios, destroy apps, and
+// uninstall platform components in reverse priority, keeping ingress.
 func ResetPlan(installedPlatform, deployedApps, activeScenarios []string) []Action {
 	plan := []Action{{Kind: "traffic-stop"}}
 	for _, sc := range activeScenarios {

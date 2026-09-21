@@ -160,9 +160,8 @@ func TestAppendLogs(t *testing.T) {
 	})
 }
 
-// TestReadLogs_CursorResume is the property that makes reconnection safe: a
-// client that reconnects with the last sequence it saw gets every line it
-// missed, exactly once. v1 dropped events for slow clients with no way to tell.
+// TestReadLogs_CursorResume checks that a client reconnecting with the last
+// sequence it saw gets every line it missed, exactly once.
 func TestReadLogs_CursorResume(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)

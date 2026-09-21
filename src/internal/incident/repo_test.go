@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package incident
 
-// Repo-wide fault validation (runs in CI on every PR): every fault in
-// incidents/ must satisfy the contract, and its inject/resolve/detection
-// scripts must execute cleanly against a stub kubectl — so a fault that
-// can't even run never reaches main.
+// These tests check every fault in incidents/: it must meet the fault
+// contract, and its inject, resolve and detection scripts must run against a
+// stub kubectl.
 
 import (
 	"errors"
@@ -102,9 +102,8 @@ func runWithStubKubectl(t *testing.T, script string) (string, string, error) {
 	cmd.Env = append(os.Environ(),
 		"PATH="+binDir+string(os.PathListSeparator)+os.Getenv("PATH"),
 		"KUBECTL_LOG="+logFile,
-		// There is no cluster behind the stub, so a script that waits for the
-		// symptom it just staged would poll until its own timeout. Scripts that
-		// wait honour this budget; the rest ignore it.
+		// With no cluster, a script waiting for its symptom would wait until
+		// its timeout. This shortens that wait for scripts that honour it.
 		"FAULT_WAIT_SECONDS=0",
 	)
 	out, err := cmd.CombinedOutput()
@@ -150,9 +149,9 @@ func TestRepoFaults_ScriptsExecute(t *testing.T) {
 	}
 }
 
-// TestRepoFaults_InjectIdempotent re-runs inject.sh while "already injected"
-// (the stub answers reads with empty output, so this exercises the
-// not-yet-injected path twice — both runs must succeed).
+// TestRepoFaults_InjectIdempotent runs inject.sh twice; both runs must
+// succeed. The stub returns empty output, so both take the not-yet-injected
+// path.
 func TestRepoFaults_InjectTwiceSucceeds(t *testing.T) {
 	root := repoRoot(t)
 	e := NewEngine(root, "k3d.local")

@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package lab
 
-// End-to-end plan execution against a fake project: stub platform
-// providers, a stub engine/deploy.sh, a no-component scenario, and a stub
-// traffic stop script. Everything runs through the real engines and the
-// real executor — only the cluster is absent.
+// These tests run plans against a fake project with stub scripts, using the
+// real engines and executor but no cluster.
 
 import (
 	"os"

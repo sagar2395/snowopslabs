@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package incident
 
-// Alertmanager integration: when a fault declares expectAlert,
-// `incident status` also asks Alertmanager whether the page actually fired —
-// closing the loop from fault to alert to fix.
+// Alertmanager integration: when a fault declares expectAlert, `incident
+// status` also asks Alertmanager whether that alert is firing.
 
 import (
 	"context"

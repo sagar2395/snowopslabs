@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -163,10 +164,10 @@ stays up. Tip: take a snapshot first — labctl lab snapshot before-reset.`,
 			}
 		}
 
-		// Continue on error: tear down as much as possible, report what stuck.
+		// Keep going after a failure; remove as much as possible.
 		execErr := lab.Execute(plan, labDeps(true))
 
-		// Force-clear scenario and incident activation state
+		// Clear scenario and incident state even if their teardown failed.
 		if cleared := scenes.DeactivateAll(); len(cleared) > 0 {
 			fmt.Printf("Deactivated scenarios: %s\n", strings.Join(cleared, ", "))
 		}

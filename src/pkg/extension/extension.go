@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package extension defines two anti-lock-in seams: where pack
-// content comes from (Resolver) and optional lifecycle hooks around scenario
-// stages and checks (Hooks). The OSS core ships open defaults — built-in
-// resolvers for OCI / git / local sources and no-op hooks — so the open engine
-// behaves identically. Premium, private, or hosted builds inject custom
-// resolvers and hooks at construction without modifying the engine.
+// Package extension defines two extension points (ADR-0008): Resolver, which
+// fetches content packs from a source, and Hooks, which run around scenario
+// stages and checks. The defaults are resolvers for git and local directories
+// and hooks that do nothing. Another build can supply its own when it
+// constructs the engine, without changing the engine.
 //
-// Hooks are data/script-driven by design; this package never introduces compiled
-// Go plugins. It is part of the public SDK and must not import internal/.
+// It is part of the public SDK and must not import internal/.
 package extension
 
 import (
@@ -18,8 +16,7 @@ import (
 )
 
 // Resolver fetches the pack referenced by ref into destDir. CanResolve lets a
-// Chain pick the right resolver for a ref's scheme, so new source kinds (private
-// registries, hosted catalogs) slot in without engine changes.
+// Chain choose the resolver for a ref.
 type Resolver interface {
 	CanResolve(ref string) bool
 	Resolve(ctx context.Context, ref, destDir string) error
@@ -49,8 +46,8 @@ func (c Chain) Resolve(ctx context.Context, ref, destDir string) error {
 	return fmt.Errorf("no resolver can handle ref %q", ref)
 }
 
-// ResolveFunc adapts a CanResolve predicate + resolve function into a Resolver,
-// so callers (and the OSS built-ins) can construct resolvers without a struct.
+// ResolveFunc builds a Resolver from a CanResolve function and a Resolve
+// function.
 type ResolveFunc struct {
 	Match func(ref string) bool
 	Fetch func(ctx context.Context, ref, destDir string) error
@@ -83,9 +80,8 @@ type Event struct {
 	Check    string
 }
 
-// Hooks are invoked around scenario lifecycle phases. Any method may be a no-op.
-// A non-nil error from a Pre* hook aborts that phase (so premium policy can fail
-// closed); the OSS default never errors.
+// Hooks are called around scenario stages and checks. An error from a Pre*
+// hook stops that phase. The default hooks do nothing.
 type Hooks interface {
 	PreStage(ctx context.Context, ev Event) error
 	PostStage(ctx context.Context, ev Event) error
@@ -93,14 +89,21 @@ type Hooks interface {
 	PostCheck(ctx context.Context, ev Event) error
 }
 
-// NoopHooks is the OSS default: every method returns nil. Embed it to implement
-// only the hooks you care about.
+// NoopHooks is the default Hooks: every method returns nil. Embed it to
+// implement only the hooks you need.
 type NoopHooks struct{}
 
-func (NoopHooks) PreStage(context.Context, Event) error  { return nil }
+// PreStage does nothing.
+func (NoopHooks) PreStage(context.Context, Event) error { return nil }
+
+// PostStage does nothing.
 func (NoopHooks) PostStage(context.Context, Event) error { return nil }
-func (NoopHooks) PreCheck(context.Context, Event) error  { return nil }
+
+// PreCheck does nothing.
+func (NoopHooks) PreCheck(context.Context, Event) error { return nil }
+
+// PostCheck does nothing.
 func (NoopHooks) PostCheck(context.Context, Event) error { return nil }
 
-// DefaultHooks returns the open no-op hooks.
+// DefaultHooks returns NoopHooks.
 func DefaultHooks() Hooks { return NoopHooks{} }

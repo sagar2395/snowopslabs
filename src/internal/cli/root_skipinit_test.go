@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -7,10 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// A leaf command name like "list" is shared by many parents (scenario, app,
-// service, incident, …). Only the store-backed `runs` subcommands may skip the
-// shared engine initialisation; every other "list"/"logs"/"cancel" must NOT,
-// or it nil-panics when it reaches for an engine that was never constructed.
+// Many commands are named "list" (scenario, app, service, ...). Only the
+// `runs` subcommands may skip the shared setup; the others need the engines.
 func TestSkipSharedInit_LeafNameCollisions(t *testing.T) {
 	newTree := func(parent, child string) *cobra.Command {
 		p := &cobra.Command{Use: parent}
@@ -44,9 +43,8 @@ func TestSkipSharedInit_LeafNameCollisions(t *testing.T) {
 	}
 }
 
-// Walk the real, registered command tree: no command that needs the engines may
-// be marked skippable. This catches a future command whose leaf name collides
-// with the runs subcommands.
+// Walk the real command tree and check that only the expected commands skip
+// the shared setup.
 func TestSkipSharedInit_RealTree(t *testing.T) {
 	// Commands that legitimately skip init, by full "parent leaf" (or bare leaf
 	// for top-level commands).

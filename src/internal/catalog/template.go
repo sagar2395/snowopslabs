@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package catalog
 
 import (
@@ -7,9 +8,8 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/tmpl"
 )
 
-// TemplateContext is the typed set of variables content templates may reference.
-// The definition lives in internal/tmpl so the validator and the two run-time
-// engines cannot drift apart on which variables exist.
+// TemplateContext is the set of variables content templates may reference. It
+// is defined in internal/tmpl, which the run-time engines also use.
 type TemplateContext = tmpl.Context
 
 // DefaultTemplateContext returns a context populated with the standard defaults
@@ -31,11 +31,9 @@ func DefaultTemplateContext(projectRoot string) TemplateContext {
 	}
 }
 
-// Validate reports a reference to an unknown labctl template variable, so an
-// authoring typo surfaces at validation instead of producing a broken URL or
-// namespace at run time. Other systems' templating in the same string — Loki,
-// Prometheus, Grafana, Helm — is left alone, exactly as the run-time expander
-// leaves it. See internal/tmpl.
+// Validate reports a reference to an unknown labctl template variable. Other
+// systems' template syntax in the same string (Loki, Prometheus, Grafana,
+// Helm) is ignored, as it is at run time. See internal/tmpl.
 func Validate(input string, extra ...string) error {
 	return tmpl.Validate(input, extra...)
 }

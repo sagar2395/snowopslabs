@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package appdetail assembles the "how is this app built and deployed" view for
-// the UI: a plain-English overview plus the actual Dockerfile and Helm chart a
-// learner would edit, each tagged with its path from the repo root so they can
-// open it and play with building/deploying the app.
+// Package appdetail builds the UI's app details page: a short overview plus the
+// app's Dockerfile and Helm chart, each with its path from the repo root so the
+// learner can find and edit it.
 package appdetail
 
 import (
@@ -13,12 +12,11 @@ import (
 	"strings"
 )
 
-// maxFileBytes caps how much of any single file we inline, so a runaway file
-// can't bloat the response. Dockerfiles and values files are far smaller.
+// maxFileBytes caps how much of one file is included in the response.
 const maxFileBytes = 24 * 1024
 
-// FileRef is one source file surfaced on the details page: its path from the
-// repo root (clickable/greppable) and its (possibly truncated) content.
+// FileRef is one source file shown on the details page: its path from the
+// repo root and its content, possibly truncated.
 type FileRef struct {
 	Path      string `json:"path"`
 	Content   string `json:"content"`
@@ -41,11 +39,9 @@ type Detail struct {
 	Templates      []string `json:"templates,omitempty"`
 }
 
-// Build reads an app's on-disk layout under apps/<name> and assembles its
-// details. Missing optional files (a README, a Dockerfile) are simply omitted;
-// the caller still gets whatever is present. valuesFile names the Helm values
-// file the app deploys with (from app.env HELM_VALUES), so the page shows the
-// same file the Deploy button uses.
+// Build reads apps/<name> and returns its details. Missing optional files,
+// such as a README or Dockerfile, are left out. valuesFile is the Helm values
+// file the app deploys with (HELM_VALUES in app.env).
 func Build(projectRoot, name, buildStrategy, deployStrategy, namespace, valuesFile string) Detail {
 	appDir := filepath.Join(projectRoot, "apps", name)
 	if namespace == "" {
@@ -89,7 +85,6 @@ func description(appDir string) string {
 	if p := firstProse(filepath.Join(appDir, "README.md")); p != "" {
 		return p
 	}
-	// Chart.yaml description as a fallback.
 	f, err := os.Open(filepath.Join(appDir, "deploy", "helm", "Chart.yaml"))
 	if err != nil {
 		return ""

@@ -18,9 +18,9 @@ import (
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 )
 
-// Scenario schema versioning. The engine supports the current and previous
-// schema versions; unknown versions are rejected with an actionable error so a
-// pack built for a newer engine fails clearly instead of misbehaving.
+// DefaultScenarioAPIVersion is the schema version assumed when a scenario
+// omits apiVersion. The engine also accepts the previous version (see
+// SupportedScenarioAPIVersions) and rejects any other.
 const DefaultScenarioAPIVersion = "scenario.snowops.net/v2"
 
 // SupportedScenarioAPIVersions lists the schema versions this engine understands
@@ -46,19 +46,16 @@ var validComponentTypes = map[string]bool{
 // machine-verifiable `checks` (run by `labctl scenario verify`). A scenario
 // must use either `components` or `stages`, never both.
 type Scenario struct {
-	// APIVersion declares the scenario schema version. Optional for backward
-	// compatibility: an empty value is treated as the current default
-	// (DefaultScenarioAPIVersion). The engine accepts the current and previous
-	// schema versions; see SupportedScenarioAPIVersions.
+	// APIVersion is the scenario schema version. It is optional; an empty
+	// value means DefaultScenarioAPIVersion. See SupportedScenarioAPIVersions.
 	APIVersion string `yaml:"apiVersion,omitempty" json:"apiVersion,omitempty"`
 
 	Name        string `yaml:"name" json:"name"`
 	DisplayName string `yaml:"displayName" json:"displayName"`
 	Description string `yaml:"description" json:"description"`
 	Category    string `yaml:"category" json:"category"`
-	// Verified marks content confirmed end-to-end on a fresh cluster.
-	// Absent/false is unverified — usable, but the UI and CLI flag it so a user
-	// knows it hasn't been vouched for yet.
+	// Verified marks a scenario tested end to end on a fresh cluster. The UI
+	// and CLI flag scenarios without it.
 	Verified      bool          `yaml:"verified,omitempty" json:"verified"`
 	Prerequisites Prerequisites `yaml:"prerequisites" json:"prerequisites"`
 	Runtimes      []string      `yaml:"runtimes" json:"runtimes"`
@@ -70,17 +67,14 @@ type Scenario struct {
 	Stages     []Stage        `yaml:"stages,omitempty" json:"stages,omitempty"`
 	Checks     []checks.Check `yaml:"checks,omitempty" json:"checks,omitempty"`
 
-	// References and Snippets (M2) turn a scenario into a jumping-off point for
-	// hands-on learning: References link the upstream tool/docs behind the
-	// scenario, and Snippets are applyable manifest fragments the learner can
-	// `kubectl apply -f -` while working the exercise.
+	// References link to the documentation of the tools behind the scenario.
+	// Snippets are manifest fragments the learner can apply while working
+	// through it.
 	References []Reference `yaml:"references,omitempty" json:"references,omitempty"`
 	Snippets   []Snippet   `yaml:"snippets,omitempty" json:"snippets,omitempty"`
 
-	// Parameters are tunable knobs exposed at activation time (e.g. an
-	// autoscaler's min/max replicas and threshold), substituted into the
-	// scenario's manifests as {{.Name}} template vars. No parameters, or no
-	// overrides, means unchanged behaviour.
+	// Parameters are values the learner can set at activation, such as an
+	// autoscaler's replica limits. Manifests refer to them as {{.Name}}.
 	Parameters []Parameter `yaml:"parameters,omitempty" json:"parameters,omitempty"`
 
 	// Runtime fields (not from YAML)
@@ -102,11 +96,9 @@ type Stage struct {
 type Prerequisites struct {
 	Platform []string `yaml:"platform" json:"platform"`
 	Apps     []string `yaml:"apps" json:"apps"`
-	// Capabilities the bound workload must declare, e.g. prometheus-metrics.
-	// They are what let a scenario run against an application it was not written
-	// for: it states what it needs of the app rather than naming one. The
-	// vocabulary is closed and lives in internal/workload; preflight rejects an
-	// unknown name so a typo cannot silently mean "never satisfied".
+	// Capabilities the bound workload must declare, such as
+	// prometheus-metrics, so the scenario can run against any app that has
+	// them. Valid names are defined in internal/workload.
 	Capabilities []string `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 }
 
@@ -123,21 +115,17 @@ type Component struct {
 	Set        map[string]string `yaml:"set,omitempty" json:"set,omitempty"`
 	Script     string            `yaml:"script,omitempty" json:"script,omitempty"`
 
-	// UninstallScript reverses a script component on `scenario down`. Without it
-	// a script's side effects (an env var set on a Deployment, say) outlive the
-	// scenario that created them.
+	// UninstallScript undoes a script component's changes on `scenario down`.
 	UninstallScript string `yaml:"uninstallScript,omitempty" json:"uninstallScript,omitempty"`
 
-	// PlatformValues names a platform component ("logging/loki") whose
-	// platform/<path>/values.yaml — or a specific file
-	// ("logging/loki/promtail-values.yaml") — is used as the base values,
-	// with ValuesFile layered on top as an overlay. A scenario that re-installs a
-	// platform component with its own full copy of the values drifts from it, and
-	// Helm turns that drift into an immutable-field error on upgrade.
+	// PlatformValues names a platform component ("logging/loki"), whose
+	// values.yaml is used as the base values, or a specific file
+	// ("logging/loki/promtail-values.yaml"). ValuesFile is applied on top.
+	// Use it instead of copying the platform's values into the scenario.
 	PlatformValues string `yaml:"platformValues,omitempty" json:"platformValues,omitempty"`
 
-	// Adopt reuses an already-installed Helm release instead of upgrading it, so
-	// a scenario never clobbers a release the platform owns.
+	// Adopt uses an already-installed Helm release as it is instead of
+	// upgrading it, and teardown leaves it in place.
 	Adopt bool `yaml:"adopt,omitempty" json:"adopt,omitempty"`
 }
 
@@ -160,17 +148,16 @@ type ExploreCommand struct {
 	Command string `yaml:"command" json:"command"`
 }
 
-// Reference is a link to upstream tool or docs relevant to a scenario or
-// incident. Part of the shared SDK surface so incidents reuse it (M2).
+// Reference is a documentation link for a scenario or incident.
 type Reference struct {
 	Label string `yaml:"label" json:"label"`
 	URL   string `yaml:"url" json:"url"`
 	Note  string `yaml:"note,omitempty" json:"note,omitempty"`
 }
 
-// Snippet is a reference fragment presented to the learner. Exactly one of YAML
-// (inline text) or Path (a file relative to the item's directory) is set; both
-// are template-resolved before display. Reused by scenarios and incidents.
+// Snippet is a manifest fragment shown to the learner by a scenario or
+// incident. Exactly one of YAML (inline) or Path (a file in the item's
+// directory) is set. Templates in it are expanded before display.
 type Snippet struct {
 	Label       string `yaml:"label" json:"label"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
@@ -186,10 +173,9 @@ type Snippet struct {
 	ApplyCommand string `yaml:"-" json:"applyCommand,omitempty"`
 }
 
-// Parameter is a user-tunable knob exposed at activation time. Its value is
-// substituted into the scenario's manifests as a {{.Name}} template variable.
-// Name must be a Go-template-safe identifier (letters/digits/underscore) so it
-// matches the engine's {{.Name}} placeholder.
+// Parameter is a value the learner can set when activating a scenario.
+// Manifests refer to it as {{.Name}}, so Name may contain only letters,
+// digits and underscores.
 type Parameter struct {
 	Name        string `yaml:"name" json:"name"`
 	DisplayName string `yaml:"displayName,omitempty" json:"displayName,omitempty"`
@@ -277,9 +263,8 @@ func ValidateParameters(params []Parameter) []string {
 // templateIdent matches a parameter name usable as a {{.Name}} template var.
 var templateIdent = regexp.MustCompile(`^\w+$`)
 
-// ValidateReferences reports every structural problem in a reference list. The
-// where prefix (e.g. "reference") names the field in messages so both scenarios
-// and incidents can share this without leaking each other's context.
+// ValidateReferences reports every problem in a reference list. where, such as
+// "reference", prefixes each message.
 func ValidateReferences(refs []Reference) []string {
 	var errs []string
 	for i, r := range refs {
@@ -299,10 +284,9 @@ func ValidateReferences(refs []Reference) []string {
 	return errs
 }
 
-// ValidateSnippets reports every structural problem in a snippet list: each
-// snippet needs a label and exactly one of yaml or path, and a path must be a
-// relative location inside the item directory (existence is checked by the
-// loader, which knows the directory). It does no filesystem I/O.
+// ValidateSnippets reports every problem in a snippet list: each snippet needs
+// a label and exactly one of yaml or path, and a path must stay inside the
+// item's directory. It does not check that the file exists.
 func ValidateSnippets(snips []Snippet) []string {
 	var errs []string
 	for i, s := range snips {
@@ -419,9 +403,8 @@ func (s *Scenario) Validate() error {
 		case c.Type == "script" && c.Script == "":
 			add("%s: script component requires script", where)
 		}
-		// Asset paths must stay inside the scenario directory — external
-		// packs are untrusted, and in-repo scenarios have no
-		// business escaping their dir either.
+		// Asset paths must stay inside the scenario directory; packs from
+		// external sources are untrusted.
 		for field, p := range map[string]string{"valuesFile": c.ValuesFile, "path": c.Path, "script": c.Script, "uninstallScript": c.UninstallScript} {
 			if unsafePath(p) {
 				add("%s: %s %q must be a relative path inside the scenario directory", where, field, p)

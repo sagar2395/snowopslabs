@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package incident
 
 import (
@@ -53,8 +54,7 @@ func TestTargetEnvFollowsBinding(t *testing.T) {
 	}
 }
 
-// Before ADR-0014 the incident engine carried no monitoring namespace, so a
-// fault naming it rendered "<no value>" into a kubectl argument.
+// A fault can refer to {{.MonitoringNamespace}}.
 func TestResolveTemplateMonitoringNamespace(t *testing.T) {
 	e := &Engine{DomainSuffix: "k3d.local", MonitoringNamespace: "observability"}
 	if got, want := e.resolveTemplate("{{.MonitoringNamespace}}"), "observability"; got != want {
@@ -81,9 +81,7 @@ func TestNewEngineBindsDefaultWorkload(t *testing.T) {
 	}
 }
 
-// Every path to a fault script must resolve the target. This guards the one
-// that bypassed resolution: the CLI built the durable service's Target straight
-// from the raw fault, so inject sent kubectl a literal "{{.WorkloadNamespace}}".
+// The target passed to the incident service must have its templates expanded.
 func TestResolvedTargetMatchesScriptEnv(t *testing.T) {
 	e := &Engine{ProjectRoot: "/repo", Workload: workload.Workload{Name: "java-api", Namespace: "team-a"}}
 	f := &Fault{Target: Target{Namespace: "{{.WorkloadNamespace}}", Workload: "{{.WorkloadName}}"}}
@@ -98,9 +96,8 @@ func TestResolvedTargetMatchesScriptEnv(t *testing.T) {
 	}
 }
 
-// The brief a learner reads on inject comes from Description, and the fault
-// list's TARGET column from Target. Both were served raw, so every templated
-// fault introduced itself as "{{.WorkloadName}}".
+// Description (the brief shown on inject) and Target (the list's TARGET
+// column) must be returned with templates expanded.
 func TestGetResolvesReaderFacingFields(t *testing.T) {
 	e := &Engine{
 		Workload:   workload.Workload{Name: "shop", Namespace: "storefront"},
@@ -136,9 +133,9 @@ func TestGetResolvesReaderFacingFields(t *testing.T) {
 	}
 }
 
-// A detection script runs on the checks.Runner, which does not inherit the
-// executor's environment — so anything it needs has to come through targetEnv.
-// Without the domain suffix a check cannot probe the workload's own ingress.
+// A detection script runs on checks.Runner, which does not inherit the
+// executor's environment, so targetEnv must supply the domain suffix it needs
+// to reach the workload's ingress.
 func TestTargetEnvCarriesTheContextAChecksScriptNeeds(t *testing.T) {
 	e := &Engine{
 		DomainSuffix:        "k3d.local",

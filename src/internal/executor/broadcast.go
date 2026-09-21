@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package executor
 
 import (
@@ -9,10 +10,9 @@ import (
 
 // ActionEvent represents a single event in a command execution lifecycle.
 //
-// Seq is a monotonic, per-broadcaster sequence number assigned at Send time. It
-// is the cursor clients use to resume a dropped stream: a reconnecting client
-// asks for everything after the last Seq it saw, so no event is missed and none
-// is replayed twice. Callers of Send leave it zero; the broadcaster stamps it.
+// Seq is an increasing number the Broadcaster assigns in Send; callers leave
+// it zero. A reconnecting client asks for everything after the last Seq it saw,
+// so it misses nothing and sees nothing twice.
 type ActionEvent struct {
 	Seq       int64     `json:"seq"`
 	ID        string    `json:"id"`
@@ -26,8 +26,8 @@ type ActionEvent struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-// JobInfo is the recorded lifecycle of one action, kept so HTTP clients can
-// recover job state after a page reload or a dropped WebSocket connection.
+// JobInfo records the lifecycle of one action, so HTTP clients can recover job
+// state after a page reload or a dropped WebSocket connection.
 type JobInfo struct {
 	ID        string     `json:"id"`
 	Action    string     `json:"action"`
@@ -40,15 +40,14 @@ type JobInfo struct {
 // maxJobHistory bounds the in-memory job history.
 const maxJobHistory = 100
 
-// eventRingCap bounds the replay buffer of recent events. A reconnecting client
-// can resume without gaps as long as its last-seen Seq is still in the ring; a
-// client that was gone long enough to fall off the ring is told to resync from
-// the job history instead (see the stream handler).
+// eventRingCap is the number of recent events kept for replay. A client whose
+// last-seen Seq has dropped out of this buffer is told to resync from the job
+// history instead.
 const eventRingCap = 1024
 
-// Broadcaster fans out ActionEvents to all registered listeners, stamps each
-// with a monotonic Seq, keeps a bounded replay ring so dropped clients can
-// resume, and records a bounded history of jobs derived from start/end events.
+// Broadcaster sends each ActionEvent to every listener. It numbers events with
+// Seq, keeps recent events so reconnecting clients can catch up, and keeps a
+// short history of jobs built from their start and end events.
 type Broadcaster struct {
 	mu      sync.Mutex
 	clients map[chan ActionEvent]struct{}
@@ -68,9 +67,8 @@ func NewBroadcaster() *Broadcaster {
 	}
 }
 
-// Subscribe returns a channel that receives all future ActionEvents. It is the
-// backward-compatible, future-only subscription; use SubscribeFrom to also
-// replay recent history.
+// Subscribe returns a channel that receives all future ActionEvents. Use
+// SubscribeFrom to also receive recent past events.
 func (b *Broadcaster) Subscribe() chan ActionEvent {
 	ch := make(chan ActionEvent, 256)
 	b.mu.Lock()
@@ -79,17 +77,13 @@ func (b *Broadcaster) Subscribe() chan ActionEvent {
 	return ch
 }
 
-// SubscribeFrom atomically returns the backlog of buffered events with Seq
-// greater than after, plus a channel of all subsequent events. Because Send and
-// SubscribeFrom take the same lock, no event can slip between the backlog
-// snapshot and the channel registration: the two together are gap-free and
-// duplicate-free. A caller resuming a stream passes its last-seen Seq as after;
-// a fresh client passes 0 to replay whatever the ring still holds.
+// SubscribeFrom returns the buffered events with Seq greater than after, plus
+// a channel for every later event. It holds the same lock as Send, so together
+// they contain every event exactly once. Pass the last Seq a client saw to
+// resume, or 0 to get everything still buffered.
 //
-// The bool reports whether the requested cursor is still fully covered by the
-// ring. It is false when after points before the oldest buffered event (the
-// client was gone too long), so the caller can tell the client to resync rather
-// than silently starting mid-history.
+// The bool is false when events after `after` have already been dropped from
+// the buffer; the caller should then tell the client to resync.
 func (b *Broadcaster) SubscribeFrom(after int64) (backlog []ActionEvent, ch chan ActionEvent, contiguous bool) {
 	ch = make(chan ActionEvent, 256)
 	b.mu.Lock()
@@ -98,8 +92,8 @@ func (b *Broadcaster) SubscribeFrom(after int64) (backlog []ActionEvent, ch chan
 	contiguous = true
 	if len(b.ring) > 0 {
 		oldest := b.ring[0].Seq
-		// after+1 is the first event we owe the client; if that predates the
-		// ring, there is an unrecoverable gap.
+		// The client needs after+1 onwards; if that is older than the buffer,
+		// some events are lost.
 		if after+1 < oldest {
 			contiguous = false
 		}
@@ -109,8 +103,6 @@ func (b *Broadcaster) SubscribeFrom(after int64) (backlog []ActionEvent, ch chan
 			}
 		}
 	}
-	// When the ring is empty there is nothing to replay; the client simply
-	// receives future events on ch, so contiguous stays true.
 
 	b.clients[ch] = struct{}{}
 	return backlog, ch, contiguous
@@ -140,14 +132,14 @@ func (b *Broadcaster) Send(event ActionEvent) {
 		select {
 		case ch <- event:
 		default:
-			// Drop for a slow live consumer; it can recover the gap on
-			// reconnect via SubscribeFrom while the event is still in the ring.
+			// Skip a listener that is not keeping up; it can recover the event
+			// with SubscribeFrom while it is still buffered.
 		}
 	}
 	b.mu.Unlock()
 
-	// recordJob takes a different lock; keep it outside b.mu to avoid ordering
-	// concerns. Job history is independent of the live stream.
+	// recordJob takes its own lock; calling it outside b.mu avoids holding
+	// two locks at once.
 	b.recordJob(event)
 }
 
@@ -183,7 +175,6 @@ func (b *Broadcaster) recordJob(event ActionEvent) {
 			StartedAt: event.Timestamp,
 		}
 		b.jobOrder = append(b.jobOrder, event.ID)
-		// Evict oldest entries beyond the cap.
 		for len(b.jobOrder) > maxJobHistory {
 			delete(b.jobs, b.jobOrder[0])
 			b.jobOrder = b.jobOrder[1:]

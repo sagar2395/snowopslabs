@@ -15,10 +15,8 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
-// `labctl runs` makes the durable run history usable from a terminal. In v1
-// this information did not exist: job state lived in a 100-entry in-memory map
-// that vanished on restart, so "what happened when I ran that yesterday?" had
-// no answer. Now it does.
+// `labctl runs` lists recorded runs, prints their transcripts, and cancels
+// them.
 
 func runsCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -32,8 +30,7 @@ long after it finished.`,
 	return cmd
 }
 
-// openStore opens the database read-only-ish for CLI inspection. Separated so
-// tests can supply their own store.
+// openStore opens the run store. Tests replace it.
 var openStore = func(ctx context.Context) (*store.Store, error) {
 	path, err := store.DefaultPath()
 	if err != nil {
@@ -125,9 +122,8 @@ func runsLogsCmd() *cobra.Command {
 
 // streamRunLogs prints a run's transcript, optionally following it.
 //
-// Following reads forward from a cursor rather than subscribing to a live
-// stream, which is what makes it correct: whatever happens to timing, the
-// reader cannot skip a line or print one twice.
+// Following polls the store from a cursor, so no line is skipped or printed
+// twice.
 func streamRunLogs(ctx context.Context, out io.Writer, st *store.Store, runID string, follow bool) error {
 	rec, err := st.GetRun(ctx, runID)
 	if err != nil {
@@ -166,8 +162,8 @@ func streamRunLogs(ctx context.Context, out io.Writer, st *store.Store, runID st
 		if err != nil {
 			return err
 		}
-		// Re-read once more after the run ends, so the final lines — written
-		// between the last poll and the terminal transition — are not missed.
+		// Read once more after the run ends, to catch lines written since the
+		// last poll.
 		if rec.Status.Terminal() && len(lines) == 0 {
 			break
 		}
@@ -238,10 +234,8 @@ a server you are not attached to), use the API or the UI instead.`,
 				return fmt.Errorf("run %s already finished (%s)", id, rec.Status)
 			}
 
-			// A CLI invocation does not own the engine that is executing the
-			// run, so it records the intent; the owning process observes the
-			// terminal state and stops. Being explicit beats pretending we
-			// killed a process in another address space.
+			// The run belongs to another process, so record the cancellation in
+			// the store; that process sees it and stops the run.
 			if _, err := st.AppendLogs(ctx, id, []store.LogLine{{
 				Stream: store.StreamSystem,
 				Text:   "cancellation requested via labctl runs cancel",
@@ -275,8 +269,7 @@ func duration(r store.Run) string {
 	return "-"
 }
 
-// relativeTime renders an instant as "3m ago", which is what a human scanning
-// a run list actually wants to know.
+// relativeTime renders an instant as, for example, "3m ago".
 func relativeTime(t time.Time) string {
 	if t.IsZero() {
 		return "-"

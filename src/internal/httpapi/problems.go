@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -8,9 +9,9 @@ import (
 // problemContentType is the RFC 7807 media type for machine-readable errors.
 const problemContentType = "application/problem+json"
 
-// problemTypeBase namespaces the machine `type` slug into a stable URI
-// reference. It need not resolve to a live document (RFC 7807 §3.1) — it only
-// has to be stable, because clients branch on it.
+// problemTypeBase turns a `type` slug into a URI. The URI need not resolve to a
+// document (RFC 7807 §3.1), but it must not change, because clients branch on
+// it.
 const problemTypeBase = "https://snowopslabs.dev/problems/"
 
 // problemDetail is an RFC 7807 problem+json body. Fields are ordered and named
@@ -35,8 +36,7 @@ func problemType(code string) string {
 }
 
 // respondProblem writes an RFC 7807 problem+json error. Title is the standard
-// reason phrase for the status (stable, language-neutral); the specific,
-// human-facing message goes in Detail so clients can still branch on Type.
+// reason phrase for the status, and the specific message goes in Detail.
 func respondProblem(w http.ResponseWriter, r *http.Request, status int, code, detail string) {
 	w.Header().Set("Content-Type", problemContentType)
 	respondJSON(w, status, problemDetail{
@@ -49,11 +49,9 @@ func respondProblem(w http.ResponseWriter, r *http.Request, status int, code, de
 	})
 }
 
-// knownProblemSlugs is the closed set of machine `type` slugs the API emits.
-// It is the single source of truth the ADR (0006) calls for: TestProblemSlugs_
-// StableSet asserts the slugs actually used in handlers match this list exactly,
-// so adding or renaming one is a deliberate, reviewed change — not an accident
-// that silently ships a new error contract.
+// knownProblemSlugs lists every `type` slug the API returns (ADR-0006).
+// TestProblemSlugs_StableSet fails if the handlers use a slug that is not
+// listed here, so adding or renaming one is always deliberate.
 var knownProblemSlugs = []string{
 	"already_finished",
 	"auth_disabled",

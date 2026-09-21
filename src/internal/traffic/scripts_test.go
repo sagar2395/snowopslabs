@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package traffic
 
 // Integration tests for the services/traffic shell scripts. They run the
@@ -13,10 +14,8 @@ import (
 	"testing"
 )
 
-// repoRoot walks up from the package directory to the content root
-// (identified by the scenarios/ and runtimes/ directories plus the root
-// Makefile, so Go package dirs under src/ can't be mistaken for it). The
-// traffic scripts themselves live under src/services/traffic (ScriptDir).
+// repoRoot walks up from the package directory to the repo root, the first
+// directory with scenarios/, runtimes/ and a Makefile.
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()

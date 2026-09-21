@@ -1,4 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package learn loads learning paths from learn/<name>/path.yaml and records
+// each learner's progress through a path's modules.
 package learn
 
 import (
@@ -239,10 +242,9 @@ func (e *Engine) MarkComplete(prog *Progress, idx int) error {
 	return e.markComplete(prog, idx, "", "")
 }
 
-// MarkCompleteModule records module at idx as complete and writes a unified
-// result record naming the module as "<pathName>/<moduleName>". user attributes
-// the record to the authenticated API user; pass "" from the CLI to
-// fall back to the OS username.
+// MarkCompleteModule records module idx as complete and writes a results
+// record named "<pathName>/<moduleName>". user is the authenticated API user,
+// or "" to use the OS username.
 func (e *Engine) MarkCompleteModule(p *Path, prog *Progress, idx int, user string) error {
 	moduleName := ""
 	if idx >= 0 && idx < len(p.Modules) {
@@ -260,7 +262,7 @@ func (e *Engine) markComplete(prog *Progress, idx int, recordName, user string) 
 	if err := e.saveProgress(prog); err != nil {
 		return err
 	}
-	// Write to the unified results store (best effort).
+	// Best effort: a failed results write does not fail the completion.
 	if e.resultsDir != "" && recordName != "" {
 		now := time.Now()
 		r := results.Record{

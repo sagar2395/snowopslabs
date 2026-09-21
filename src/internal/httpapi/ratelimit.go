@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -6,19 +7,16 @@ import (
 	"time"
 )
 
-// Login rate-limit tuning. A fixed window of a handful of attempts per client is
-// enough to stop credential stuffing while never getting in a real user's way —
-// a person fat-fingering a password a few times stays well under the cap.
+// Login rate limit: a few attempts per client per window, which stops password
+// guessing without affecting someone who mistypes a few times.
 const (
 	loginMaxAttempts = 5
 	loginWindow      = 1 * time.Minute
 )
 
-// loginLimiter is a per-key fixed-window counter guarding the login endpoint. A
-// successful login resets the caller's window, so legitimate use never
-// accumulates toward the cap. Keys are client addresses; the map is swept lazily
-// as windows expire, so it does not grow without bound under a stuffing attack
-// from rotating source ports.
+// loginLimiter counts login attempts per client address in fixed windows. A
+// successful login resets the client's count. Expired windows are removed
+// periodically, so the map cannot grow without bound.
 type loginLimiter struct {
 	mu       sync.Mutex
 	windows  map[string]*limitWindow

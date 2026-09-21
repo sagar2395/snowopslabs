@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package catalog
 
 import (
@@ -21,10 +22,9 @@ func writeAsset(t *testing.T, root, dir, name, rel, body string) {
 	}
 }
 
-// M2: references + applyable snippets on scenarios and incidents. These tests
-// pin the load-time guarantees: a dangling snippet path is caught (naming the
-// file and reference), a malformed template in an inline snippet is caught, and
-// well-formed references/snippets load clean.
+// These tests cover references and snippets on scenarios and incidents: a
+// snippet path to a missing file and a malformed template in an inline snippet
+// are reported, and well-formed ones load cleanly.
 
 func TestLoad_SnippetWithGoodPathAndRefs(t *testing.T) {
 	root := t.TempDir()

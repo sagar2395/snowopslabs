@@ -10,9 +10,8 @@
 //	participant — run challenges/incidents/learn + read status; may NOT mutate
 //	              platform/runtime/lab/apps/services.
 //
-// New passwords hash with Argon2id. VerifyPassword also accepts the older
-// PBKDF2-HMAC-SHA256 hashes, so an existing file keeps working and no stored
-// hash has to be rewritten.
+// New passwords are hashed with Argon2id. VerifyPassword also accepts
+// PBKDF2-HMAC-SHA256 hashes, which older users files contain.
 package auth
 
 import (
@@ -39,7 +38,7 @@ const (
 	RoleParticipant = "participant"
 )
 
-// pbkdf2 parameters (legacy hashes only; still verified, never freshly minted).
+// PBKDF2 parameters, used only to verify existing PBKDF2 hashes.
 const (
 	pbkdf2Iterations = 210_000
 	pbkdf2KeyLen     = 32
@@ -47,10 +46,9 @@ const (
 	schemePBKDF2     = "pbkdf2-sha256"
 )
 
-// Argon2id parameters for freshly minted hashes. These follow the OWASP
-// second-recommended profile (64 MiB, t=3, p=4) — a comfortable cost for a
-// login path while being memory-hard against GPU cracking. They are encoded
-// into each hash, so tuning them later does not invalidate existing hashes.
+// Argon2id parameters for new hashes, from OWASP's recommended profiles
+// (64 MiB, t=3, p=4). Each hash records its own parameters, so changing these
+// does not invalidate existing hashes.
 const (
 	schemeArgon2id = "argon2id"
 	argonMemoryKiB = 64 * 1024
@@ -82,10 +80,9 @@ func Enabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("LABCTL_AUTH")), "true")
 }
 
-// DefaultUsersPath returns the users file location. LABCTL_USERS_FILE overrides
-// it (the team-mode Helm chart mounts the users Secret at a fixed path separate
-// from the .labctl history PVC); otherwise it falls back to the conventional
-// location under the project's .labctl directory.
+// DefaultUsersPath returns the users file location: LABCTL_USERS_FILE if set
+// (the team-mode Helm chart mounts the users Secret there), else
+// .labctl/users.yaml under the project root.
 func DefaultUsersPath(projectRoot string) string {
 	if p := os.Getenv("LABCTL_USERS_FILE"); p != "" {
 		return p
@@ -93,10 +90,8 @@ func DefaultUsersPath(projectRoot string) string {
 	return filepath.Join(projectRoot, ".labctl", "users.yaml")
 }
 
-// HashPassword returns an encoded Argon2id hash of the form
-// "argon2id$<mKiB>$<t>$<p>$<saltB64>$<hashB64>". It generates a fresh random
-// salt. Legacy PBKDF2 hashes are still accepted by VerifyPassword, but every new
-// hash is Argon2id.
+// HashPassword returns an Argon2id hash with a new random salt, encoded as
+// "argon2id$<mKiB>$<t>$<p>$<saltB64>$<hashB64>".
 func HashPassword(password string) (string, error) {
 	if password == "" {
 		return "", errors.New("password must not be empty")
@@ -114,10 +109,9 @@ func HashPassword(password string) (string, error) {
 	), nil
 }
 
-// VerifyPassword reports whether password matches the encoded hash, dispatching
-// on the scheme prefix so both Argon2id (current) and PBKDF2 (legacy) hashes
-// verify. It returns false (never an error) for malformed hashes so callers can
-// treat any failure as "wrong password" without leaking which part failed.
+// VerifyPassword reports whether password matches the encoded hash, which may
+// be Argon2id or PBKDF2. A malformed hash returns false, never an error, so a
+// caller cannot reveal which part of a login failed.
 func VerifyPassword(encoded, password string) bool {
 	parts := strings.Split(encoded, "$")
 	if len(parts) == 0 {
@@ -141,8 +135,8 @@ func verifyArgon2id(parts []string, password string) bool {
 	mem, err1 := strconv.Atoi(parts[1])
 	t, err2 := strconv.Atoi(parts[2])
 	p, err3 := strconv.Atoi(parts[3])
-	// Bound every parameter so the conversions below can't overflow and a
-	// malformed hash can't ask argon2 for an absurd amount of work.
+	// Bound every parameter, so the conversions below cannot overflow and a
+	// bad hash cannot demand huge amounts of memory or time.
 	if err1 != nil || err2 != nil || err3 != nil ||
 		mem <= 0 || mem > 1<<24 || // ≤ 16 GiB in KiB
 		t <= 0 || t > 1<<16 ||
@@ -162,7 +156,7 @@ func verifyArgon2id(parts []string, password string) bool {
 	return subtle.ConstantTimeCompare(got, want) == 1
 }
 
-// verifyPBKDF2 checks a legacy "pbkdf2-sha256$<iter>$<saltB64>$<hashB64>" hash.
+// verifyPBKDF2 checks a "pbkdf2-sha256$<iter>$<saltB64>$<hashB64>" hash.
 func verifyPBKDF2(parts []string, password string) bool {
 	if len(parts) != 4 {
 		return false
@@ -196,9 +190,8 @@ func NewStore() *Store {
 	return &Store{byName: map[string]User{}}
 }
 
-// LoadStore reads and validates the users file at path. A missing file yields
-// an empty store (auth enabled but no users => nobody can log in, which is a
-// safe default the server surfaces clearly).
+// LoadStore reads and validates the users file at path. A missing file gives
+// an empty store, so with auth enabled nobody can log in.
 func LoadStore(path string) (*Store, error) {
 	s := &Store{byName: map[string]User{}}
 	data, err := os.ReadFile(path)
@@ -230,10 +223,9 @@ func LoadStore(path string) (*Store, error) {
 	return s, nil
 }
 
-// dummyHash is a valid Argon2id hash of a random password, computed once. An
-// unknown-username login is verified against it so the request does the same
-// memory-hard work as a real one — keeping response timing (and cost) uniform,
-// which denies an attacker a username-enumeration oracle.
+// dummyHash is an Argon2id hash of a random password. A login with an unknown
+// username is checked against it, so it takes as long as a real one and the
+// response time does not reveal which usernames exist.
 var dummyHash = func() string {
 	h, err := HashPassword("unused-placeholder-password")
 	if err != nil { // HashPassword only fails on empty input; never here.
@@ -246,8 +238,7 @@ var dummyHash = func() string {
 func (s *Store) Authenticate(name, password string) (User, bool) {
 	u, ok := s.byName[name]
 	if !ok {
-		// Dummy verification against a real Argon2id hash: same work as the hit
-		// path, so timing does not reveal whether the username exists.
+		// See dummyHash.
 		VerifyPassword(dummyHash, password)
 		return User{}, false
 	}

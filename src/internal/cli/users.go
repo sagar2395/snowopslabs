@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -116,10 +117,9 @@ var usersRemoveCmd = &cobra.Command{
 	},
 }
 
-// resolvePassword reads the new password from --password, then the
-// LABCTL_PASSWORD env var, then a single line on stdin. No-echo terminal input
-// is intentionally not used to avoid an external dependency; document that the
-// stdin path echoes and is meant for scripted/local lab use.
+// resolvePassword returns the password from --password, else LABCTL_PASSWORD,
+// else one line of stdin. Stdin input is echoed; hidden terminal input would
+// need an extra dependency.
 func resolvePassword(cmd *cobra.Command) (string, error) {
 	if usersPassword != "" {
 		return usersPassword, nil

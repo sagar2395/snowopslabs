@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -13,10 +14,9 @@ import (
 	"testing"
 )
 
-// Under /api/v2 an error must be RFC 7807 problem+json: the problem media type,
-// a stable machine `type` slug, the status, a human detail, the request path as
-// `instance`, and the correlation ID. This drives the real router so the version
-// middleware actually tags the request.
+// An /api/v2 error must be RFC 7807 problem+json with the media type, `type`
+// slug, status, detail, request path as `instance`, and request ID. The test
+// goes through the real router so every middleware runs.
 func TestErrorEnvelope_V2IsProblemJSON(t *testing.T) {
 	s := newChallengeServer(t) // authEnabled == false → /auth/login yields auth_disabled
 	s.setupRoutes()
@@ -57,10 +57,8 @@ func TestErrorEnvelope_V2IsProblemJSON(t *testing.T) {
 	}
 }
 
-// The unversioned /api prefix is gone: /api/v2 is the only API surface. A path
-// under /api that is not /api/v2 falls through to the SPA handler, which serves
-// the shell rather than JSON — so an old client gets HTML, never a stale
-// envelope it might parse as success.
+// A path under /api that is not /api/v2 is served by the SPA handler, which
+// returns HTML rather than JSON.
 func TestUnversionedAPI_IsNotServed(t *testing.T) {
 	s := newChallengeServer(t)
 	s.setupRoutes()
@@ -85,10 +83,9 @@ func TestProblemType(t *testing.T) {
 	}
 }
 
-// The set of `type` slugs is a published contract. This test scans the handler
-// sources for every slug passed to respondError and asserts it matches
-// knownProblemSlugs exactly — so adding, renaming, or dropping a slug forces a
-// deliberate edit to the registry (ADR 0006).
+// The `type` slugs are part of the API contract (ADR-0006). This test scans the
+// handler sources for every slug passed to respondError and checks the set
+// equals knownProblemSlugs.
 func TestProblemSlugs_StableSet(t *testing.T) {
 	used := scanRespondErrorSlugs(t)
 

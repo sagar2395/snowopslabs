@@ -16,27 +16,23 @@ import (
 //
 //	echo "##snowops:step:install-prometheus"
 //
-// The engine turns these into a structured timeline, so the UI can show
-// "Installing Prometheus… 3 of 7" rather than a wall of text, and a failure can
-// say precisely which step it died in.
+// The engine records each marker as a step, so the UI can show progress and a
+// failure can name the step it happened in.
 const StepMarker = "##snowops:step:"
 
-// flushInterval bounds how long a line can sit buffered before it is durable
-// and visible to a watcher. Short enough to feel live, long enough that a
-// chatty script does not cause one transaction per line.
+// flushInterval is the longest a line waits in the buffer before it is stored
+// and visible to watchers. Batching keeps a chatty script from costing one
+// database write per line.
 const flushInterval = 100 * time.Millisecond
 
-// flushLines forces a flush once this many lines are buffered, so a burst does
-// not wait out the interval.
+// flushLines triggers an early flush once this many lines are buffered.
 const flushLines = 64
 
-// logSink turns a process's byte streams into ordered, persisted log lines.
+// logSink turns a process's output into ordered log lines in the store.
 //
-// The invariant: the write to the store is never skipped. v1 dropped events for
-// slow clients with a non-blocking channel send, so output silently vanished.
-// Here delivery is only a notification — consumers read the actual lines from
-// the store by cursor — so a slow reader can fall behind but can never lose
-// anything.
+// Every line is written to the store; only the notification to watchers may
+// be dropped. A slow reader can fall behind but never loses a line, because it
+// reads the lines from the store by cursor.
 type logSink struct {
 	ctx   context.Context
 	store *store.Store
@@ -59,9 +55,8 @@ func (s *logSink) writer(stream store.Stream) *streamWriter {
 	return &streamWriter{sink: s, stream: stream}
 }
 
-// system records an engine-authored line — "cancelled by user", "timed out
-// after 20m" — in the same ordered transcript as the script's own output, so
-// the reason a run ended is visible where the user is already looking.
+// system adds a line written by the engine itself, such as "cancelled by
+// user", to the run's transcript alongside the script's own output.
 func (s *logSink) system(text string) {
 	s.add(store.LogLine{At: s.now(), Stream: store.StreamSystem, Text: text})
 }
@@ -74,8 +69,8 @@ func (s *logSink) add(line store.LogLine) {
 	}
 	s.pending = append(s.pending, line)
 
-	// A step marker is structural, not just text: record it immediately so the
-	// timeline stays accurate even if the run dies in the next instant.
+	// Record a step marker immediately, so the step list is right even if the
+	// run dies before the next flush.
 	if line.Stream == store.StreamStdout {
 		if name, ok := parseStepMarker(line.Text); ok {
 			s.mu.Unlock()
@@ -113,9 +108,8 @@ func (s *logSink) flush() {
 	s.pending = nil
 	s.mu.Unlock()
 
-	// Persist first, notify second. A watcher woken by the event must find the
-	// data already readable, never a cursor pointing at a line that is not
-	// there yet.
+	// Store before notifying, so a watcher woken by the event can read the
+	// lines it announces.
 	lastSeq, err := s.store.AppendLogs(s.ctx, s.runID, batch)
 	if err != nil {
 		return
@@ -150,9 +144,8 @@ func parseStepMarker(line string) (string, bool) {
 
 // streamWriter splits a byte stream into lines for the sink.
 //
-// It handles the awkward parts of reading from a pipe: writes arrive at
-// arbitrary boundaries, a line can span several of them, and a script may end
-// without a trailing newline.
+// Writes from a pipe arrive at arbitrary boundaries, so a line can span
+// several Write calls; the writer buffers until it sees a newline.
 type streamWriter struct {
 	sink   *logSink
 	stream store.Stream
@@ -161,8 +154,8 @@ type streamWriter struct {
 	buf bytes.Buffer
 }
 
-// maxBufferedLine caps an unterminated line. A script printing a progress bar
-// with no newlines must not grow the buffer without bound.
+// maxBufferedLine caps a line with no newline yet, such as a progress bar, so
+// the buffer cannot grow without bound.
 const maxBufferedLine = 64 * 1024
 
 func (w *streamWriter) Write(p []byte) (int, error) {
@@ -177,7 +170,6 @@ func (w *streamWriter) Write(p []byte) (int, error) {
 		idx := bytes.IndexByte(data, '\n')
 		if idx < 0 {
 			if w.buf.Len() > maxBufferedLine {
-				// Emit what we have so an unterminated stream still surfaces.
 				line := strings.TrimRight(w.buf.String(), "\r")
 				w.buf.Reset()
 				w.sink.add(store.LogLine{At: w.sink.now(), Stream: w.stream, Text: line})
@@ -186,7 +178,7 @@ func (w *streamWriter) Write(p []byte) (int, error) {
 		}
 		line := string(data[:idx])
 		w.buf.Next(idx + 1)
-		// Handle CRLF as well as LF; some tools emit Windows line endings.
+		// Some tools emit CRLF line endings.
 		line = strings.TrimRight(line, "\r")
 		w.sink.add(store.LogLine{At: w.sink.now(), Stream: w.stream, Text: line})
 	}

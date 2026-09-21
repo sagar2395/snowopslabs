@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package lab
 
 import (
@@ -11,15 +12,15 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/scenario"
 )
 
-// Deps are the engines a plan executes through. The lab package never talks
-// to the cluster itself — every action goes through the existing idempotent
-// install/uninstall paths (golden rules 2 and 5).
+// Deps are the engines a plan runs through. The lab package never talks to the
+// cluster itself; every action uses the normal idempotent install and
+// uninstall paths.
 type Deps struct {
 	Exec     *executor.Executor
 	Registry *platform.Registry
 	Scenes   *scenario.Engine
-	// ContinueOnError collects failures instead of stopping (used by reset:
-	// tear down as much as possible, then report what stuck).
+	// ContinueOnError keeps going after a failed action and reports all
+	// failures at the end. Reset uses it to remove as much as it can.
 	ContinueOnError bool
 	// Progress, if set, is called before each action (e.g. "[2/5] app-deploy go-api").
 	Progress func(i, total int, a Action)

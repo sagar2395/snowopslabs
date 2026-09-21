@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package inventory keeps the store's installed-component inventory in step with
-// what the run engine actually did. It is the bridge between the
-// domain-agnostic engine and the component table: registered as a run.FinishHook,
-// it watches runs finish and records the lasting effect — a succeeded
-// platform.install adds the component, a succeeded platform.uninstall marks it
-// removed — so teardown can later remove exactly what was installed and report
-// anything it could not.
+// Package inventory keeps the store's installed-component inventory in step
+// with the runs the engine finishes. Registered as a run.FinishHook, it records
+// each successful platform.install as installed and each successful
+// platform.uninstall as removed, so teardown knows exactly what to remove.
 package inventory
 
 import (
@@ -26,10 +23,9 @@ type Recorder struct {
 // NewRecorder builds a Recorder over the given store.
 func NewRecorder(st *store.Store) *Recorder { return &Recorder{store: st} }
 
-// RunFinished implements run.FinishHook. It reacts only to successful component
-// operations; a failed install records nothing (the component is not there), and
-// a cancelled one likewise. Errors are swallowed: the inventory is a best-effort
-// mirror, and a write failure must never wedge the engine's worker.
+// RunFinished implements run.FinishHook. It records only successful component
+// runs. Write errors are ignored: the inventory is best-effort, and the hook
+// must not block the engine's worker.
 func (r *Recorder) RunFinished(ctx context.Context, run store.Run) {
 	if run.Status != store.StatusSucceeded {
 		return
@@ -46,16 +42,15 @@ func (r *Recorder) RunFinished(ctx context.Context, run store.Run) {
 			InstalledAt: run.EndedAt,
 		})
 	case platsvc.KindUninstall:
-		// MarkComponentRemoved reports ErrComponentNotFound for something never
-		// recorded (installed outside labctl); that is fine — it simply is not in
-		// our inventory, and a teardown surfaces that separately.
+		// ErrComponentNotFound here means it was installed outside labctl;
+		// there is nothing to update.
 		_ = r.store.MarkComponentRemoved(ctx, componentID(run), run.ID, run.EndedAt)
 	}
 }
 
-// componentID is the component's stable inventory id. The engine sets a
-// per-component lock key of exactly this form, so prefer it; fall back to
-// deriving it from the target for a run that somehow carried no lock.
+// componentID returns the component's inventory ID. The run's lock key already
+// has that form ("platform:ingress/traefik"); a run without one falls back to
+// its target.
 func componentID(run store.Run) string {
 	if run.LockKey != "" {
 		return run.LockKey

@@ -3,17 +3,14 @@
 // Package compare measures a bound workload under load and diffs the result
 // against another workload's measurement of the same scenario.
 //
-// Comparing stacks is a product feature (ADR-0014 §6), which makes fairness a
-// requirement rather than a detail: every workload is measured under the same
-// traffic profile, at the same request rate, over a window of the same length
-// that starts only after an explicit warmup. Without the warmup exclusion the
-// headline feature reports "the JVM is slower", which measures class loading
-// and JIT warm-up rather than the application.
+// To keep the comparison fair (ADR-0014 §6), every workload gets the same
+// traffic profile and request rate, measured over a window of the same length
+// that starts after a warmup. The warmup keeps start-up costs, such as JVM
+// class loading and JIT compilation, out of the numbers.
 //
-// What is measured is derived from the app contract, so any conforming app —
-// including one the user brings — can be compared without declaring anything
-// extra. Nothing here grades: a comparison reports numbers, and a scenario's
-// checks remain the only thing that passes or fails.
+// The metrics come from the app contract, so any conforming app can be
+// compared. A comparison only reports numbers; passing or failing is decided
+// by a scenario's checks.
 package compare
 
 import (
@@ -33,9 +30,8 @@ import (
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 )
 
-// Options are the fair-run controls. One set governs every workload in a
-// comparison — that is what makes the runs comparable — so they are validated
-// once, before the first app is deployed.
+// Options are the conditions every workload in a comparison is measured
+// under. They are validated once, before the first app is deployed.
 type Options struct {
 	Scenario string        // scenario every workload is measured under
 	Apps     []string      // workloads to measure, in order; the first is the baseline
@@ -72,9 +68,8 @@ func (o Options) Validate() error {
 	if o.Warmup < 0 {
 		errs = append(errs, "warmup must not be negative")
 	}
-	// A rate over a range holding fewer than two scrapes returns nothing, so a
-	// short window does not measure a quiet workload — it measures nothing and
-	// says zero. Two minutes is four samples at the common 30s scrape interval.
+	// rate() needs at least two scrapes in its range, or it returns nothing.
+	// Two minutes is four scrapes at the usual 30s interval.
 	if o.Window < 2*time.Minute {
 		errs = append(errs, fmt.Sprintf("window must be at least 2m so it spans several scrapes, got %s", o.Window))
 	}
@@ -89,9 +84,8 @@ func (o Options) Validate() error {
 // is still being measured.
 func (o Options) Load() time.Duration { return o.Warmup + o.Window + 30*time.Second }
 
-// direction says which way is better for a metric, so the report can mark the
-// winner without the reader having to remember that low latency is good and
-// high throughput is good.
+// direction says whether a higher or lower value is better, so the report can
+// mark which workload did better.
 type direction int
 
 const (
@@ -114,8 +108,7 @@ type Metric struct {
 	query func(w workload.Workload, window string) string
 }
 
-// Keys of the metrics a comparison reports. Referenced by name where a specific
-// metric is derived or explained.
+// Keys of the metrics a comparison reports.
 const (
 	KeyRPS      = "requests_per_second"
 	KeyP50      = "latency_p50"
@@ -129,15 +122,12 @@ const (
 
 // Metrics is the fixed measurement set, in report order.
 //
-// Every one is derived from the app contract's declared request metric or from
-// the cluster's own instrumentation, so a conforming app needs to declare
-// nothing extra to be comparable. The set is deliberately closed: an author who
-// could add metrics per scenario could add one that only their app can satisfy,
-// and the comparison would stop being a comparison.
+// Every metric comes from the app contract's request metric or from the
+// cluster's own instrumentation. Scenarios cannot add metrics, because one only
+// some apps can report would make the comparison unequal.
 func Metrics() []Metric {
-	// Selecting on the `app` label rather than the pod name matches how every
-	// scenario check queries the workload, so a comparison and a check cannot
-	// disagree about which series belong to the application.
+	// Select on the `app` label, as scenario checks do, so both see the same
+	// series.
 	sel := func(w workload.Workload) string { return fmt.Sprintf(`{app=%q}`, w.Name) }
 	pods := func(w workload.Workload) string {
 		return fmt.Sprintf(`{namespace=%q,pod=~%q,container!=""}`, w.Namespace, w.Name+"-.*")
@@ -158,15 +148,13 @@ func Metrics() []Metric {
 			return fmt.Sprintf(`histogram_quantile(0.99, sum(rate(%s_bucket%s[%s])) by (le))`, w.Metric, sel(w), win)
 		},
 	}, {
-		// Derived, not queried: the same ratio the scenarios grade on, and the
-		// one number in this set that is comparable across runtimes on its own.
+		// Computed from the other metrics rather than queried.
 		Key: KeyTail, Label: "tail amplification", Unit: "x", scale: 1, digits: 2, better: lower,
 	}, {
 		Key: KeyErrors, Label: "5xx rate", Unit: "%", scale: 100, digits: 2, better: lower,
 		query: func(w workload.Workload, win string) string {
-			// `or vector(0)` because an app that has never returned a 5xx has no
-			// 5xx series at all, and no samples would otherwise read as "not
-			// measurable" rather than "none".
+			// An app that never returned a 5xx has no 5xx series; `or vector(0)`
+			// reports that as zero instead of "not measurable".
 			return fmt.Sprintf(
 				`(sum(rate(%s_count{app=%q,http_response_status_code=~"5.."}[%s])) or vector(0)) / clamp_min(sum(rate(%s_count%s[%s])), 0.001)`,
 				w.Metric, w.Name, win, w.Metric, sel(w), win)
@@ -178,8 +166,8 @@ func Metrics() []Metric {
 				w.Namespace, w.Name, win)
 		},
 	}, {
-		// Total across replicas, not per pod: an app that answers the same load
-		// on four replicas is not cheaper than one that answers it on two.
+		// Summed across replicas, so an app that needs more replicas for the
+		// same load shows the higher total cost.
 		Key: KeyCPU, Label: "cpu (total, mean)", Unit: "cores", scale: 1, digits: 3, better: lower,
 		query: func(w workload.Workload, win string) string {
 			return fmt.Sprintf(`avg_over_time(sum(rate(container_cpu_usage_seconds_total%s[1m]))[%s:1m])`, pods(w), win)
@@ -192,29 +180,26 @@ func Metrics() []Metric {
 	}}
 }
 
-// Querier is the slice of Prometheus a measurement needs. checks.Runner
-// implements it, so a comparison reads the same Prometheus, through the same
-// client, as the checks that grade the scenario.
+// Querier is the Prometheus access a measurement needs. checks.Runner
+// implements it.
 type Querier interface {
 	QueryScalar(ctx context.Context, query string) (string, error)
 }
 
-// Measurement is one workload's numbers over the measured window. A metric with
-// no series is absent rather than zero — "the cluster does not export this" and
-// "this workload used none" are different answers.
+// Measurement is one workload's numbers over the measured window. A metric
+// the cluster does not export is absent from Values rather than zero.
 type Measurement struct {
 	App    string             `json:"app"`
 	Values map[string]float64 `json:"values"`
 }
 
-// PromDuration renders a window as a PromQL range. Whole seconds, so a window
-// of 2m30s is a legal range rather than "2m30s" spelled Go's way.
+// PromDuration renders a window as a PromQL range in whole seconds, such as
+// "150s", because PromQL does not accept Go's "2m30s" form.
 func PromDuration(d time.Duration) string { return strconv.Itoa(int(d.Seconds())) + "s" }
 
-// Measure runs the measurement set against one workload over the window that
-// has just closed. A query that matches no series leaves its metric absent; any
-// other failure is the whole measurement's failure, because a comparison built
-// from partly-failed reads would be silently unfair.
+// Measure queries every metric for one workload over the window that has just
+// ended. A query with no series leaves its metric absent; any other query
+// error fails the whole measurement.
 func Measure(ctx context.Context, q Querier, w workload.Workload, window time.Duration) (Measurement, error) {
 	m := Measurement{App: w.Name, Values: map[string]float64{}}
 	win := PromDuration(window)
@@ -230,9 +215,8 @@ func Measure(ctx context.Context, q Querier, w workload.Workload, window time.Du
 			return m, fmt.Errorf("measuring %s: %w", metric.Key, err)
 		}
 		v, err := strconv.ParseFloat(raw, 64)
-		// A quantile over an empty histogram is NaN, and Go parses that happily.
-		// It is a missing measurement, not a number: recorded as one it would
-		// poison every ratio derived from it.
+		// A quantile over an empty histogram is NaN. Treat it as missing, or it
+		// would turn every ratio computed from it into NaN.
 		if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
 			continue
 		}
@@ -300,8 +284,7 @@ func Render(out io.Writer, o Options, ms []Measurement) {
 }
 
 // delta renders one column's difference from the baseline as a percentage,
-// annotated with which way is better so "+1400%" on latency cannot be misread
-// as an improvement.
+// labelled "better" or "worse" for that metric.
 func delta(base, v float64, better direction) string {
 	if base == 0 {
 		return "(n/a)"
@@ -318,8 +301,8 @@ func delta(base, v float64, better direction) string {
 	return fmt.Sprintf("(%+.1f%%%s)", pct, mark)
 }
 
-// missingMetrics names the metrics no workload could report, so a dash in the
-// table is explained once rather than looking like a failed run.
+// missingMetrics lists the metrics no workload reported, so the report can
+// explain the dashes in the table.
 func missingMetrics(ms []Measurement) []string {
 	var out []string
 	for _, metric := range Metrics() {
@@ -335,18 +318,15 @@ func missingMetrics(ms []Measurement) []string {
 	return out
 }
 
-// Direction exposes which way is better for a metric, so a client can mark a
-// winner without hardcoding the answer per metric key. Returned as two booleans
-// rather than the unexported enum: the API layer serialises it, and a new
-// direction should not silently become a number in a JSON contract.
+// Direction reports whether higher or lower is better for the metric. It
+// returns booleans rather than the unexported direction type because the API
+// serialises them.
 func (m Metric) Direction() (lowerBetter, noPreference bool) {
 	return m.better == lower, m.better == neutral
 }
 
-// Display exposes how a raw Prometheus value becomes the number a reader sees:
-// the multiplier into the metric's unit, and the decimal places.
-//
-// Exported so every surface formats a metric the same way. The API sends these
-// with the data rather than the client keeping its own table, because a client
-// that decided "seconds" on its own rendered a 5ms latency as "0.005 ms".
+// Display returns how to turn a raw Prometheus value into the displayed
+// number: the multiplier into the metric's unit and the number of decimal
+// places. The API sends these so the UI formats values the same way the CLI
+// does.
 func (m Metric) Display() (scale float64, digits int) { return m.scale, m.digits }

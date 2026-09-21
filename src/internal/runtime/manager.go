@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package runtime discovers the cluster runtimes under runtimes/ (k3d, kind,
+// incluster), reports which one kubectl is using, and runs their up and down
+// scripts.
 package runtime
 
 import (

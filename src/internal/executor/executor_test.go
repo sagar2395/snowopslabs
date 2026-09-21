@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package executor
 
 import (
@@ -50,11 +51,9 @@ func TestSetEnv_Overwrite(t *testing.T) {
 	}
 }
 
-// TestSetEnv_ConcurrentWithBuildEnv models the HTTP server, where one handler
-// calls SetEnv (e.g. traffic tunables) while other handlers run commands and
-// snapshot the environment via buildEnv. Before Env was guarded by a mutex this
-// tripped "concurrent map read and map write"; run with -race to guard against
-// regressions.
+// TestSetEnv_ConcurrentWithBuildEnv mimics the HTTP server: one goroutine calls
+// SetEnv while others run commands that read the environment. Run it with
+// -race.
 func TestSetEnv_ConcurrentWithBuildEnv(t *testing.T) {
 	t.Parallel()
 	e := New(t.TempDir())
@@ -260,12 +259,10 @@ func TestRunScriptStreamed_SuccessPath_EmitsEvents(t *testing.T) {
 	}
 }
 
-// TestStreamOutput_LongLineNotTruncated guards against the bufio.Scanner
-// regression: a single line larger than the old 1 MiB cap used to silently drop
-// that line and everything after it from both the writer and the broadcast
-// stream. A sentinel line printed *after* the huge line must survive.
+// TestStreamOutput_LongLineNotTruncated checks that a line longer than 1 MiB,
+// and the line printed after it, both reach the writer and the broadcast.
 func TestStreamOutput_LongLineNotTruncated(t *testing.T) {
-	const longLen = 2 * 1024 * 1024 // 2 MiB, well past the old 1 MiB cap
+	const longLen = 2 * 1024 * 1024 // 2 MiB
 
 	var buf bytes.Buffer
 	e := New(t.TempDir())

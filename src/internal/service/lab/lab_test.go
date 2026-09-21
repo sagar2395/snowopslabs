@@ -182,9 +182,8 @@ func TestUp_ConflictsWithInFlightOperation(t *testing.T) {
 
 func TestCancel_LeavesNoInFlightRunAndReleasesLock(t *testing.T) {
 	h := newHarness(t)
-	// A long-blocking up we will cancel mid-flight. The engine cancels the whole
-	// process group (ADR-0003); with the Fake, cancellation surfaces as the run
-	// reaching a terminal cancelled state rather than an orphaned child.
+	// A long-running up, cancelled mid-flight. With the Fake, success means the
+	// run ends in the cancelled state.
 	h.f.WhenArgsContainBlock("up.sh", 30*time.Second)
 
 	id, err := h.svc.Up(context.Background(), "k3d")

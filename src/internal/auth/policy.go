@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package auth
 
 import "strings"
 
-// operatorOnlyPrefixes are the version-less API sub-paths whose *mutating*
-// requests (anything other than GET/OPTIONS) require the operator role.
-// Participants get a 403 on these. Everything else that mutates — scenarios,
-// challenges, incidents, learn — is part of "running" a lab and is allowed for
-// participants.
-//
-// Rationale: a participant can run challenges/incidents/learn and
-// read status, but must not uninstall platform, switch runtime, reset the lab,
-// build/deploy apps and shared services, or drive shared load generation.
+// operatorOnlyPrefixes are the API paths, without the /api/v2 prefix, where a
+// request other than GET or OPTIONS needs the operator role. Participants may
+// run scenarios, challenges, incidents and learning paths, but may not change
+// the platform, runtime, lab, apps, shared services or traffic, which affect
+// everyone.
 var operatorOnlyPrefixes = []string{
 	"/platform",
 	"/runtimes",
@@ -22,11 +19,9 @@ var operatorOnlyPrefixes = []string{
 	"/runs",
 }
 
-// RequiresOperator reports whether a request to the given API path with the
-// given HTTP method may only be performed by an operator. Read requests
-// (GET/OPTIONS) never require operator; neither do paths outside the
-// operator-only set. The version prefix is normalised first, so /api and
-// /api/v2 are gated identically.
+// RequiresOperator reports whether only an operator may send a request with
+// this method to this API path. GET and OPTIONS never need the operator role.
+// /api and /api/v2 paths are treated the same.
 func RequiresOperator(method, path string) bool {
 	if method == "GET" || method == "OPTIONS" || method == "HEAD" {
 		return false
@@ -40,10 +35,8 @@ func RequiresOperator(method, path string) bool {
 	return false
 }
 
-// apiSubPath strips the API version prefix (/api/v2 or /api) so policy matches
-// on the version-less remainder — e.g. both /api/platform/up and
-// /api/v2/platform/up become /platform/up. A path without an /api prefix is
-// returned unchanged.
+// apiSubPath strips the /api/v2 or /api prefix, so /api/v2/platform/up becomes
+// /platform/up. Other paths are returned unchanged.
 func apiSubPath(path string) string {
 	if rest, ok := strings.CutPrefix(path, "/api/v2"); ok {
 		return rest

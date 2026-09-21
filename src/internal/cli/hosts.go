@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -25,12 +26,12 @@ const (
 )
 
 // platformSubdomains are the hostnames platform components serve. They are
-// listed rather than discovered so a `hosts add` run straight after `labctl init`
-// already covers components that are not installed yet.
+// listed here rather than discovered, so `hosts add` also covers components
+// that are not installed yet.
 var platformSubdomains = []string{
 	"grafana",
 	"prometheus",
-	// The incident engine asks alertmanager.<suffix> whether a paging fault fired.
+	// The incident engine queries alertmanager.<suffix>.
 	"alertmanager",
 	"opencost",
 	"argocd",
@@ -97,8 +98,9 @@ func init() {
 	rootCmd.AddCommand(hostsCmd)
 }
 
-// collectHosts gathers every hostname the lab serves. A cluster that cannot be
-// read is reported, not fatal: the platform and app hosts still get written.
+// collectHosts returns every hostname the lab serves. If the apps or the
+// cluster cannot be read, it writes a warning to warn and returns the hosts it
+// could find.
 func collectHosts(ctx context.Context, projectRoot, domainSuffix string, warn io.Writer) []string {
 	subdomains := slices.Clone(platformSubdomains)
 	apps, err := config.ListApps(projectRoot)
@@ -118,9 +120,9 @@ func collectHosts(ctx context.Context, projectRoot, domainSuffix string, warn io
 	return mergeHosts(domainSuffix, subdomains, ingress)
 }
 
-// mergeHosts returns the sorted, de-duplicated hostnames under domainSuffix: one
-// per subdomain, plus each discovered host the suffix covers. A host outside the
-// suffix belongs to someone else's DNS and is left alone.
+// mergeHosts returns the sorted, de-duplicated hostnames under domainSuffix:
+// one per subdomain, plus each discovered host under the suffix. Hosts outside
+// the suffix are ignored.
 func mergeHosts(domainSuffix string, subdomains, discovered []string) []string {
 	set := map[string]bool{}
 	for _, sub := range subdomains {
@@ -173,9 +175,9 @@ func printHostsSummary(w io.Writer, hosts []string, before map[string]bool) {
 	}
 }
 
-// warnMissingHosts names the Ingress hosts /etc/hosts does not list yet, so a
-// learner is told before a browser fails to resolve them. It stays quiet when
-// the cluster cannot be read or the hosts file is not managed at all.
+// warnMissingHosts prints the Ingress hosts that /etc/hosts does not list yet.
+// It prints nothing when the cluster cannot be read or /etc/hosts has no
+// managed block.
 func warnMissingHosts(ctx context.Context, w io.Writer, domainSuffix string) {
 	content := readHostsFile()
 	if !strings.Contains(content, hostsBegin) {
@@ -216,8 +218,8 @@ func readHostsFile() string {
 	return string(data)
 }
 
-// hostsBlockPresent reports whether the managed block is already in /etc/hosts.
-// Reading the file needs no privileges, so init/doctor can advise without sudo.
+// hostsBlockPresent reports whether /etc/hosts has the managed block. It needs
+// no privileges.
 func hostsBlockPresent() bool {
 	return strings.Contains(readHostsFile(), hostsBegin)
 }
@@ -247,10 +249,9 @@ func writeHostsBlock(block string) error {
 	return writeManagedHostsFile(hostsFile, block)
 }
 
-// writeManagedHostsFile rewrites path with the managed block replaced (or removed
-// when block is empty). The write is atomic — a temp file in the same directory
-// swapped in by rename — so a crash or a full disk can never leave /etc/hosts
-// half-written and unusable. The file's existing permission bits are preserved.
+// writeManagedHostsFile rewrites path with the managed block replaced, or
+// removed when block is empty. It writes atomically and keeps the file's
+// permission bits.
 func writeManagedHostsFile(path, block string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -259,9 +260,8 @@ func writeManagedHostsFile(path, block string) error {
 
 	result := computeHostsContent(string(data), block)
 
-	// Preserve the current mode (0644 for a not-yet-existing file). Ownership
-	// follows the rename's new inode; this runs as root against a root-owned
-	// /etc/hosts, so root:root/​wheel is what we want anyway.
+	// Keep the current mode (0644 for a new file). The new file is owned by
+	// root, which is correct for /etc/hosts.
 	perm := os.FileMode(0o644)
 	if fi, statErr := os.Stat(path); statErr == nil {
 		perm = fi.Mode().Perm()
@@ -273,9 +273,8 @@ func writeManagedHostsFile(path, block string) error {
 	return nil
 }
 
-// computeHostsContent returns the contents of a hosts file with the managed
-// block stripped and, when block is non-empty, the new block appended. It is
-// pure so the block-rewriting logic can be tested without touching /etc/hosts.
+// computeHostsContent returns a hosts file's content with the managed block
+// removed and, when block is non-empty, the new block appended.
 func computeHostsContent(existing, block string) string {
 	lines := strings.Split(existing, "\n")
 	var out []string
@@ -312,7 +311,7 @@ func computeHostsContent(existing, block string) string {
 }
 
 // atomicWriteFile writes data to a temp file in path's directory and renames it
-// over path, so readers ever see only the complete old or complete new file.
+// over path, so readers only ever see the complete old or new file.
 func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".snowops-hosts-*")
@@ -320,7 +319,7 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	tmpName := tmp.Name()
-	// Best-effort cleanup if we bail before the rename; a no-op once renamed.
+	// Remove the temp file if we return before the rename.
 	defer func() { _ = os.Remove(tmpName) }()
 
 	if _, err := tmp.Write(data); err != nil {

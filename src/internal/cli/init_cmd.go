@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -57,7 +58,8 @@ var teardownCmd = &cobra.Command{
 	Use:   "teardown",
 	Short: "Tear down the lab (deactivate scenarios/incidents + destroy apps + platform + cluster)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Deactivate scenarios and incidents FIRST — before their platform/app prerequisites are destroyed.
+		// Deactivate scenarios and incidents before removing the platform and
+		// apps they depend on.
 		fmt.Println("=== Deactivating scenarios and incidents ===")
 		if cleared := scenes.DeactivateAll(); len(cleared) > 0 {
 			fmt.Printf("Deactivated scenarios: %s\n", strings.Join(cleared, ", "))

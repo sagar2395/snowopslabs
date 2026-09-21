@@ -32,8 +32,8 @@ func (e *Engine) worker() {
 // one terminal record: the store's FinishRun guard means a cancellation racing
 // a natural exit cannot produce two.
 func (e *Engine) execute(id string) {
-	// Background, not a request context: a run outlives the HTTP request that
-	// submitted it. Cancellation comes from Cancel or Shutdown.
+	// A run outlives the request that submitted it, so it starts from
+	// Background. Cancel, Shutdown and the timeout are what stop it.
 	ctx := context.Background()
 
 	specVal, ok := e.specs.LoadAndDelete(id)
@@ -80,8 +80,7 @@ func (e *Engine) execute(id string) {
 
 	startedAt := e.now()
 	if err := e.store.StartRun(ctx, id, startedAt); err != nil {
-		// Another path already moved it out of queued (a cancel landing at the
-		// same instant). Nothing to do.
+		// A concurrent Cancel already moved it out of the queued state.
 		return
 	}
 	e.subs.publish(Event{Type: EventStatus, RunID: id, Status: store.StatusRunning})
@@ -97,7 +96,6 @@ func (e *Engine) execute(id string) {
 		begin  = time.Now()
 	)
 	if spec.Func != nil {
-		// In-process operation: run it, streaming its transcript to the sink.
 		res, runErr = e.executeFunc(timeoutCtx, spec.Func, sink)
 	} else {
 		scriptPath, err := e.resolver.Resolve(rec.Script)
@@ -125,12 +123,9 @@ func (e *Engine) execute(id string) {
 			Stderr: stderr,
 		}
 
-		// Monotonic measurement. Subtracting two wall-clock timestamps would be
-		// wrong across a DST change or an NTP step.
 		res, runErr = e.runner.Run(timeoutCtx, cmd)
 
-		// A script that dies mid-line, or ends without a trailing newline, still
-		// has its last words recorded — that line is often the one explaining why.
+		// Keep a final line that had no trailing newline; it is often the error.
 		stdout.Flush()
 		stderr.Flush()
 	}
@@ -153,10 +148,9 @@ func (e *Engine) execute(id string) {
 	e.finish(ctx, id, rec.Kind, status, exitCode, message, elapsed)
 }
 
-// executeFunc runs an in-process operation, streaming its transcript to the sink
-// and translating its outcome into the same Result/error shape a script yields —
-// so classify treats both identically. A panic in the operation is contained and
-// reported as a failure rather than taking the worker down.
+// executeFunc runs an in-process operation with its output going to the sink,
+// and returns the same Result/error shape a script run does so classify can
+// treat both alike. A panic in fn becomes a failed run, not a crashed worker.
 func (e *Engine) executeFunc(ctx context.Context, fn RunFunc, sink *logSink) (res toolchain.Result, err error) {
 	out := sink.writer(store.StreamStdout)
 	defer func() {
@@ -172,9 +166,9 @@ func (e *Engine) executeFunc(ctx context.Context, fn RunFunc, sink *logSink) (re
 // classify turns an execution outcome into a terminal status, an exit code and
 // a human sentence for the transcript.
 //
-// The ordering matters: a process killed by our own SIGTERM reports a non-zero
-// exit, but the *reason* is the timeout or the cancellation, and the user must
-// be able to tell those apart from a script that genuinely failed.
+// The context checks come first: a process we killed on timeout or cancel
+// also exits non-zero, and the user needs to see the real reason rather than
+// "failed".
 func classify(runCtx, timeoutCtx context.Context, timeout time.Duration, res toolchain.Result, runErr error) (store.Status, *int, string) {
 	switch {
 	case errors.Is(timeoutCtx.Err(), context.DeadlineExceeded) && runCtx.Err() == nil:
@@ -197,16 +191,15 @@ func classify(runCtx, timeoutCtx context.Context, timeout time.Duration, res too
 }
 
 func (e *Engine) finish(ctx context.Context, id, kind string, status store.Status, exitCode *int, message string, elapsed time.Duration) {
-	// Ignore the error: a nil return means another path already recorded a
-	// terminal state, which is the correct outcome for a race.
+	// An error here means another path already recorded a terminal state for
+	// this run, and that record stands.
 	_ = e.store.FinishRun(ctx, id, status, exitCode, message, e.now(), elapsed)
 	e.subs.publish(Event{Type: EventStatus, RunID: id, Status: status})
 	if e.metrics != nil {
 		e.metrics.RunFinished(kind, string(status), elapsed)
 	}
-	// Fire completion hooks with the full terminal record (re-read so they get
-	// target and lock key, not just the fields this call carries). Hooks run
-	// before the worker moves on, so a Shutdown waits for them.
+	// Re-read the record so hooks see every field, including target and lock
+	// key. Hooks run on this worker, so Shutdown waits for them.
 	if len(e.finishHooks) > 0 {
 		if rec, err := e.store.GetRun(ctx, id); err == nil {
 			for _, h := range e.finishHooks {

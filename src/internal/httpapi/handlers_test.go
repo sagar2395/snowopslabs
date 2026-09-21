@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -41,10 +42,9 @@ func TestIsValidName(t *testing.T) {
 	}
 }
 
-// TestPlatformComponentDetail_EmptyMarshalsAsArrays guards the platform details
-// view: the UI reads .provides.length etc., so a nil slice serialized as JSON
-// null would crash it. The handler routes empty lists through nonNilStrings (and
-// seeds usedInScenarios non-nil), so the payload must carry [] everywhere.
+// TestPlatformComponentDetail_EmptyMarshalsAsArrays checks that empty lists in
+// the platform details payload encode as [] rather than null, because the UI
+// reads their .length.
 func TestPlatformComponentDetail_EmptyMarshalsAsArrays(t *testing.T) {
 	detail := PlatformComponentDetail{
 		Provides:        nonNilStrings(nil),
@@ -121,8 +121,7 @@ func TestHandleComponentUp_InvalidName(t *testing.T) {
 
 func TestRespondError_HasCodeField(t *testing.T) {
 	w := httptest.NewRecorder()
-	// No version tag on the request → the backward-compatible v1 {error,code}
-	// envelope, which is what this test asserts.
+	// respondError always writes problem+json, whatever the request path.
 	r := httptest.NewRequest(http.MethodGet, "/api/apps", nil)
 	respondError(w, r, http.StatusBadRequest, "invalid_input", "bad value")
 

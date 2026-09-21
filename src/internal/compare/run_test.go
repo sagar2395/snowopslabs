@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package compare
 
 import (
@@ -76,8 +77,8 @@ func fairOptions() Options {
 	}
 }
 
-// The whole point: each workload is set up, loaded, measured and torn down
-// before the next one begins.
+// Each workload must be set up, loaded, measured and torn down before the
+// next one begins.
 func TestRunMeasuresOneWorkloadAtATime(t *testing.T) {
 	lab := &fakeLab{}
 	rep, err := Run(context.Background(), fairOptions(), lab, okQuerier(), noSleep)

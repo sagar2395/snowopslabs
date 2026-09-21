@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -10,9 +11,8 @@ import (
 	"github.com/sagar2395/snowopslabs/pkg/scenario"
 )
 
-// resolveFunc expands the template variables an author may use in a content
-// string (e.g. {{.DomainSuffix}}). The scenario and incident engines each expose
-// one; passing it in keeps this display code independent of either engine.
+// resolveFunc expands template variables such as {{.DomainSuffix}} in a
+// content string. The scenario and incident engines each provide one.
 type resolveFunc func(string) string
 
 // renderReferences writes the upstream doc/tool links for a scenario or
@@ -30,10 +30,8 @@ func renderReferences(w io.Writer, refs []scenario.Reference, resolve resolveFun
 	}
 }
 
-// renderComponent writes one component line for `scenario info`. Chart and
-// namespace are template-resolved because info is the learner's first contact:
-// a raw "{{.MonitoringNamespace}}" sent them looking for a namespace that does
-// not exist, while install had long since resolved it to the real one.
+// renderComponent writes one component line for `scenario info`, with the
+// chart and namespace expanded.
 func renderComponent(w io.Writer, c scenario.Component, indent string, resolve resolveFunc) {
 	fmt.Fprintf(w, "%s- %s [%s]", indent, c.Name, c.Type)
 	if c.Chart != "" {
@@ -45,8 +43,8 @@ func renderComponent(w io.Writer, c scenario.Component, indent string, resolve r
 	fmt.Fprintln(w)
 }
 
-// renderSnippets writes each snippet as a reader sees it. An exercise snippet is
-// marked, with the command that applies it, because nothing else installs it.
+// renderSnippets writes each snippet. An exercise snippet, which only the
+// learner applies, is marked and shown with its apply command.
 func renderSnippets(w io.Writer, snips []scenario.Snippet, dir string, resolve resolveFunc) {
 	if len(snips) == 0 {
 		return

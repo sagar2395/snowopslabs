@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -11,16 +12,14 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
-// `labctl incident inject|resolve` run their fault scripts through the durable
-// run engine: inject.sh / resolve.sh become recorded, cancellable
-// runs visible in `labctl runs` and the web console. The incident engine still
-// owns the declarative state — active.yaml, hints, and the MTTR/score record —
-// which the CLI updates once the durable run succeeds (MarkInjected /
-// RecordScriptResolved), so the game-day scoring is unchanged.
+// `labctl incident inject|resolve` run inject.sh and resolve.sh through the
+// run engine, so they appear in `labctl runs` and the web console. After a run
+// succeeds, the CLI updates the incident engine's own state (active incident,
+// hints, results) with MarkInjected or RecordScriptResolved.
 
-// incidentEngineFactory builds an incident service over the shared run-engine
-// bootstrap. Overridable in tests. cleanup shuts the engine down and closes the
-// store; always defer it.
+// incidentEngineFactory builds an incident service on a new run engine. Tests
+// replace it. Always defer cleanup, which shuts the engine down and closes the
+// store.
 var incidentEngineFactory = func(ctx context.Context) (*incsvc.Service, *store.Store, *run.Engine, func(), error) {
 	eng, st, cleanup, err := newRunEngine(ctx)
 	if err != nil {
@@ -34,9 +33,9 @@ var incidentEngineFactory = func(ctx context.Context) (*incsvc.Service, *store.S
 	return svc, st, eng, cleanup, nil
 }
 
-// runIncidentOp submits an inject/resolve for a fault through the durable engine
-// and streams it, exiting non-zero if the run fails. submit carries the fault's
-// target workload, which reaches the scripts as TARGET_*.
+// runIncidentOp starts the run engine, calls submit, and streams the run,
+// returning an error if it fails. submit carries the fault's target, which the
+// scripts receive as TARGET_*.
 func runIncidentOp(cmd *cobra.Command, verb, name string, submit func(context.Context, *incsvc.Service) (string, error)) error {
 	ctx := cmd.Context()
 	svc, st, eng, cleanup, err := incidentEngineFactory(ctx)

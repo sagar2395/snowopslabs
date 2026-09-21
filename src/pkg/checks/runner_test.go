@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package checks
 
 import (
@@ -313,9 +314,8 @@ func TestRun_TimeoutRespected(t *testing.T) {
 	}
 }
 
-// TestRun_CarriesAdvisoryMetadata verifies a check's Remediation and Pending
-// fields travel through to the Result, so the CLI/API/UI can render the right
-// next step and distinguish "pending your action" from a genuine regression.
+// TestRun_CarriesAdvisoryMetadata checks that Remediation and Pending are
+// copied to the Result.
 func TestRun_CarriesAdvisoryMetadata(t *testing.T) {
 	r := testRunner()
 	r.Exec = func(ctx context.Context, name string, args ...string) (string, error) {

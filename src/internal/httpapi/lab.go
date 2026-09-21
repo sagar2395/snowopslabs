@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -92,8 +93,8 @@ func (s *Server) handleLabRestore(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleLabReset tears the lab back to post-init. Destructive, so it
-// requires explicit ?confirm=true — the UI shows the confirmation dialog.
+// handleLabReset returns the lab to its state after `labctl init`. Because it
+// is destructive it requires ?confirm=true.
 func (s *Server) handleLabReset(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("confirm") != "true" {
 		respondError(w, r, http.StatusBadRequest, "confirmation_required",

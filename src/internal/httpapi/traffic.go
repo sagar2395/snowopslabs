@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -9,9 +10,8 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/traffic"
 )
 
-// trafficStartRequest is the JSON body for POST /traffic/start. Zero fields fall
-// back to the profile script's own defaults (only profile + rps are required by
-// Options.Validate).
+// trafficStartRequest is the JSON body for POST /traffic/start. Only profile
+// and rps are required; empty fields use the profile's defaults.
 type trafficStartRequest struct {
 	Profile  string `json:"profile"`
 	RPS      int    `json:"rps"`
@@ -20,9 +20,8 @@ type trafficStartRequest struct {
 	Method   string `json:"method,omitempty"`
 }
 
-// handleTrafficInfo lists the available k6 profiles so the UI can offer them.
-// It reads the profiles/ directory only (no cluster call), so it stays cheap and
-// carries an ETag for conditional revalidation.
+// handleTrafficInfo lists the available k6 profiles. It only reads the
+// profiles directory and returns an ETag.
 func (s *Server) handleTrafficInfo(w http.ResponseWriter, r *http.Request) {
 	profiles, err := traffic.Profiles(s.cfg.ProjectRoot)
 	if err != nil {
@@ -32,19 +31,17 @@ func (s *Server) handleTrafficInfo(w http.ResponseWriter, r *http.Request) {
 	if profiles == nil {
 		profiles = []string{}
 	}
-	// The bound workload travels with the profiles so the UI can preselect the app
-	// the lab is actually working on. Without it the target defaulted to whichever
-	// app sorted first, and load went somewhere nobody was looking.
+	// Include the bound workload so the UI can preselect it as the target.
 	writeJSONCached(w, r, http.StatusOK, map[string]any{
 		"profiles": profiles,
 		"workload": workloadResp(s.boundWorkload("")),
 	})
 }
 
-// handleTrafficStart validates the requested profile/rps/duration/target, then
-// launches the in-cluster k6 generator via services/traffic/start.sh. Like the
-// other mutations it returns 202 with a job id; progress streams over the event
-// channel. Starting while a run is active replaces it (the script's semantics).
+// handleTrafficStart validates the request and starts the in-cluster k6
+// generator with services/traffic/start.sh. It returns 202 with a job ID;
+// progress arrives on the event stream. Starting while traffic is running
+// replaces the running generator.
 func (s *Server) handleTrafficStart(w http.ResponseWriter, r *http.Request) {
 	var req trafficStartRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -63,9 +60,8 @@ func (s *Server) handleTrafficStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pass the tunables to the start script via TRAFFIC_* env. Traffic is a
-	// singleton (start replaces any active run), so setting these on the shared
-	// executor is safe here.
+	// Pass the settings as TRAFFIC_* variables. Only one traffic run exists at
+	// a time, so setting them on the shared executor is safe.
 	for k, v := range opts.Env() {
 		s.exec.SetEnv(k, v)
 	}
@@ -78,8 +74,8 @@ func (s *Server) handleTrafficStart(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
 
-// handleTrafficStop tears down the generator via services/traffic/stop.sh, which
-// deletes the dedicated namespace — so no k6 pods are left behind.
+// handleTrafficStop stops the generator with services/traffic/stop.sh, which
+// deletes its namespace and every k6 pod in it.
 func (s *Server) handleTrafficStop(w http.ResponseWriter, r *http.Request) {
 	jobID := s.exec.NextActionID()
 	go func() {

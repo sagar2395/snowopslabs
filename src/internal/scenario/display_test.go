@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package scenario
 
 import (
@@ -13,13 +14,8 @@ import (
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 )
 
-// Anything an author can write and a reader can read must come back resolved.
-// The list of resolved fields used to live in the API handler and grew one field
-// at a time, which is how stage descriptions, explore labels and check
-// remediations each shipped a literal "{{.WorkloadName}}" into the UI.
-//
-// This walks the whole response rather than naming fields, so a field added to
-// the schema and forgotten here fails instead of shipping.
+// Every string a reader is shown must have its templates expanded. The test
+// walks the whole response, so a newly added field is covered too.
 func TestResolvedForDisplayLeavesNoTemplateAReaderCouldSee(t *testing.T) {
 	e := NewEngine(t.TempDir(), "k3d.local", "k3d")
 	s := &Scenario{
@@ -71,16 +67,14 @@ func TestResolvedForDisplayLeavesNoTemplateAReaderCouldSee(t *testing.T) {
 	if e.Workload.Name == "java-api" {
 		t.Error("ResolvedForDisplay rebound the engine")
 	}
-	// The original must be untouched — it is the cached scenario every other
-	// request is served from.
+	// The cached original, which other requests share, must be unchanged.
 	if s.Description != "drives {{.WorkloadName}} in {{.WorkloadNamespace}}" {
 		t.Errorf("the cached scenario was mutated: %q", s.Description)
 	}
 }
 
-// A snippet file is rendered for the app the scenario runs against. It used to
-// be expanded against the engine's default binding, so a scenario active on
-// echo-server showed its manifests for go-api.
+// A snippet file is rendered for the app the scenario runs against, not the
+// engine's default binding.
 func TestResolvedForDisplayRendersSnippetFilesForTheBinding(t *testing.T) {
 	e := NewEngine(t.TempDir(), "k3d.local", "k3d")
 	dir := t.TempDir()

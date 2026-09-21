@@ -682,9 +682,8 @@ func TestPruneRuns(t *testing.T) {
 	})
 }
 
-// TestConcurrentWrites is the guard against v1's unsynchronised JSON files.
-// Many goroutines writing at once must all succeed, with no lost updates and
-// no SQLITE_BUSY surfacing to the caller.
+// TestConcurrentWrites checks that many goroutines writing at once all
+// succeed, with no lost updates and no SQLITE_BUSY errors.
 func TestConcurrentWrites(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)

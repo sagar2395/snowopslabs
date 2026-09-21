@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -11,9 +12,8 @@ import (
 	"testing"
 )
 
-// /api/v2 is the only API prefix. The unversioned /api is not a route at all:
-// it falls through to the SPA handler, so it never answers with JSON that an
-// old client could mistake for a valid response.
+// /api/v2 is the only API prefix. An unversioned /api path is handled by the
+// SPA handler, so it never returns API JSON.
 func TestAPIVersion_OnlyV2IsServed(t *testing.T) {
 	s := newChallengeServer(t)
 	s.setupRoutes()
@@ -110,9 +110,8 @@ func TestRequestIDFrom(t *testing.T) {
 	}
 }
 
-// The access log must emit one structured line per request carrying the
-// correlation ID, so an operator can grep logs by the X-Request-ID a client
-// saw. We capture the default slog output for the duration of one request.
+// The access log must write one line per request that includes the request
+// ID. The test captures slog's default output for one request.
 func TestAccessLog_EmitsStructuredLineWithRequestID(t *testing.T) {
 	var buf bytes.Buffer
 	prev := slog.Default()

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package scenario
 
 import (
@@ -20,9 +21,7 @@ func writeScenario(t *testing.T, root, name, yaml string) {
 	}
 }
 
-// Up must refuse an already-active scenario unless force is set. This guards the
-// `--force` flag whose "use --force to reinstall" hint previously referenced a
-// flag that did not exist.
+// Up must refuse an already-active scenario unless force is set.
 func TestUp_ForceReinstallsActiveScenario(t *testing.T) {
 	root := t.TempDir()
 	writeScenario(t, root, "force-test", `name: force-test

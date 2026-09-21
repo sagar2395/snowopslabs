@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package incident
 
-// MTTR tracking: every completed incident run is recorded in the unified
-// results store (.labctl/history/results.jsonl) with kind=incident, replacing
-// the per-engine incidents.jsonl.
+// MTTR tracking: every completed incident run is recorded in the results
+// store (.labctl/history/results.jsonl) with kind "incident".
 
 import (
 	"path/filepath"
@@ -12,8 +12,8 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/results"
 )
 
-// Record is a view of a completed incident run, reconstructed from the
-// unified results.Record for the `labctl incident history` display.
+// Record is a completed incident run, read back from its results.Record for
+// `labctl incident history`.
 type Record struct {
 	Fault          string    `json:"fault"`
 	Category       string    `json:"category"`
@@ -46,9 +46,8 @@ func (e *Engine) History() ([]Record, error) {
 	return out, nil
 }
 
-// finishRun builds and appends the run record when an incident ends. user
-// attributes the record to the authenticated API user; "" falls back
-// to the OS username.
+// finishRun appends the run record when an incident ends. user is the
+// authenticated API user, or "" to use the OS username.
 func (e *Engine) finishRun(active *Active, f *Fault, resolvedBy, user string) {
 	now := time.Now().UTC()
 	resolveSeconds := int64(now.Sub(active.InjectedAt).Seconds())
@@ -111,7 +110,7 @@ func incidentRecordFromResult(r results.Record) Record {
 		if v, ok := r.Meta["detectSeconds"].(float64); ok {
 			rec.DetectSeconds = int64(v)
 		}
-		// firstCheckedAt is stored as an RFC3339 string via JSON marshaling of time.Time.
+		// Meta values come back from JSON, so the time is an RFC3339 string.
 		if v, ok := r.Meta["firstCheckedAt"].(string); ok && v != "" {
 			if t, err := time.Parse(time.RFC3339Nano, v); err == nil {
 				rec.FirstCheckedAt = t

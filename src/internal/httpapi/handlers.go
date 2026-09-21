@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -49,6 +50,8 @@ type StatusResponse struct {
 	Apps         []AppStatusResp    `json:"apps"`
 }
 
+// PlatformStatusResp reports the provider and state of each core platform
+// category.
 type PlatformStatusResp struct {
 	Ingress ComponentStatus `json:"ingress"`
 	Metrics ComponentStatus `json:"metrics"`
@@ -56,11 +59,14 @@ type PlatformStatusResp struct {
 	Tracing ComponentStatus `json:"tracing"`
 }
 
+// ComponentStatus is one platform category's selected provider and whether it
+// is installed.
 type ComponentStatus struct {
 	Provider string `json:"provider"`
 	Active   bool   `json:"active"`
 }
 
+// AppStatusResp is one app's declared contract and live state.
 type AppStatusResp struct {
 	Name     string `json:"name"`
 	Build    string `json:"buildStrategy"`
@@ -68,26 +74,23 @@ type AppStatusResp struct {
 	Deployed bool   `json:"deployed"`
 	Replicas string `json:"replicas,omitempty"`
 	Ready    string `json:"ready,omitempty"`
-	// URL is the app's ingress address, by the lab convention
-	// http://<app>.<domainSuffix>. Only set once the app is deployed; the UI
-	// links it so a user can jump straight to the running app. It requires the
-	// app's ingress to be enabled and the host resolvable (a /etc/hosts entry
-	// for k3d/kind), which the UI notes.
+	// URL is the app's ingress address, http://<app>.<domainSuffix>, set only
+	// once the app is deployed. It works only if the app's ingress is enabled
+	// and the host resolves (an /etc/hosts entry on k3d or kind).
 	URL string `json:"url,omitempty"`
 	// ServiceURL is the app's in-cluster base URL, from its declared contract.
-	// The UI drives traffic at it, so the address is derived once here rather
-	// than reconstructed in the client where it would drift from the contract.
+	// The UI sends traffic to it.
 	ServiceURL string `json:"serviceUrl,omitempty"`
 	// Capabilities the app declares (ADR-0014), so the UI can show which
-	// scenarios a given app is able to run.
+	// scenarios it can run.
 	Capabilities []string `json:"capabilities,omitempty"`
-	// HPA carries live autoscaler state when an HPA (KEDA-managed included)
-	// targets the app; nil otherwise, so the UI shows the plain replica count.
+	// HPA is the live autoscaler state when an HPA, including one KEDA
+	// manages, targets the app; otherwise nil.
 	HPA *k8s.HPAStatus `json:"hpa,omitempty"`
 }
 
-// appURL builds the conventional ingress URL for a deployed app, or "" when the
-// app isn't deployed or no domain suffix is configured (so no dead link shows).
+// appURL returns the ingress URL for a deployed app, or "" when the app is not
+// deployed or no domain suffix is set.
 func appURL(name, domainSuffix string, deployed bool) string {
 	if !deployed || domainSuffix == "" {
 		return ""
@@ -95,13 +98,8 @@ func appURL(name, domainSuffix string, deployed bool) string {
 	return fmt.Sprintf("http://%s.%s", name, domainSuffix)
 }
 
-// appStatus builds one app's status entry: its declared contract plus whatever
-// the cluster currently says about it.
-//
-// Both /status and /apps serve this shape, and they must agree — the traffic
-// generator picks its target from /apps by the serviceUrl the contract derives,
-// so an /apps response that omitted it reported "no deployed app to target"
-// while /status showed three of them.
+// appStatus returns one app's status: its declared contract plus what the
+// cluster reports. /status and /apps both use it, so they always agree.
 func (s *Server) appStatus(ctx context.Context, appName string) AppStatusResp {
 	resp := AppStatusResp{Name: appName}
 	appCfg, _ := config.LoadAppConfig(s.cfg.ProjectRoot, appName)
@@ -123,8 +121,7 @@ func (s *Server) appStatus(ctx context.Context, appName string) AppStatusResp {
 		resp.Replicas = status.Replicas
 		resp.Ready = status.Ready
 	}
-	// Surface live autoscaler state so the UI can answer "why did it scale"
-	// without a terminal. Only worth querying once the app is up.
+	// Query the autoscaler only once the app is running.
 	if resp.Deployed {
 		if hpa, err := k8s.GetHPAStatus(ctx, ns, appName); err == nil && hpa.Present {
 			resp.HPA = hpa
@@ -142,21 +139,19 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		DomainSuffix: s.cfg.DomainSuffix,
 	}
 
-	// Cluster info
 	clusterInfo, _ := k8s.GetClusterInfo(ctx)
 	resp.Cluster = clusterInfo
 
-	// Platform status — derive namespace from the registry so we don't
-	// assume namespace == provider name.
+	// Take each provider's namespace from the registry; it is not always the
+	// provider's name.
 	ingressActive := false
 	if p, err := s.registry.GetProvider("ingress", s.cfg.IngressProvider); err == nil {
 		ingressActive = k8s.NamespaceExists(ctx, p.Namespace())
 	}
 	metricsActive := false
 	if p, err := s.registry.GetProvider("monitoring/metrics", s.cfg.MetricsProvider); err == nil {
-		// Metrics shares the monitoring namespace with grafana/loki/tempo, so
-		// detect it by its own Helm release rather than namespace existence
-		// (which would read active whenever any monitoring component is present).
+		// Metrics shares the monitoring namespace with other components, so
+		// check its Helm release instead of the namespace.
 		metricsActive = k8s.HelmReleaseExists(ctx, p.Namespace(), p.Name)
 	}
 	loggingActive := false
@@ -186,7 +181,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	// Apps
 	apps, _ := config.ListApps(s.cfg.ProjectRoot)
 	for _, appName := range apps {
 		resp.Apps = append(resp.Apps, s.appStatus(ctx, appName))
@@ -213,8 +207,8 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
-// handleAppDetail returns the "how it's built and deployed" view for one app:
-// overview, stack, and the actual Dockerfile + Helm chart with their repo paths.
+// handleAppDetail returns how one app is built and deployed: an overview, its
+// stack, and its Dockerfile and Helm chart with their repo paths.
 func (s *Server) handleAppDetail(w http.ResponseWriter, r *http.Request) {
 	name, ok := pathName(w, r, "app")
 	if !ok {
@@ -281,12 +275,8 @@ func (s *Server) handlePlatformStatus(w http.ResponseWriter, r *http.Request) {
 		providers := s.registry.GetProviders(cat)
 		exclusive := s.registry.IsExclusive(cat)
 		for _, p := range providers {
-			// Providers that share a namespace (prometheus, grafana, loki, tempo
-			// all live in the monitoring namespace) can't be told apart by
-			// namespace existence — the first install creates the namespace and
-			// then every one of them reads as installed. Detect those by their own
-			// Helm release instead; everyone else owns its namespace, so namespace
-			// existence remains the (cheaper) signal.
+			// Providers that share a namespace are checked by Helm release;
+			// the rest by whether their namespace exists, which is cheaper.
 			installed := k8s.NamespaceExists(ctx, p.Namespace())
 			if p.SharesNamespace() {
 				installed = k8s.HelmReleaseExists(ctx, p.Namespace(), p.Name)
@@ -304,12 +294,9 @@ func (s *Server) handlePlatformStatus(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
-// handlePlatformUp installs the slim baseline only: ingress + metrics + Grafana
-// — the minimum needed for a cluster you can reach and observe. Logging,
-// tracing, GitOps, chaos and the rest are opt-in, installed per-need from the
-// Platform tab or pulled in by a scenario that declares them. (Previously this
-// installed the whole observability stack, which surprised users with more than
-// they asked for.)
+// handlePlatformUp installs the baseline platform: ingress, metrics and
+// Grafana. Everything else (logging, tracing, GitOps, chaos, ...) is installed
+// on demand from the Platform tab or by a scenario that needs it.
 func (s *Server) handlePlatformUp(w http.ResponseWriter, r *http.Request) {
 	jobID := s.exec.NextActionID()
 	label := "platform-baseline"
@@ -340,7 +327,7 @@ func (s *Server) handlePlatformDown(w http.ResponseWriter, r *http.Request) {
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
 		var lastErr error
-		// Uninstall in reverse order
+		// Uninstall in reverse install order.
 		if s.cfg.TracingProvider != "" {
 			if err := s.registry.UninstallStreamed("tracing", s.cfg.TracingProvider, s.exec); err != nil {
 				lastErr = err
@@ -369,10 +356,9 @@ func (s *Server) handlePlatformDown(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
 
-// resolveCategory maps a URL-safe category segment to the registry's category
-// key. Nested categories like "monitoring/metrics" contain a slash and can't
-// appear as a single path segment, so the API accepts the last segment
-// ("metrics") and resolves it to the full key here.
+// resolveCategory maps a category path segment to the registry's category
+// key. A nested category such as "monitoring/metrics" cannot be one path
+// segment, so the API accepts its last part ("metrics") and this maps it back.
 func (s *Server) resolveCategory(cat string) string {
 	cats := s.registry.Categories()
 	for _, c := range cats {
@@ -438,8 +424,8 @@ type ScenarioRef struct {
 	DisplayName string `json:"displayName"`
 }
 
-// PlatformComponentDetail is the per-tool details payload: what it is, how it's
-// installed, and which scenarios depend on it.
+// PlatformComponentDetail describes one platform component: what it is, how
+// it is installed, and which scenarios depend on it.
 type PlatformComponentDetail struct {
 	Category        string   `json:"category"`
 	Name            string   `json:"name"`
@@ -452,9 +438,8 @@ type PlatformComponentDetail struct {
 	Resources       []string `json:"resources"`
 	Chart           string   `json:"chart"`
 	InstallCommands []string `json:"installCommands"`
-	// InstallVars documents every shell variable that appears in the install
-	// commands — its resolved value (where the server can determine it) and what
-	// it means — so a learner can read the commands without guessing.
+	// InstallVars explains every shell variable in the install commands, with
+	// its value where the server knows it.
 	InstallVars     []InstallVar  `json:"installVars"`
 	UsedInScenarios []ScenarioRef `json:"usedInScenarios"`
 }
@@ -472,20 +457,17 @@ type InstallVar struct {
 // command.
 var shellVarRe = regexp.MustCompile(`\$\{?([A-Z_][A-Z0-9_]*)\}?`)
 
-// installCommandVars resolves the deterministically-known shell variables in a
-// provider's install commands (so the shown commands read with real values, not
-// $NAMESPACE / $SCRIPT_DIR) and returns a legend documenting every variable that
-// appeared — its value where the server can determine it, and what it means —
-// so the details page can explain the commands instead of leaving raw $VARs.
-// providerDir is the provider's directory relative to the repo root.
+// installCommandVars replaces the shell variables whose values the server
+// knows, such as $NAMESPACE and $SCRIPT_DIR, in a provider's install commands.
+// It also returns an explanation of every variable that appeared. providerDir
+// is the provider's directory relative to the repo root.
 func installCommandVars(cmds []string, namespace, domain, providerDir string) ([]string, []InstallVar) {
 	valuesFile := ""
 	if providerDir != "" {
 		valuesFile = providerDir + "/values.yaml"
 	}
-	// Inline substitutions: variables the server can resolve to a concrete value.
-	// Secrets and other env-provided variables are intentionally left as $VAR and
-	// only explained in the legend.
+	// Variables with a known value. Secrets and other values that come from
+	// the environment stay as $VAR and are only explained.
 	inline := map[string]string{
 		"NAMESPACE":     namespace,
 		"DOMAIN_SUFFIX": domain,
@@ -505,8 +487,9 @@ func installCommandVars(cmds []string, namespace, domain, providerDir string) ([
 		resolved[i] = c
 	}
 
-	// Build the legend from the ORIGINAL commands so resolved variables are still
-	// explained. Order of first appearance, de-duplicated.
+	// Build the explanations from the original commands, so substituted
+	// variables are explained too; one entry per variable, in order of
+	// appearance.
 	seen := map[string]bool{}
 	var vars []InstallVar
 	for _, c := range cmds {
@@ -546,8 +529,8 @@ func describeInstallVar(name string, inline map[string]string) InstallVar {
 	return InstallVar{name, "", "Environment variable read by the install script (provide it before installing to override the default)."}
 }
 
-// nonNilStrings returns s, or an empty (non-nil) slice when s is nil, so it
-// marshals to a JSON [] instead of null — the UI indexes .length on these.
+// nonNilStrings returns s, or an empty slice when s is nil, so it encodes as
+// JSON [] rather than null.
 func nonNilStrings(s []string) []string {
 	if s == nil {
 		return []string{}
@@ -582,8 +565,7 @@ func (s *Server) handlePlatformComponentDetail(w http.ResponseWriter, r *http.Re
 		providerDir = filepath.ToSlash(rel)
 	}
 	resolvedCmds, installVars := installCommandVars(p.InstallCommands(), p.Namespace(), s.cfg.DomainSuffix, providerDir)
-	// Guarantee non-nil slices: a Go nil slice marshals to JSON null, and the UI
-	// reads e.g. detail.provides.length — a null there crashes the details view.
+	// The UI reads .length on these, so they must encode as [] and not null.
 	detail := PlatformComponentDetail{
 		Category:        category,
 		Name:            name,
@@ -623,10 +605,8 @@ func (s *Server) handleListScenarios(w http.ResponseWriter, r *http.Request) {
 	respondCatalog(w, r, s.scenes.Status())
 }
 
-// scenarioResp is a scenario as the UI needs it: the scenario itself, plus what
-// the binding resolved to and which app prerequisites are genuinely the user's
-// to satisfy. Both are presentation, so they live here rather than on the schema
-// type an author writes.
+// scenarioResp is a scenario as the UI needs it: the scenario, the workload it
+// is bound to, and the app prerequisites it names literally.
 type scenarioResp struct {
 	*scenario.Scenario
 	PinnedApps []string     `json:"pinnedApps"`
@@ -644,16 +624,13 @@ func (s *Server) handleScenarioInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve template vars for display, using the scenario's parameter defaults
-	// so {{.Param}} shows a real value. Work on a copy with fresh slices — sc is
-	// the cached scenario and must not be mutated.
+	// Expand templates for display, using the parameter defaults for
+	// {{.Param}}. ResolvedForDisplay returns a copy; sc is shared and must not
+	// be modified.
 	defaults := s.scenes.ParamDefaults(sc)
-	// One place owns which fields a reader sees resolved, so the next field added
-	// to the schema cannot quietly ship a raw "{{.WorkloadName}}" to the UI.
 	resp := *s.scenes.ResolvedForDisplay(sc, defaults, s.boundWorkload(s.scenes.ActiveApp(name)))
 
-	// While the scenario is active the binding is the app it was activated
-	// against, so the detail describes what is really deployed.
+	// An active scenario is shown for the app it was activated against.
 	respondJSON(w, http.StatusOK, scenarioResp{
 		Scenario:   &resp,
 		PinnedApps: s.scenes.PinnedPrereqApps(name),
@@ -685,8 +662,8 @@ func (s *Server) handleScenarioUp(w http.ResponseWriter, r *http.Request) {
 	label := fmt.Sprintf("Activate scenario: %s", name)
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
-		// Bind before staging params: Up records the app it ran against in the
-		// activation marker, and verify and down read it back from there.
+		// Bind first: Up records the bound app in the activation marker, and
+		// verify and down read it from there.
 		scenes, _, release, err := s.withWorkload(body.App)
 		if err != nil {
 			s.exec.BroadcastEnd(jobID, label, err)
@@ -708,7 +685,7 @@ func (s *Server) handleScenarioDown(w http.ResponseWriter, r *http.Request) {
 	label := fmt.Sprintf("Deactivate scenario: %s", name)
 	s.exec.BroadcastStart(jobID, label)
 	go func() {
-		// Tear down against the workload the scenario was brought up against.
+		// Tear down using the app the scenario was activated against.
 		scenes, _, release, err := s.withWorkload(s.scenes.ActiveApp(name))
 		if err != nil {
 			s.exec.BroadcastEnd(jobID, label, err)
@@ -720,8 +697,8 @@ func (s *Server) handleScenarioDown(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID, "status": "accepted"})
 }
 
-// scenarioVerifyBudget bounds one UI verify run. It matches the CLI's
-// `scenario verify --timeout` default; the UI client waits the same length.
+// scenarioVerifyBudget is the time limit for one verify request. It equals the
+// CLI's `scenario verify --timeout` default, and the UI waits as long.
 const scenarioVerifyBudget = 5 * time.Minute
 
 // handleScenarioVerify runs the scenario's checks synchronously and returns
@@ -732,8 +709,8 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Grade against the workload the scenario was activated against, not the
-	// ambient binding — the check env below is built from it.
+	// Check the app the scenario was activated against; the check environment
+	// below is built from it.
 	scenes, _, release, err := s.withWorkload(s.scenes.ActiveApp(name))
 	if err != nil {
 		respondError(w, r, http.StatusBadRequest, "invalid_input", err.Error())
@@ -741,17 +718,14 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	// NewRunner's per-check default is the CLI's --check-timeout default and the
-	// schema's documented one; a shorter one here made the UI fail checks the
-	// terminal passes.
+	// Keep NewRunner's per-check timeout, the same default the CLI uses.
 	runner := checks.NewRunner()
 	promURL := os.Getenv("PROMETHEUS_URL")
 	if promURL == "" {
 		promURL = "http://prometheus." + s.cfg.DomainSuffix
 	}
 	runner.PrometheusURL = promURL
-	// Same script environment the CLI gives a check, so verifying from the UI
-	// and from the terminal cannot disagree.
+	// The same check environment the CLI uses.
 	runner.Env = []string{
 		"DOMAIN_SUFFIX=" + s.cfg.DomainSuffix,
 		"MONITORING_NAMESPACE=" + s.cfg.MonitoringNamespace,
@@ -763,8 +737,8 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 		"WORKLOAD_METRIC=" + scenes.Workload.Metric,
 	}
 
-	// Checks run in order, each under its own timeoutSeconds, so a fixed short
-	// budget starved the last checks of a long list. Bound it like the CLI does.
+	// Checks run one after another, each with its own timeout, so the total
+	// limit must allow for a long list, as in the CLI.
 	startedAt := time.Now()
 	ctx, cancel := context.WithTimeout(r.Context(), scenarioVerifyBudget)
 	defer cancel()
@@ -779,8 +753,7 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Record the verification in history so the results view shows whether the
-	// user solved the scenario, with objectives + per-check breakdown.
+	// Record the result so the results view can show it.
 	s.recordScenarioVerify(name, results, startedAt)
 
 	respondJSON(w, http.StatusOK, map[string]any{
@@ -905,12 +878,10 @@ func (s *Server) handleDashboardURLs(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, dashboards)
 }
 
-// grafanaExploreURL builds a Grafana Explore deep link for a datasource. Grafana
-// 11+ replaced the old ?left=<json> parameter with ?panes=<json> keyed by a pane
-// id, and resolves the datasource by UID (not name) — so a name-based link opens
-// an empty Explore. The datasources are provisioned with stable UIDs
-// (loki/tempo/prometheus), which these links reference. expr may be empty to open
-// Explore with the datasource selected and no pre-filled query.
+// grafanaExploreURL builds a Grafana Explore link for a datasource, using the
+// ?panes=<json> parameter Grafana 11 expects and the datasource UID (loki,
+// tempo or prometheus, as provisioned). An empty expr opens Explore with no
+// query.
 func grafanaExploreURL(domain, dsType, dsUID, expr string) string {
 	type dsRef struct {
 		Type string `json:"type"`
@@ -930,8 +901,8 @@ func grafanaExploreURL(domain, dsType, dsUID, expr string) string {
 		"exp": {
 			Datasource: dsUID,
 			Queries:    []query{{RefID: "A", Datasource: dsRef{Type: dsType, UID: dsUID}, Expr: expr}},
-			// 6h (vs Grafana's 1h default) so the lab's quiet apps, which log
-			// mostly at startup, still show something when logs are first opened.
+			// 6h rather than Grafana's 1h default: the lab's apps log mostly at
+			// start-up, so a short range often shows nothing.
 			Range: map[string]string{"from": "now-6h", "to": "now"},
 		},
 	}
@@ -960,15 +931,12 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	// Subscribe from the client's cursor (?after=<seq>): replay any events it
-	// missed while disconnected, then stream live. SubscribeFrom makes the
-	// backlog snapshot and live registration atomic, so the join is gap-free and
-	// duplicate-free.
+	// Resume from the client's ?after=<seq>: replay the events it missed, then
+	// stream new ones. SubscribeFrom guarantees no gap and no duplicate.
 	after := parseAfterCursor(r)
 	backlog, actionCh, contiguous := s.exec.Broadcast.SubscribeFrom(after)
 	defer s.exec.Broadcast.Unsubscribe(actionCh)
 
-	// Periodic status updates
 	statusTicker := time.NewTicker(5 * time.Second)
 	defer statusTicker.Stop()
 	pingTicker := time.NewTicker(wsPingPeriod)
@@ -980,7 +948,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return conn.SetReadDeadline(time.Now().Add(wsPongWait))
 	})
 
-	// Read pump — discard incoming messages, detect close / dead peer
+	// Read and discard incoming messages, to notice when the client goes away.
 	closeCh := make(chan struct{})
 	go func() {
 		defer close(closeCh)
@@ -1002,22 +970,21 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return writeJSON(map[string]any{"type": "status", "data": info})
 	}
 
-	// If the client's cursor fell off the replay ring, tell it to resync from
-	// the job history (GET /jobs) rather than silently resuming mid-stream.
+	// If events after the client's cursor were dropped, tell it to resync from
+	// GET /jobs.
 	if !contiguous {
 		if err := writeJSON(map[string]any{"type": "resync"}); err != nil {
 			return
 		}
 	}
-	// Replay missed events before going live, each already carrying its Seq.
+	// Replay missed events before streaming new ones.
 	for _, event := range backlog {
 		if err := writeJSON(map[string]any{"type": "action", "data": event}); err != nil {
 			return
 		}
 	}
 
-	// Send an immediate snapshot so a fresh client doesn't wait for the
-	// first ticker interval to learn the cluster state.
+	// Send the cluster state now, rather than at the first tick.
 	if err := sendStatus(); err != nil {
 		return
 	}

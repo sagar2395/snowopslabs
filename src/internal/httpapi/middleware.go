@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -28,10 +29,9 @@ const requestIDHeader = "X-Request-ID"
 // hostile client can't bloat our logs or response headers with a giant value.
 const maxInboundRequestID = 200
 
-// requestIDMiddleware ensures every request carries a correlation ID. It honours
-// a sane inbound X-Request-ID (so a proxy or the UI can thread one through) and
-// otherwise mints a UUIDv4. The ID is stored in the request context and echoed
-// in the response header, giving clients and the access log a shared handle.
+// requestIDMiddleware gives every request a correlation ID: the incoming
+// X-Request-ID if it is acceptable, otherwise a new UUIDv4. The ID is stored
+// in the request context and returned in the response header.
 func (s *Server) requestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := sanitizeRequestID(r.Header.Get(requestIDHeader))
@@ -44,9 +44,8 @@ func (s *Server) requestIDMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// sanitizeRequestID accepts a caller-supplied correlation ID only when it is
-// short and printable ASCII; anything else is dropped so we mint our own. This
-// keeps header-injection and log-forging out of the correlation path.
+// sanitizeRequestID accepts a caller's request ID only if it is short and
+// printable ASCII, so it cannot inject headers or forge log lines.
 func sanitizeRequestID(v string) string {
 	if v == "" || len(v) > maxInboundRequestID {
 		return ""
@@ -69,11 +68,9 @@ func requestIDFrom(ctx context.Context) string {
 	return ""
 }
 
-// accessLogMiddleware emits one structured slog line per request: method, path,
-// the matched route template (bounded cardinality), status, duration, response
-// size, client address and the correlation ID. Websocket upgrades are logged
-// once at open and passed through untouched, because their lifetime is the
-// socket's, not the handler's — timing them would record minutes, not millis.
+// accessLogMiddleware writes one slog line per request with the method, path,
+// route template, status, duration, response size, client address and request
+// ID. A WebSocket upgrade is logged once when it opens and is not timed.
 func (s *Server) accessLogMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqID := requestIDFrom(r.Context())
@@ -106,9 +103,8 @@ func (s *Server) accessLogMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// routeTemplate returns the mux path template for the matched route (e.g.
-// /scenarios/{name}), falling back to "unmatched" so the access log never
-// carries an unbounded set of concrete paths as a structured field.
+// routeTemplate returns the matched route's path template, such as
+// /scenarios/{name}, or "unmatched".
 func routeTemplate(r *http.Request) string {
 	if cr := mux.CurrentRoute(r); cr != nil {
 		if tmpl, err := cr.GetPathTemplate(); err == nil {
@@ -118,8 +114,7 @@ func routeTemplate(r *http.Request) string {
 	return "unmatched"
 }
 
-// clientAddr is the request's remote address without the ephemeral port, which
-// carries no diagnostic value and only adds noise to the log.
+// clientAddr returns the request's remote address without the port.
 func clientAddr(r *http.Request) string {
 	addr := r.RemoteAddr
 	if i := strings.LastIndex(addr, ":"); i > 0 {

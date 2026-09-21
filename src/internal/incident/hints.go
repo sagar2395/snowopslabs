@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package incident
 
-// Progressive hints: hints.md is plain markdown split on
-// "## Hint N" headings, revealed one at a time. Reveals are recorded on the
-// active incident's state so scoring can penalize them later.
+// Hints: hints.md is markdown split on "## Hint N" headings and revealed one
+// at a time. Each reveal is recorded on the active incident, so challenge
+// scoring can charge for it.
 
 import (
 	"errors"
@@ -41,8 +42,8 @@ func ParseHints(dir string) ([]string, error) {
 	return hints, nil
 }
 
-// HintCount returns how many hints a fault ships, so a caller that reveals the
-// whole solution can bill for all of them. Unknown faults count as zero.
+// HintCount returns how many hints a fault has, or 0 for an unknown fault.
+// Showing the full solution charges for all of them.
 func (e *Engine) HintCount(name string) int {
 	if name == "" {
 		active, err := e.Active()
@@ -69,8 +70,8 @@ type Hint struct {
 	Text  string `json:"text"`
 }
 
-// NextHint reveals the next unrevealed hint for the active incident and
-// records the reveal (it will cost score in challenge mode).
+// NextHint returns the next unrevealed hint for the active incident and
+// records the reveal, which costs score in a challenge.
 func (e *Engine) NextHint() (*Hint, error) {
 	active, err := e.Active()
 	if err != nil {
@@ -95,16 +96,13 @@ func (e *Engine) NextHint() (*Hint, error) {
 	if err := e.saveActive(active); err != nil {
 		return nil, fmt.Errorf("recording hint reveal: %w", err)
 	}
-	// Resolved, not raw: a hint that names {{.WorkloadName}} must read as the app
-	// the learner is actually looking at, or it sends them hunting for a
-	// deployment that does not exist.
+	// Expand templates so {{.WorkloadName}} names the app the learner is using.
 	text := e.resolveTemplate(hints[active.HintsRevealed-1])
 	return &Hint{Index: active.HintsRevealed, Total: len(hints), Text: text}, nil
 }
 
-// Solution returns the full walkthrough for the active incident (or a named
-// fault). It does not end the incident — reading the spoiler and applying
-// the fix are still on the user.
+// Solution returns the full walkthrough for the active incident, or for the
+// named fault. It does not end the incident.
 func (e *Engine) Solution(name string) (string, error) {
 	if name == "" {
 		active, err := e.Active()

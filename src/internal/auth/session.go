@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package auth
 
 import (
@@ -24,9 +25,8 @@ type Session struct {
 	Expires time.Time
 }
 
-// SessionStore is a concurrency-safe in-memory session table. Sessions are not
-// persisted: restarting the server logs everyone out, which is acceptable for a
-// lab tool (and avoids storing tokens on disk).
+// SessionStore is an in-memory session table, safe for concurrent use.
+// Sessions are not saved to disk, so restarting the server logs everyone out.
 type SessionStore struct {
 	mu    sync.Mutex
 	ttl   time.Duration
@@ -123,9 +123,8 @@ func SessionFromContext(ctx context.Context) (Session, bool) {
 	return sess, ok
 }
 
-// UserFromContext returns the authenticated username, or "" when auth is off /
-// no session is present. Callers fall back to results.CurrentUser() in that
-// case, preserving byte-identical behaviour when auth is disabled.
+// UserFromContext returns the authenticated username, or "" when auth is off
+// or there is no session. Callers then use results.CurrentUser().
 func UserFromContext(ctx context.Context) string {
 	if sess, ok := SessionFromContext(ctx); ok {
 		return sess.User

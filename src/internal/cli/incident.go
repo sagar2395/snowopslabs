@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -93,17 +94,16 @@ a reproducible pick across a team.`,
 			return err
 		}
 
-		// A fault breaks a running workload; if its target is one of our apps and
-		// it isn't deployed, inject would fail cryptically. Check first (or deploy
-		// it with --deploy-prereqs).
+		// If the fault's target is a repo app, check it is deployed first (or
+		// deploy it with --deploy-prereqs).
 		if appExists(f.Target.Namespace) {
 			if err := ensureAppsDeployed(cmd.Context(), []string{incEng.ResolvedTarget(f).Namespace}, injectDeployPrereqs); err != nil {
 				return err
 			}
 		}
 
-		// Guard with the same checks the legacy path applied, then run inject.sh
-		// through the durable engine and, on success, record the active incident.
+		// Check preconditions, run inject.sh through the run engine, and on
+		// success record the active incident.
 		if active, aerr := incEng.Active(); aerr != nil {
 			return aerr
 		} else if active != nil && !injectForce {
@@ -200,13 +200,12 @@ var incidentResolveCmd = &cobra.Command{
 		if len(args) == 1 {
 			name = args[0]
 		}
-		// resolve.sh acts on the workload that was broken, which is not
-		// necessarily the one ambient config names.
+		// Bind to the app the fault was injected into.
 		if err := rebindToActiveIncident(); err != nil {
 			return err
 		}
-		// With no name, resolve the active incident (an explicit name works even
-		// if the active state was lost — the escape hatch).
+		// With no name, resolve the active incident. A named fault can be
+		// resolved even when no incident is recorded as active.
 		if name == "" {
 			active, err := incEng.Active()
 			if err != nil {
@@ -253,12 +252,8 @@ var incidentHintCmd = &cobra.Command{
 	},
 }
 
-// chargeHints bills revealed hints to the active challenge, if there is one.
-//
-// The only hint mechanism a challenge has is the wrapped incident's, so without
-// this the hintPenalty term of the published score formula can never fire: a
-// learner reads every hint and still scores 100. Best effort — outside a
-// challenge there is nothing to bill, and that is not an error.
+// chargeHints records n hints against the active challenge, if there is one,
+// so they count towards its hint penalty. Errors are ignored.
 func chargeHints(n int) {
 	eng := challengeEngine()
 	if active, err := eng.Active(); err != nil || active == nil {
@@ -296,9 +291,7 @@ var incidentSolutionCmd = &cobra.Command{
 			return err
 		}
 		fmt.Println(text)
-		// The solution contains everything the hints do, so reading it costs
-		// what reading all of them would. Otherwise it is the cheapest way to
-		// win a challenge: full marks for the full walkthrough.
+		// Reading the solution costs as much as reading every hint.
 		chargeHints(incEng.HintCount(name))
 		return nil
 	},
@@ -352,8 +345,7 @@ var incidentInfoCmd = &cobra.Command{
 		fmt.Printf("Display:     %s\n", f.DisplayName)
 		fmt.Printf("Category:    %s\n", f.Category)
 		fmt.Printf("Severity:    %s\n", f.Severity)
-		// Resolved, not raw: a target printed as {{.WorkloadNamespace}} sends the
-		// reader looking for a namespace that does not exist.
+		// Print the target with templates expanded.
 		rt := incEng.ResolvedTarget(f)
 		fmt.Printf("Target:      %s/%s\n", rt.Namespace, rt.Workload)
 		if f.Description != "" {
@@ -385,12 +377,11 @@ func init() {
 	rootCmd.AddCommand(incidentCmd)
 }
 
-// rebindToActiveIncident re-binds the lab to the workload the active fault was
-// injected into, so status, hints and resolve act on what was actually broken.
+// rebindToActiveIncident binds the lab to the app the active fault was
+// injected into, so status, hints and resolve act on it.
 func rebindToActiveIncident() error {
-	// An unreadable active file is reported by the command that needs it, not
-	// here — refusing to bind would turn a corrupt state file into a lab with no
-	// way to resolve.
+	// Ignore an unreadable state file here; the command reports it, and resolve
+	// must still work.
 	a, err := incEng.Active()
 	if err != nil {
 		slog.Debug("could not read the active incident to rebind", "err", err)

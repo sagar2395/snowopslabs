@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package executor runs project scripts and commands and broadcasts their
+// output as ActionEvents to the web UI's event stream. The web UI's mutating
+// endpoints use it; CLI operations go through internal/run instead.
 package executor
 
 import (
@@ -19,11 +23,9 @@ import (
 
 // Executor runs shell scripts from the project, streaming output to the caller.
 //
-// A single Executor is shared across all HTTP handlers (see internal/httpapi),
-// which run concurrently, so Env must be accessed under envMu: SetEnv writes it
-// and buildEnv reads it. Without the lock a request that sets traffic tunables
-// races every other in-flight command's env snapshot — a concurrent map
-// read/write that crashes the process.
+// One Executor is shared by all HTTP handlers, which run concurrently. Access
+// Env only through SetEnv and GetEnv, which hold envMu; reading or writing the
+// map directly races with other requests.
 type Executor struct {
 	ProjectRoot string
 	Env         map[string]string
@@ -45,8 +47,8 @@ func New(projectRoot string) *Executor {
 	}
 }
 
-// NextActionID allocates and returns the next action ID without running anything.
-// Handlers call this before launching a goroutine to get the ID for the 202 response.
+// NextActionID returns a new action ID without running anything. Handlers use
+// it to put the ID in their 202 response before starting the work.
 func (e *Executor) NextActionID() string {
 	return fmt.Sprintf("action-%d", e.actionSeq.Add(1))
 }
@@ -70,9 +72,8 @@ func (e *Executor) RunScript(scriptPath string, args ...string) error {
 	return err
 }
 
-// RunScriptStreamed executes a shell script and streams output via the broadcaster.
-// It returns the action ID used to tag broadcast events so callers can correlate
-// the 202 HTTP response with the WebSocket stream.
+// RunScriptStreamed runs a shell script, broadcasts its output, and returns the
+// action ID that tags its events.
 func (e *Executor) RunScriptStreamed(actionLabel, scriptPath string, args ...string) (string, error) {
 	absPath := filepath.Join(e.ProjectRoot, scriptPath)
 	if _, err := os.Stat(absPath); errors.Is(err, fs.ErrNotExist) {
@@ -85,9 +86,8 @@ func (e *Executor) RunScriptStreamed(actionLabel, scriptPath string, args ...str
 	return e.runStreamed(actionLabel, scriptPath+" "+strings.Join(args, " "), "bash", cmdArgs...)
 }
 
-// RunScriptStreamedWith executes a shell script using a caller-supplied action ID.
-// Use this when the handler pre-allocates an ID (via NextActionID) to include in the
-// 202 response body, so the WebSocket action_start event carries the same ID.
+// RunScriptStreamedWith is RunScriptStreamed with an action ID the caller got
+// from NextActionID.
 func (e *Executor) RunScriptStreamedWith(actionID, actionLabel, scriptPath string, args ...string) error {
 	absPath := filepath.Join(e.ProjectRoot, scriptPath)
 	if _, err := os.Stat(absPath); errors.Is(err, fs.ErrNotExist) {
@@ -108,9 +108,8 @@ func (e *Executor) RunCommandStreamed(actionLabel, name string, args ...string) 
 	return e.runStreamed(actionLabel, cmdStr, name, args...)
 }
 
-// BroadcastStart emits an action_start event for a pre-allocated action ID.
-// Call this before launching a goroutine for composite operations (scenario, platform)
-// so the WS subscriber sees the start event immediately.
+// BroadcastStart emits an action_start event for an ID from NextActionID. Call
+// it before starting a multi-step operation, so clients see it begin at once.
 func (e *Executor) BroadcastStart(actionID, actionLabel string) {
 	e.Broadcast.Send(ActionEvent{
 		ID:        actionID,
@@ -120,8 +119,7 @@ func (e *Executor) BroadcastStart(actionID, actionLabel string) {
 	})
 }
 
-// BroadcastEnd emits an action_end event for a pre-allocated action ID.
-// Call this at the end of a goroutine for composite operations.
+// BroadcastEnd emits the action_end event matching BroadcastStart.
 func (e *Executor) BroadcastEnd(actionID, actionLabel string, err error) {
 	exitCode := 0
 	errStr := ""
@@ -209,13 +207,9 @@ func (e *Executor) runStreamedWith(actionID, actionLabel, cmdStr, name string, a
 
 func (e *Executor) streamOutput(wg *sync.WaitGroup, actionID, actionLabel string, r io.Reader, stream string, w io.Writer) {
 	defer wg.Done()
-	// bufio.Reader.ReadString, not bufio.Scanner: a Scanner silently stops at its
-	// token-size cap (default 64 KiB, raised to 1 MiB here) and, because its Err()
-	// was never checked, a single over-long line — a base64 secret, a
-	// `kubectl get -o yaml`, a helm diff — dropped that line AND every line after
-	// it from the live log stream. ReadString has no line-length limit, so no
-	// output is lost; a pathological unbounded line is bounded only by its own
-	// length in memory, an acceptable trade for never losing command output.
+	// bufio.Reader, not bufio.Scanner: a Scanner stops at its maximum token size,
+	// which would drop a very long line and everything after it. ReadString has
+	// no length limit.
 	reader := bufio.NewReader(r)
 	for {
 		chunk, err := reader.ReadString('\n')
@@ -232,8 +226,8 @@ func (e *Executor) streamOutput(wg *sync.WaitGroup, actionID, actionLabel string
 			})
 		}
 		if err != nil {
-			// io.EOF is the normal end of the pipe; any read error also ends the
-			// stream. The final line arrives here when it has no trailing newline.
+			// EOF or any read error ends the stream. A final line with no
+			// trailing newline arrives together with the error.
 			return
 		}
 	}
@@ -294,8 +288,8 @@ func (e *Executor) RunKubectl(args ...string) error {
 	return e.RunCommand("kubectl", args...)
 }
 
-// SetEnv adds an environment variable to pass to executed commands. Safe for
-// concurrent use with buildEnv (invoked by every Run* method).
+// SetEnv sets an environment variable for commands run after this call. It is
+// safe for concurrent use.
 func (e *Executor) SetEnv(key, value string) {
 	e.envMu.Lock()
 	defer e.envMu.Unlock()
@@ -319,9 +313,8 @@ func (e *Executor) CaptureOutput(name string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// GetEnv reads one script-environment value under the same lock SetEnv writes
-// it with. Callers that need to save and restore a value must go through this
-// rather than indexing Env, which races with a concurrent SetEnv.
+// GetEnv returns one environment value set with SetEnv. It is safe for
+// concurrent use.
 func (e *Executor) GetEnv(key string) string {
 	e.envMu.RLock()
 	defer e.envMu.RUnlock()

@@ -12,11 +12,8 @@ import (
 	"strings"
 )
 
-// Requirement describes an external binary SnowOps Labs depends on.
-//
-// The point of this table is that a missing or outdated tool becomes a sentence
-// the user can act on — "helm 3.9.0 found, 3.12+ required — brew upgrade helm" —
-// instead of an opaque failure forty seconds into a cluster build.
+// Requirement describes an external binary labctl depends on, with what the
+// doctor command tells the user when it is missing or too old.
 type Requirement struct {
 	// Binary is the executable name looked up on PATH.
 	Binary string
@@ -30,8 +27,7 @@ type Requirement struct {
 	// Optional marks a tool that is only needed for some runtimes or features;
 	// its absence is reported as a warning, not a failure.
 	Optional bool
-	// InstallHint is shown when the tool is missing or too old. Written per-OS
-	// because "install helm" is not useful advice.
+	// InstallHint returns the install command to show for the given GOOS.
 	InstallHint func(goos string) string
 }
 
@@ -78,9 +74,8 @@ func Requirements() []Requirement {
 			Binary:      "jq",
 			VersionArgs: []string{"--version"},
 			Why:         "scenario tooling that reads and scrubs Kubernetes manifests, such as the backup/restore drill",
-			// Optional because the cluster itself builds and runs without it —
-			// only content that manipulates JSON needs it, and that content says
-			// so when it cannot find it.
+			// The cluster builds without jq; only some content scripts need
+			// it, and they report its absence themselves.
 			Optional: true,
 			InstallHint: func(goos string) string {
 				if goos == "darwin" {
@@ -139,9 +134,8 @@ const (
 	CheckMissing CheckStatus = "missing"
 	// CheckOutdated means present but below MinVersion.
 	CheckOutdated CheckStatus = "outdated"
-	// CheckUnknown means present, but the version could not be determined.
-	// Not a failure: an unparseable version string is our problem, not the
-	// user's, and blocking on it would be worse than proceeding.
+	// CheckUnknown means present, but the version could not be parsed. It
+	// does not block work.
 	CheckUnknown CheckStatus = "unknown"
 )
 
@@ -157,8 +151,8 @@ type CheckResult struct {
 	Detail string
 }
 
-// OK reports whether this result should block work. An optional tool that is
-// missing does not.
+// OK reports whether this result allows work to proceed. A missing optional
+// tool does.
 func (r CheckResult) OK() bool {
 	switch r.Status {
 	case CheckOK, CheckUnknown:
@@ -182,8 +176,8 @@ func NewPreflight(r Runner) *Preflight {
 	return &Preflight{Runner: r, GOOS: runtime.GOOS, Requirements: Requirements()}
 }
 
-// Check runs every requirement check and returns one result per binary. It
-// never returns an error for a failing tool — the failure is the data.
+// Check runs every requirement check and returns one result per binary. A
+// missing or outdated tool is reported in its result, not as an error.
 func (p *Preflight) Check(ctx context.Context) ([]CheckResult, error) {
 	reqs := p.Requirements
 	if reqs == nil {
@@ -263,8 +257,8 @@ func (p *Preflight) version(ctx context.Context, path string, req Requirement) (
 		Stderr: &stdout, // some tools print their version to stderr
 	})
 	if err != nil {
-		// A non-zero exit still often prints something usable, so parse
-		// whatever we got before giving up.
+		// Some tools exit non-zero but still print their version (docker
+		// with its daemon down), so try parsing first.
 		if v := parseVersion(stdout.String()); v != "" {
 			return v, nil
 		}
@@ -280,10 +274,8 @@ func hint(req Requirement, goos string) string {
 	return "Install: " + req.InstallHint(goos)
 }
 
-// versionRe finds the first dotted version in a tool's output. Every tool
-// formats its version differently ("v5.8.3", "Client Version: v1.29.0",
-// {"clientVersion":{"gitVersion":"v1.29.0"}}), and all of them contain a
-// recognisable x.y.z somewhere.
+// versionRe finds the first x.y[.z] version in a tool's output, whatever the
+// surrounding format ("v5.8.3", "Client Version: v1.29.0", JSON, ...).
 var versionRe = regexp.MustCompile(`v?(\d+)\.(\d+)(?:\.(\d+))?`)
 
 // parseVersion extracts the first version-looking token from s.

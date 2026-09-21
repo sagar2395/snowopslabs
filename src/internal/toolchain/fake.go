@@ -12,19 +12,18 @@ import (
 
 // Fake is a Runner that records invocations and returns scripted responses.
 //
-// It is what makes hermetic testing possible above this package: service, CLI
-// and HTTP tests get a full run lifecycle — including output, exit codes and
-// cancellation — with no cluster, no network and no binaries. The shell-level
-// equivalent for bats is test/shell/helpers/stub.bash.
+// Service, CLI and HTTP tests use it to get output, exit codes and
+// cancellation without a cluster, a network or real binaries. The bats
+// equivalent is test/shell/helpers/stub.bash.
 //
-// The zero value is usable: every command succeeds silently.
+// The zero value is ready to use: every command succeeds with no output.
 type Fake struct {
 	mu    sync.Mutex
 	calls []Command
 	rules []rule
 
-	// Delay makes every command take this long, so cancellation and timeout
-	// paths can be exercised deterministically.
+	// Delay makes every command take this long, for testing cancellation and
+	// timeouts.
 	Delay time.Duration
 
 	// LookPathErr, when set, makes LookPath fail for any binary not in
@@ -62,8 +61,7 @@ func (f *Fake) WhenArgsContain(substr string, stdout string, exitCode int) *Fake
 	return f
 }
 
-// WhenArgsContainStderr is WhenArgsContain with error output as well — used to
-// assert that a failure's stderr reaches the log transcript.
+// WhenArgsContainStderr is WhenArgsContain with stderr output as well.
 func (f *Fake) WhenArgsContainStderr(substr, stdout, stderr string, exitCode int) *Fake {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -90,8 +88,8 @@ func (f *Fake) WhenArgsContainBlock(substr string, d time.Duration) *Fake {
 	return f
 }
 
-// WhenArgsContainError makes a matching command fail with a transport-level
-// error — the binary vanished, permission denied — rather than a non-zero exit.
+// WhenArgsContainError makes a matching command fail to start with err, as
+// when the binary is missing, instead of exiting non-zero.
 func (f *Fake) WhenArgsContainError(substr string, err error) *Fake {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -129,9 +127,8 @@ func (f *Fake) Run(ctx context.Context, cmd Command) (Result, error) {
 		select {
 		case <-time.After(block):
 		case <-ctx.Done():
-			// Mirror Exec: a cancelled run reports the context error and is
-			// marked as signalled, so callers cannot accidentally treat a
-			// cancellation as an ordinary failure.
+			// Match Exec: a cancelled command is reported as signalled, with
+			// the context error.
 			return Result{Signalled: true}, ctx.Err()
 		}
 	}
@@ -215,8 +212,7 @@ func (f *Fake) CallCount(substr string) int {
 	return n
 }
 
-// Reset clears the recorded calls, keeping the rules. Used between the two
-// halves of an idempotency test.
+// Reset clears the recorded calls and keeps the rules.
 func (f *Fake) Reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()

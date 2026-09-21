@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -16,9 +17,9 @@ func resultsStore(s *Server) *results.Store {
 	return results.NewStore(filepath.Join(s.cfg.ProjectRoot, ".labctl", "history"))
 }
 
-// recordScenarioVerify appends a scenario-verification record (objectives +
-// per-check pass/fail) to history, so the results view shows whether the user
-// solved the scenario. Best-effort — a history write never fails verify.
+// recordScenarioVerify appends a scenario verification record, with the
+// objectives and each check's result, to the results history. A write error
+// is ignored and never fails the verify.
 func (s *Server) recordScenarioVerify(name string, checkResults []checks.Result, startedAt time.Time) {
 	var objectives []string
 	if sc, err := s.scenes.Get(name); err == nil {

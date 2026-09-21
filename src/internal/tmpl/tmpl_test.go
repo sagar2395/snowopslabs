@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package tmpl
 
 import (
@@ -47,8 +48,8 @@ func TestSince(t *testing.T) {
 	}
 }
 
-// The drift this package exists to prevent: a field added to Context but never
-// wired into Vars resolves at validation and vanishes at run time.
+// A field added to Context but missing from Vars would pass validation and
+// expand to nothing at run time.
 func TestVarsCoversEveryField(t *testing.T) {
 	vars := Context{}.Vars()
 	for _, name := range FieldNames() {
@@ -132,8 +133,8 @@ func TestValidateAgreesWithExpand(t *testing.T) {
 	}
 }
 
-// Expand must leave every other templating language that shares a content file
-// completely alone. Each of these used to break a real apply.
+// Expand must leave every other template syntax found in content files
+// unchanged.
 func TestExpandLeavesForeignTemplatingAlone(t *testing.T) {
 	tests := []struct {
 		name  string
