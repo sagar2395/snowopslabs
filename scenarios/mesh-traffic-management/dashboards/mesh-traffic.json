@@ -1,0 +1,240 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "schemaVersion": 39,
+  "tags": [
+    "mesh",
+    "istio",
+    "canary"
+  ],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "title": "Mesh Traffic Management",
+  "uid": "mesh-traffic",
+  "panels": [
+    {
+      "title": "Request rate by version \u2014 the split you applied",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (destination_version) (rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\"}[1m]))",
+          "legendFormat": "{{destination_version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "description": "Both subsets carry traffic once the weighted VirtualService is applied. With no VirtualService the Service round-robins and the two lines sit on top of each other."
+    },
+    {
+      "title": "v2 share of canary traffic",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "The weight actually being served, not the weight you wrote. ~0.10 for a 90/10 split; ~0.50 means no VirtualService is in force.",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\",destination_version=\"v2\"}[5m])) / sum(rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\"}[5m]))",
+          "legendFormat": "v2 share"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "mTLS-secured requests",
+      "type": "stat",
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Share of canary requests whose connection_security_policy is mutual_tls, as reported by the receiving sidecar. Every request is reported twice \u2014 the sending sidecar reports the policy as 'unknown', so without reporter=\"destination\" this ratio caps at ~0.5 and never turns green. Reaches 1 once STRICT is enforced.",
+      "targets": [
+        {
+          "expr": "sum(rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\",connection_security_policy=\"mutual_tls\"}[5m])) / sum(rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\"}[5m]))",
+          "legendFormat": "mTLS"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 0.99
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "v2 latency: p99 vs median \u2014 the injected fault",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"$app-canary\",reporter=\"source\",destination_version=\"v2\"}[5m])))",
+          "legendFormat": "v2 p99"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"$app-canary\",reporter=\"source\",destination_version=\"v2\"}[5m])))",
+          "legendFormat": "v2 p50"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(istio_request_duration_milliseconds_bucket{destination_service_name=\"$app-canary\",reporter=\"source\",destination_version=\"v1\"}[5m])))",
+          "legendFormat": "v1 p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "description": "Client-perceived latency, from the sending sidecar (reporter=\"source\"). Istio injects a fault delay at the source proxy, so the receiving side never sees it \u2014 measured at the destination this panel would stay flat while the fault is active. The delay hits only the one-in-twenty requests carrying 'x-canary: always', which lifts the v2 p99 past 2s while its median stays fast."
+    },
+    {
+      "title": "Response codes by version",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum by (destination_version, response_code) (rate(istio_requests_total{destination_service_name=\"$app-canary\",reporter=\"destination\"}[1m]))",
+          "legendFormat": "{{destination_version}} \u00b7 {{response_code}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "description": "A canary that is failing shows up here first: 5xx concentrated on one version is the signal to shift the weights back."
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "app",
+        "label": "App",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+        "query": {
+          "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+          "refId": "app",
+          "qryType": 3
+        },
+        "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+        "regex": "/app=\"([^\"]+)\"/",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "{{.WorkloadName}}",
+          "value": "{{.WorkloadName}}"
+        },
+        "options": []
+      }
+    ]
+  }
+}

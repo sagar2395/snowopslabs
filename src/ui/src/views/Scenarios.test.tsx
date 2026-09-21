@@ -12,10 +12,10 @@ import type { Scenario } from '../types'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
 
 vi.mock('../api/client', () => ({
-  api: { listScenarios: vi.fn(), getScenario: vi.fn(), scenarioUp: vi.fn(), scenarioDown: vi.fn(), scenarioVerify: vi.fn() },
+  api: { listScenarios: vi.fn(), getScenario: vi.fn(), scenarioUp: vi.fn(), scenarioDown: vi.fn(), scenarioVerify: vi.fn(), listApps: vi.fn() },
 }))
 import { api } from '../api/client'
-const mockApi = api as unknown as { listScenarios: Mock; getScenario: Mock; scenarioUp: Mock; scenarioDown: Mock; scenarioVerify: Mock }
+const mockApi = api as unknown as { listScenarios: Mock; getScenario: Mock; scenarioUp: Mock; scenarioDown: Mock; scenarioVerify: Mock; listApps: Mock }
 
 const gitops: Scenario = {
   name: 'gitops-cicd', displayName: 'GitOps & CI/CD', description: 'ArgoCD GitOps',
@@ -42,7 +42,13 @@ function renderScenarios() {
 }
 
 describe('Scenarios view — activation preview', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockApi.listApps.mockResolvedValue([
+      { name: 'go-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, capabilities: ['prometheus-metrics', 'otlp-tracing'] },
+      { name: 'java-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, capabilities: ['prometheus-metrics'] },
+    ])
+  })
 
   it('previews what a scenario installs and requires, then activates on confirm', async () => {
     const user = userEvent.setup()
@@ -67,7 +73,7 @@ describe('Scenarios view — activation preview', () => {
     expect(mockApi.scenarioUp).not.toHaveBeenCalled()
     req.onConfirm()
     // A scenario with no parameters activates with an empty override map.
-    await waitFor(() => expect(mockApi.scenarioUp).toHaveBeenCalledWith('gitops-cicd', {}))
+    await waitFor(() => expect(mockApi.scenarioUp).toHaveBeenCalledWith('gitops-cicd', {}, ''))
   })
 
   it('previews components declared under stages (v2 scenarios), not just flat components', async () => {
@@ -98,7 +104,13 @@ describe('Scenarios view — activation preview', () => {
 })
 
 describe('Scenarios view — parameters', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockApi.listApps.mockResolvedValue([
+      { name: 'go-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, capabilities: ['prometheus-metrics', 'otlp-tracing'] },
+      { name: 'java-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, capabilities: ['prometheus-metrics'] },
+    ])
+  })
 
   const withParams: Scenario = {
     ...gitops,
@@ -126,12 +138,18 @@ describe('Scenarios view — parameters', () => {
     await user.type(input, '15')
 
     req.onConfirm()
-    await waitFor(() => expect(mockApi.scenarioUp).toHaveBeenCalledWith('gitops-cicd', { Threshold: '15' }))
+    await waitFor(() => expect(mockApi.scenarioUp).toHaveBeenCalledWith('gitops-cicd', { Threshold: '15' }, ''))
   })
 })
 
 describe('Scenarios view — detail modal teaches implementation', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockApi.listApps.mockResolvedValue([
+      { name: 'go-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, capabilities: ['prometheus-metrics', 'otlp-tracing'] },
+      { name: 'java-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, capabilities: ['prometheus-metrics'] },
+    ])
+  })
 
   const rich: Scenario = {
     ...gitops,
@@ -174,6 +192,99 @@ describe('Scenarios view — detail modal teaches implementation', () => {
     expect(screen.getByText(/hpa\/keda-hpa-go-api/)).toBeInTheDocument()
   })
 
+  // A scenario states what it needs of the bound app; the reader must be able to
+  // see that requirement without opening scenario.yaml.
+  it('shows required workload capabilities alongside the other prerequisites', async () => {
+    const user = userEvent.setup()
+    const needsCaps: Scenario = {
+      ...rich,
+      prerequisites: { platform: ['ingress'], apps: ['{{.WorkloadName}}'], capabilities: ['prometheus-metrics', 'otlp-tracing'] },
+      workload: { app: 'go-api', namespace: 'go-api', service: 'go-api.go-api.svc.cluster.local', port: '8080', metric: 'http_server_request_duration_seconds' },
+    }
+    mockApi.listScenarios.mockResolvedValue([{ ...needsCaps }])
+    mockApi.getScenario.mockResolvedValue(needsCaps)
+
+    renderScenarios()
+    await user.click(await screen.findByRole('button', { name: /details/i }))
+
+    expect(await screen.findByText(/Platform: ingress/)).toBeInTheDocument()
+    expect(screen.getByText(/Needs: prometheus-metrics/)).toBeInTheDocument()
+    expect(screen.getByText(/Needs: otlp-tracing/)).toBeInTheDocument()
+  })
+
+  // The app a scenario resolved from the workload binding is not a prerequisite.
+  // Showing it as "requires go-api" told users that content which runs against
+  // any conforming app only ran against one.
+  it('shows the bound workload as what it runs against, not as a requirement', async () => {
+    const user = userEvent.setup()
+    const bound: Scenario = {
+      ...rich,
+      prerequisites: { platform: ['ingress'], apps: ['{{.WorkloadName}}'] },
+      pinnedApps: [],
+      workload: { app: 'java-api', namespace: 'java-api', service: 'java-api.java-api.svc.cluster.local', port: '8080', metric: 'http_server_request_duration_seconds' },
+    }
+    mockApi.listScenarios.mockResolvedValue([{ ...bound }])
+    mockApi.getScenario.mockResolvedValue(bound)
+
+    renderScenarios()
+    await user.click(await screen.findByRole('button', { name: /details/i }))
+
+    expect(await screen.findByRole('heading', { name: /runs against/i })).toBeInTheDocument()
+    expect(screen.getAllByText('java-api').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/App: java-api/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/\{\{\.WorkloadName\}\}/)).not.toBeInTheDocument()
+  })
+
+  // Preflight refuses an app that is missing a required capability, so offering
+  // it would trade a clear "this app cannot run this" for a failed run.
+  it('will not let an app be chosen that cannot satisfy the scenario', async () => {
+    const user = userEvent.setup()
+    const needsTracing: Scenario = {
+      ...gitops,
+      prerequisites: { platform: [], apps: [], capabilities: ['prometheus-metrics', 'otlp-tracing'] },
+      workload: { app: 'go-api', namespace: 'go-api', service: 'go-api.go-api.svc.cluster.local', port: '8080', metric: 'm' },
+    }
+    mockApi.listScenarios.mockResolvedValue([{ ...needsTracing }])
+    mockApi.getScenario.mockResolvedValue(needsTracing)
+
+    const { getConfirm } = renderScenarios()
+    await user.click(await screen.findByRole('button', { name: /^activate$/i }))
+    await waitFor(() => expect(getConfirm()).not.toBeNull())
+    render(<div>{getConfirm()!.message as React.ReactNode}</div>)
+
+    await screen.findByLabelText(/application to run against/i)
+    // java-api declares prometheus-metrics but not otlp-tracing.
+    const blocked = screen.getByRole('option', { name: /java-api/ }) as HTMLOptionElement
+    expect(blocked.disabled).toBe(true)
+    expect(blocked.text).toMatch(/no otlp-tracing/)
+    expect((screen.getByRole('option', { name: 'go-api' }) as HTMLOptionElement).disabled).toBe(false)
+  })
+
+  // The workload choice is the other half of "activate this scenario", and it
+  // was reachable only from the CLI's --app flag.
+  it('offers the workload as a choice at activation and submits it', async () => {
+    const user = userEvent.setup()
+    const bound: Scenario = {
+      ...gitops,
+      workload: { app: 'go-api', namespace: 'go-api', service: 'go-api.go-api.svc.cluster.local', port: '8080', metric: 'http_server_request_duration_seconds' },
+    }
+    mockApi.listScenarios.mockResolvedValue([{ ...bound }])
+    mockApi.getScenario.mockResolvedValue(bound)
+    mockApi.scenarioUp.mockResolvedValue({ jobId: 'j1', status: 'accepted' })
+
+    const { getConfirm } = renderScenarios()
+    await user.click(await screen.findByRole('button', { name: /^activate$/i }))
+    await waitFor(() => expect(getConfirm()).not.toBeNull())
+    const req = getConfirm()!
+    render(<div>{req.message as React.ReactNode}</div>)
+
+    const picker = await screen.findByLabelText(/application to run against/i)
+    await user.selectOptions(picker, 'java-api')
+
+    req.onConfirm()
+    await waitFor(() => expect(mockApi.scenarioUp).toHaveBeenCalledWith('gitops-cicd', {}, 'java-api'))
+  })
+
   it('moves between tabs with the arrow keys', async () => {
     const user = userEvent.setup()
     mockApi.listScenarios.mockResolvedValue([{ ...rich }])
@@ -190,7 +301,13 @@ describe('Scenarios view — detail modal teaches implementation', () => {
 })
 
 describe('Scenarios view — verify', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockApi.listApps.mockResolvedValue([
+      { name: 'go-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, capabilities: ['prometheus-metrics', 'otlp-tracing'] },
+      { name: 'java-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, capabilities: ['prometheus-metrics'] },
+    ])
+  })
 
   const active: Scenario = { ...gitops, active: true }
 

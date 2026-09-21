@@ -48,24 +48,32 @@ var (
 	logger          *slog.Logger
 	tracer          trace.Tracer
 
-	httpRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "http_requests_total",
-		Help: "Total number of HTTP requests",
-	}, []string{"method", "path", "code", "app"})
-
+	// OpenTelemetry semantic conventions: http.server.request.duration, with
+	// attribute names in their Prometheus form. Semconv defines no separate
+	// request counter — the histogram's _count series is the request count — so
+	// carrying the status code here is what lets an error rate be derived from
+	// it. "app" is not semconv; it is the lab's own selector, matching the pod
+	// label every scenario and dashboard filters on.
 	httpRequestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "http_request_duration_seconds",
-		Help:    "HTTP request duration in seconds",
-		Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
-	}, []string{"method", "path", "app"})
+		Name:    "http_server_request_duration_seconds",
+		Help:    "Duration of HTTP server requests in seconds.",
+		Buckets: []float64{.005, .01, .025, .05, .075, .1, .25, .5, .75, 1, 2.5, 5, 7.5, 10},
+	}, []string{"http_request_method", "http_route", "http_response_status_code", "app"})
 )
 
 func init() {
-	prometheus.MustRegister(httpRequestsTotal)
 	prometheus.MustRegister(httpRequestDuration)
 }
 
 func main() {
+	// APP_VERSION overrides the -ldflags build stamp so two Deployments of one
+	// image can present distinct identities — what a mesh canary splits on, and
+	// what /version must report for the split to be observable. Applied here,
+	// not as an initializer: the linker's -X cannot set a var that has one.
+	if v := os.Getenv("APP_VERSION"); v != "" {
+		version = v
+	}
+
 	readinessFailure := getEnv("READINESS_FAILURE", "false") == "true"
 	flag.BoolFunc("failure", "Simulate readiness check failure", func(s string) error {
 		v, err := strconv.ParseBool(s)
@@ -350,8 +358,7 @@ func instrument(next http.Handler) http.Handler {
 
 		route := routeLabel(r.URL.Path)
 		elapsed := time.Since(start).Seconds()
-		httpRequestsTotal.WithLabelValues(r.Method, route, strconv.Itoa(rec.status), serviceName).Inc()
-		httpRequestDuration.WithLabelValues(r.Method, route, serviceName).Observe(elapsed)
+		httpRequestDuration.WithLabelValues(r.Method, route, strconv.Itoa(rec.status), serviceName).Observe(elapsed)
 	})
 }
 

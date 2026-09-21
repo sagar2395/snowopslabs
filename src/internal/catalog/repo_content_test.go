@@ -51,10 +51,10 @@ func TestVerifiedContentSet(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	unverifiedScenarios := map[string]bool{
-		"node-drain-drill":      true,
-		"cluster-upgrade-drill": true,
-	}
+	// Empty, and meant to stay that way: every scenario has now been walked
+	// on a live cluster, tamper-tested and scored. A new one belongs here only
+	// while it is being written.
+	unverifiedScenarios := map[string]bool{}
 	verifiedScenarios := 0
 	for _, s := range c.Scenarios() {
 		if s.Verified {
@@ -66,14 +66,13 @@ func TestVerifiedContentSet(t *testing.T) {
 			t.Errorf("scenario %q is unverified but not in the known unverified set — verify it or add it", s.Name)
 		}
 	}
-	if verifiedScenarios != 11 {
-		t.Errorf("verified scenarios = %d, want 11 (the confirmed set)", verifiedScenarios)
+	if verifiedScenarios != 13 {
+		t.Errorf("verified scenarios = %d, want 13 (the confirmed set)", verifiedScenarios)
 	}
 
-	unverifiedIncidents := map[string]bool{
-		"oom-kill":       true,
-		"noisy-neighbor": true,
-	}
+	// Empty: every shipped fault has now been through incident-review end to
+	// end on a live cluster. A new fault lands here until its review passes.
+	unverifiedIncidents := map[string]bool{}
 	verifiedIncidents := 0
 	for _, f := range c.Incidents() {
 		if f.Verified {
@@ -85,7 +84,7 @@ func TestVerifiedContentSet(t *testing.T) {
 			t.Errorf("incident %q is unverified but not in the known unverified set", f.Name)
 		}
 	}
-	if verifiedIncidents != 4 {
-		t.Errorf("verified incidents = %d, want 4 (the go-api-targeting confirmed set)", verifiedIncidents)
+	if verifiedIncidents != 6 {
+		t.Errorf("verified incidents = %d, want 6 (every shipped fault, all review-confirmed)", verifiedIncidents)
 	}
 }

@@ -1,4 +1,4 @@
-# Zero-trust isolation for the go-api namespace.
+# Zero-trust isolation for the {{.WorkloadName}} namespace.
 #
 # NetworkPolicies are ADDITIVE and there is no deny rule: traffic is denied only
 # when no policy allows it. So the shape is always the same — one policy that
@@ -7,7 +7,7 @@
 # cancels the baseline without touching it, which is why this scenario grades the
 # posture of the whole set rather than the existence of default-deny-all.
 #
-# Only go-api is a prerequisite, so no policies are written for other app
+# Only {{.WorkloadName}} is a prerequisite, so no policies are written for other app
 # namespaces — `scenario up` must never fail applying rules to a namespace that
 # is not deployed.
 ---
@@ -16,7 +16,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: default-deny-all
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   podSelector: {}
   policyTypes:
@@ -29,7 +29,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-dns
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   podSelector: {}
   policyTypes:
@@ -51,7 +51,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-intra-namespace
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   podSelector: {}
   policyTypes:
@@ -78,7 +78,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-mesh-control-plane
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   podSelector: {}
   policyTypes:
@@ -94,7 +94,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-ingress-traffic
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   podSelector: {}
   policyTypes:
@@ -120,7 +120,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: allow-monitoring-scrape
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   podSelector: {}
   policyTypes:

@@ -11,7 +11,7 @@ MANIFEST="${SCRIPT_DIR}/../manifests/argocd-applications.yaml"
 echo "Waiting for the git server to accept connections..."
 kubectl -n gitops rollout status deployment/git-server --timeout=180s
 
-echo "Binding the gitops-demo Application to git://git-server.gitops:9418/platform.git"
+echo "Binding the gitops-demo and gitops-broken Applications to git://git-server.gitops:9418/platform.git"
 kubectl apply -f "$MANIFEST"
 
 # Wait for the first reconcile to finish, health included. Sync goes green the
@@ -27,3 +27,7 @@ for _ in $(seq 1 36); do
 done
 
 echo "✓ Application gitops-demo bound (sync=${sync:-unknown}, health=${health:-unknown})"
+
+# gitops-broken is deliberately not waited on: it is seeded broken, so waiting
+# for it to go Healthy would hang activation for the length of the drill.
+echo "✓ Application gitops-broken bound — it is MEANT to be unhealthy; repairing it is objective 7"

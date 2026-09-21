@@ -27,6 +27,8 @@ import type {
   RunSummary,
   RunDetail,
   RunLogs,
+  Comparison,
+  WorkloadBinding,
 } from '../types'
 
 const BASE = '/api/v2'
@@ -35,6 +37,8 @@ const BASE = '/api/v2'
 const GET_TIMEOUT_MS = 15_000
 /** Action (POST) requests return 202 immediately; allow some slack. */
 const POST_TIMEOUT_MS = 30_000
+/** Verify runs every check synchronously; the server bounds it at 5 min. */
+const VERIFY_TIMEOUT_MS = 5 * 60_000
 
 /** Generic fetch wrapper — throws Error with a useful message on every
  *  failure mode: network down, timeout, HTTP error body, malformed JSON. */
@@ -141,12 +145,19 @@ export const api = {
   // ── Scenarios ─────────────────────────────────────────────────────────────
   listScenarios: ()             => reqList<Scenario>('/scenarios'),
   getScenario:   (name: string) => req<Scenario>(`/scenarios/${enc(name)}`),
-  scenarioUp:    (name: string, params?: Record<string, string>) =>
-    post(`/scenarios/${enc(name)}/up`, params && Object.keys(params).length ? { params } : undefined),
+  // app is the workload to run against (ADR-0014). Omitted means the lab's
+  // current binding, which is what every caller wanted before app selection
+  // existed.
+  scenarioUp:    (name: string, params?: Record<string, string>, app?: string) => {
+    const body: Record<string, unknown> = {}
+    if (params && Object.keys(params).length) body.params = params
+    if (app) body.app = app
+    return post(`/scenarios/${enc(name)}/up`, Object.keys(body).length ? body : undefined)
+  },
   scenarioDown:  (name: string) => post(`/scenarios/${enc(name)}/down`),
   // Verify is synchronous: it returns the per-check results directly (not a job),
   // so it parses the ScenarioVerifyResult body rather than an ActionAccepted.
-  scenarioVerify: (name: string) => req<ScenarioVerifyResult>(`/scenarios/${enc(name)}/verify`, { method: 'POST' }, POST_TIMEOUT_MS),
+  scenarioVerify: (name: string) => req<ScenarioVerifyResult>(`/scenarios/${enc(name)}/verify`, { method: 'POST' }, VERIFY_TIMEOUT_MS),
 
   // ── Runtimes ──────────────────────────────────────────────────────────────
   listRuntimes:     ()             => req<Runtime[]>('/runtimes'),
@@ -172,7 +183,8 @@ export const api = {
   listIncidents:      ()             => req<IncidentList>('/incidents'),
   getIncidentStatus:  ()             => req<IncidentStatus>('/incidents/status'),
   getIncidentHistory: ()             => req<IncidentHistoryRecord[]>('/incidents/history'),
-  injectIncident:     (name: string) => req<{ status: string; silent: boolean; fault?: Fault }>(`/incidents/${enc(name)}/inject`, { method: 'POST' }, POST_TIMEOUT_MS),
+  injectIncident:     (name: string, app?: string) => req<{ status: string; silent: boolean; fault?: Fault }>(
+    `/incidents/${enc(name)}/inject${app ? `?app=${enc(app)}` : ''}`, { method: 'POST' }, POST_TIMEOUT_MS),
   injectRandomIncident: ()           => req<{ status: string; silent: boolean; fault?: Fault }>('/incidents/inject-random', { method: 'POST' }, POST_TIMEOUT_MS),
   resolveIncident:    ()             => req<{ status: string; fault: string }>('/incidents/resolve', { method: 'POST' }, POST_TIMEOUT_MS),
   nextIncidentHint:   ()             => req<IncidentHint>('/incidents/hint', { method: 'POST' }, POST_TIMEOUT_MS),
@@ -189,8 +201,10 @@ export const api = {
   // ── Leaderboard ─────────────────────────────────────────────────────────────
   getLeaderboard:  ()             => req<LeaderboardEntry[]>('/leaderboard'),
 
+  getComparisons:  ()             => req<Comparison[]>('/comparisons'),
+
   // ── Traffic generator ───────────────────────────────────────────────────────
-  getTraffic:   ()                        => req<{ profiles: string[] }>('/traffic'),
+  getTraffic:   ()                        => req<{ profiles: string[]; workload?: WorkloadBinding }>('/traffic'),
   startTraffic: (opts: TrafficOptions)    => req<ActionAccepted>('/traffic/start',
     { method: 'POST', body: JSON.stringify(opts), headers: { 'Content-Type': 'application/json' } }, POST_TIMEOUT_MS),
   stopTraffic:  ()                        => post('/traffic/stop'),

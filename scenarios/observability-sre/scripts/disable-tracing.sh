@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
 # Reverse of enable-tracing.sh: unset the OTLP endpoint so the app stops
 # exporting when the scenario is torn down and Alloy goes away. Without this the
 # app retries every export against a Service that no longer exists.
 
-NAMESPACE="${GO_API_NAMESPACE:-go-api}"
-DEPLOYMENT="go-api"
+NAMESPACE="${WORKLOAD_NAMESPACE}"
+DEPLOYMENT="${WORKLOAD_NAME}"
 
 if ! kubectl get deployment "$DEPLOYMENT" -n "$NAMESPACE" >/dev/null 2>&1; then
   echo "Deployment ${DEPLOYMENT} not found in ${NAMESPACE}; nothing to unset."

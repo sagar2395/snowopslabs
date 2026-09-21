@@ -42,9 +42,9 @@ hintPenalty: 5                     # % score deducted per hint (default 5)
 
 | Challenge | Category | Par | Setup |
 |-----------|----------|-----|-------|
-| `restore-broken-deploy` | workload | 10m | `bad-deploy-rollout` incident |
+| `restore-broken-deploy` | workload | 6m | `bad-deploy-rollout` incident |
 | `find-the-memory-leak` | resources | 8m | `oom-kill` incident |
-| `make-the-slo-green` | config | 12m | `service-selector-broken` incident |
+| `make-the-slo-green` | config | 8m | `service-selector-broken` incident |
 
 ## Using challenges
 
@@ -58,6 +58,18 @@ labctl challenge submit                          # grade your fix
 labctl challenge abort                           # escape hatch, no score
 labctl challenge history                         # past runs
 ```
+
+`labctl incident hint` and `labctl incident solution` cost score too, and the
+solution costs what every remaining hint would — the fault's own hint ladder is
+the only one a challenge has, so reading it there rather than here cannot be
+free.
+
+**Submitting is not one-shot.** A submit that does not pass every check prints
+what is still failing and leaves the run open, so you can fix and submit again;
+the clock keeps running, which is the pressure. Ending the run takes either a
+passing submit or `challenge abort`. A passing submit also tears down the setup
+it injected, the same way `abort` does — so the lab is clean and the next
+challenge can start.
 
 ## Reviewing a challenge
 

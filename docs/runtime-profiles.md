@@ -38,6 +38,9 @@ the project root and receive configuration through the environment (golden rule
 - `down.sh` is a **clean no-op** when the cluster is already gone (`refute`
   cluster-delete) — so re-running teardown, or tearing down a lab that never
   came up, never errors.
+- `up.sh` **heals** an existing cluster whose node containers are running with
+  no k3s inside them, which is how a k3d cluster comes back from a Docker or
+  colima restart ([R04 §9](runbooks/R04-lab-lifecycle.md#9-the-lab-after-the-host-restarts)).
 
 ### runtime.env keys
 

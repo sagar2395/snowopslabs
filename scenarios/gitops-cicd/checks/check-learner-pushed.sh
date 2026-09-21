@@ -1,40 +1,65 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# The drill step: did YOU change the declared state in Git, and did ArgoCD then
-# reconcile that commit into the cluster?
+# The drill step: did YOU change the declared state in Git, and is the cluster
+# running your change?
 #
-# Two conditions, because either alone is cheatable. More than the seed commit
-# proves a push happened; the Application's synced revision matching Git HEAD
-# proves the push is what the cluster is running.
+# It deliberately does NOT compare revisions. ArgoCD's .status.sync.revision is
+# the repo revision it last compared at, which moves to HEAD whenever any sync
+# runs — including one triggered by a path this Application does not watch. So
+# it lags behind HEAD after a commit to another path, and jumps ahead of the
+# last commit that touched demo/ after the next sync. Neither comparison is
+# right, and both produce a check that is red for reasons the learner did not
+# cause.
+#
+# What is exact: compare the declared state at HEAD with the declared state in
+# the seed commit. If they differ, someone pushed a real change. That the
+# cluster is actually running it is the job of git-matches-live, which is not a
+# pending step and is enforced on every run.
 
-pod=$(kubectl -n gitops get pod -l app=git-server \
-  -o jsonpath='{.items[?(@.status.phase=="Running")].metadata.name}' 2>/dev/null | awk '{print $1}')
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=checks/_git.sh
+. "${SCRIPT_DIR}/_git.sh"
 
-if [ -z "${pod:-}" ]; then
+if [ -z "$(git_pod)" ]; then
   echo "PENDING: no running git-server pod in namespace gitops." >&2
   exit 1
 fi
 
-commits=$(kubectl -n gitops exec "$pod" -c git-daemon -- \
-  git -C /srv/git/platform.git rev-list --count HEAD 2>/dev/null || echo "0")
-head=$(kubectl -n gitops exec "$pod" -c git-daemon -- \
-  git -C /srv/git/platform.git rev-parse HEAD 2>/dev/null || echo "")
-
+commits=$(git_repo rev-list --count HEAD || echo "0")
 if [ "${commits:-0}" -lt 2 ]; then
   echo "PENDING: the lab repo still holds only the seed commit — nothing has been pushed yet." >&2
+  echo "  Clone it, change demo/deployment.yaml, commit and push. The commands are in" >&2
+  echo "  'labctl scenario info gitops-cicd'." >&2
   exit 1
 fi
 
-synced=$(kubectl -n argocd get application gitops-demo \
-  -o jsonpath='{.status.sync.revision}' 2>/dev/null || echo "")
+# The root commit is the seed. Reading it back beats hardcoding the seed values
+# here, where they would quietly rot the day the seed ConfigMap changes.
+seed_rev=$(git_repo rev-list --max-parents=0 HEAD | head -1 || echo "")
+[ -n "$seed_rev" ] || {
+  echo "PENDING: could not identify the seed commit." >&2
+  exit 1
+}
 
-if [ "$synced" != "$head" ]; then
-  echo "PENDING: you pushed ${head}, but ArgoCD has only synced ${synced:-nothing}." >&2
-  echo "         Automated sync polls every ~3 minutes. To stop waiting:" >&2
-  echo "           kubectl -n argocd patch application gitops-demo --type merge \\" >&2
-  echo "             -p '{\"operation\":{\"initiatedBy\":{\"username\":\"admin\"},\"sync\":{\"revision\":\"main\"}}}'" >&2
+declared_now=$(git_repo show "HEAD:demo/deployment.yaml" |
+  awk '/^ *image:/ {i=$2} /^ *replicas:/ {r=$2} END {print i, r}' || true)
+declared_seed=$(git_repo show "${seed_rev}:demo/deployment.yaml" |
+  awk '/^ *image:/ {i=$2} /^ *replicas:/ {r=$2} END {print i, r}' || true)
+
+if [ -z "$declared_now" ]; then
+  echo "PENDING: demo/deployment.yaml is missing at HEAD — the Application has nothing to deploy." >&2
   exit 1
 fi
 
-echo "OK: ${commits} commits in the repo; ArgoCD has reconciled HEAD (${head})."
+if [ "$declared_now" = "$declared_seed" ]; then
+  echo "PENDING: there are ${commits} commits, but demo/deployment.yaml still declares the seed values" >&2
+  echo "         (${declared_seed})." >&2
+  echo "  Change what the cluster is asked to run — the image tag, the replica count — then push:" >&2
+  echo "    sed -i.bak 's|nginx:1.27.3-alpine|nginx:1.27.4-alpine|; s|replicas: 2|replicas: 3|' demo/deployment.yaml" >&2
+  echo "    git commit -am 'promote nginx 1.27.4, scale to 3' && git push origin main" >&2
+  exit 1
+fi
+
+echo "OK: ${commits} commits in the repo; demo/deployment.yaml now declares ${declared_now}"
+echo "(the seed declared ${declared_seed}). git-matches-live proves the cluster is running it."

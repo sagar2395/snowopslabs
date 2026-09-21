@@ -30,3 +30,34 @@ spec:
       selfHeal: true
     syncOptions:
       - CreateNamespace=true
+---
+## The second half of the drill: an Application whose Git path holds a release
+## that cannot become healthy. It syncs cleanly — the manifests are valid — and
+## then goes Degraded, which is exactly the shape of a real bad deploy. The
+## learner reads why from the Application's conditions and the pods, and fixes
+## it where the fix belongs: in Git.
+##
+## selfHeal is on here too, so repairing it with `kubectl set image` is reverted
+## within seconds. That is the lesson, not an obstacle.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gitops-broken
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: gitops-cicd
+spec:
+  project: default
+  source:
+    repoURL: git://git-server.gitops.svc.cluster.local:9418/platform.git
+    targetRevision: main
+    path: broken
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: gitops-broken
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

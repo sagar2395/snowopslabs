@@ -1,18 +1,18 @@
 # Chaos Engineering Experiments for SnowOps Labs
 # These are Chaos Mesh CRD resources that inject failures into the cluster.
-# Each experiment targets go-api and a specific failure mode. Apply them
+# Each experiment targets {{.WorkloadName}} and a specific failure mode. Apply them
 # selectively with a label selector, e.g.:
 #   kubectl apply -f chaos-experiments.yaml -l experiment=pod-kill
 # Run ONE at a time: overlapping experiments make the blast radius
 # unattributable, which defeats the purpose of the measurement.
 ---
-# Experiment 1: Pod Kill — randomly kill go-api pods
+# Experiment 1: Pod Kill — randomly kill {{.WorkloadName}} pods
 # Tests: self-healing, and how large the blast radius is at one replica
 apiVersion: chaos-mesh.org/v1alpha1
 kind: PodChaos
 metadata:
-  name: pod-kill-go-api
-  namespace: go-api
+  name: pod-kill-{{.WorkloadName}}
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: chaos-engineering
     experiment: pod-kill
@@ -21,18 +21,18 @@ spec:
   mode: one
   selector:
     namespaces:
-      - go-api
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
-      app: go-api
+      app: "{{.WorkloadName}}"
   duration: "30s"
 ---
-# Experiment 2: Pod Failure — make go-api pods unavailable for 60s
+# Experiment 2: Pod Failure — make {{.WorkloadName}} pods unavailable for 60s
 # Tests: Readiness probe behavior, traffic routing during failures
 apiVersion: chaos-mesh.org/v1alpha1
 kind: PodChaos
 metadata:
-  name: pod-failure-go-api
-  namespace: go-api
+  name: "pod-failure-{{.WorkloadName}}"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: chaos-engineering
     experiment: pod-failure
@@ -41,18 +41,18 @@ spec:
   mode: one
   selector:
     namespaces:
-      - go-api
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
-      app: go-api
+      app: "{{.WorkloadName}}"
   duration: "60s"
 ---
-# Experiment 3: Network Partition — isolate go-api from ingress traffic
+# Experiment 3: Network Partition — isolate {{.WorkloadName}} from ingress traffic
 # Tests: Circuit breaker behavior, failover mechanisms
 apiVersion: chaos-mesh.org/v1alpha1
 kind: NetworkChaos
 metadata:
-  name: network-partition-go-api
-  namespace: go-api
+  name: "network-partition-{{.WorkloadName}}"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: chaos-engineering
     experiment: network-partition
@@ -61,9 +61,9 @@ spec:
   mode: all
   selector:
     namespaces:
-      - go-api
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
-      app: go-api
+      app: "{{.WorkloadName}}"
   direction: both
   target:
     mode: all
@@ -72,13 +72,13 @@ spec:
         - traefik
   duration: "60s"
 ---
-# Experiment 4: CPU Stress — saturate CPU on go-api pods
+# Experiment 4: CPU Stress — saturate CPU on {{.WorkloadName}} pods
 # Tests: what a CPU-saturated pod does to latency when nothing autoscales
 apiVersion: chaos-mesh.org/v1alpha1
 kind: StressChaos
 metadata:
-  name: cpu-stress-go-api
-  namespace: go-api
+  name: "cpu-stress-{{.WorkloadName}}"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: chaos-engineering
     experiment: cpu-stress
@@ -86,24 +86,24 @@ spec:
   mode: one
   selector:
     namespaces:
-      - go-api
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
-      app: go-api
+      app: "{{.WorkloadName}}"
   stressors:
     cpu:
       workers: 2
       load: 80
   duration: "120s"
 ---
-# Experiment 5: Network Delay — add 300ms of latency between go-api and ingress
+# Experiment 5: Network Delay — add 300ms of latency between {{.WorkloadName}} and ingress
 # Tests: latency budgets, client timeouts. Watch the p99 panel, not the error
 # rate: a delayed service is still "up", which is what makes this failure mode
 # harder to spot than a pod kill.
 apiVersion: chaos-mesh.org/v1alpha1
 kind: NetworkChaos
 metadata:
-  name: network-delay-go-api
-  namespace: go-api
+  name: "network-delay-{{.WorkloadName}}"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: chaos-engineering
     experiment: network-delay
@@ -112,9 +112,9 @@ spec:
   mode: all
   selector:
     namespaces:
-      - go-api
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
-      app: go-api
+      app: "{{.WorkloadName}}"
   direction: both
   target:
     mode: all
@@ -126,14 +126,14 @@ spec:
     jitter: "50ms"
   duration: "120s"
 ---
-# Experiment 6: Memory Stress — push go-api past its 128Mi memory limit
+# Experiment 6: Memory Stress — push {{.WorkloadName}} past its 128Mi memory limit
 # Tests: OOMKill and restart behaviour. The container is killed by the kernel,
 # not by Chaos Mesh, so the OOMKill Events panel is the one that proves it.
 apiVersion: chaos-mesh.org/v1alpha1
 kind: StressChaos
 metadata:
-  name: memory-stress-go-api
-  namespace: go-api
+  name: "memory-stress-{{.WorkloadName}}"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: chaos-engineering
     experiment: memory-stress
@@ -141,9 +141,9 @@ spec:
   mode: one
   selector:
     namespaces:
-      - go-api
+      - "{{.WorkloadNamespace}}"
     labelSelectors:
-      app: go-api
+      app: "{{.WorkloadName}}"
   stressors:
     memory:
       # stress-ng byte format, NOT a Kubernetes quantity: "256Mi" is rejected by

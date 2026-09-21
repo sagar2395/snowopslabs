@@ -44,6 +44,7 @@ export const qk = {
   challengeHistory: ['challenges', 'history'] as const,
   results: ['results'] as const,
   leaderboard: ['leaderboard'] as const,
+  comparisons: ['comparisons'] as const,
   traffic: ['traffic'] as const,
   runs: ['runs'] as const,
   run: (id: string) => ['runs', id] as const,

@@ -18,16 +18,10 @@ const PROFILE_BLURB: Record<string, string> = {
   spike:  'Baseline, then a sharp ~10× spike and recovery (~6 min) — see how the stack absorbs and sheds a burst.',
   soak:   'Sustained moderate load over a long window (default 2h) — surface slow leaks and gradual degradation.',
   browse: 'Weighted read-mix across /, /version, /health — the shape of everyday traffic, spread over routes.',
-  write:  'POSTs a JSON body (best against echo-server /echo) — exercises a write path, not just reads.',
-  errors: 'Toggles go-api into simulated failure under load — watch error rate, readiness, and alerts react.',
+  write:  'POSTs a JSON body against the target\u2019s write path — exercises a write path, not just reads.',
+  errors: 'Toggles the target into simulated failure under load (needs the readiness-toggle capability) — watch error rate, readiness, and alerts react.',
 }
 
-// Known in-cluster targets. Multi-endpoint profiles (browse/write/errors) treat
-// the chosen target as a BASE origin and append their own paths.
-const TARGETS: Record<string, string> = {
-  'go-api':      'http://go-api.go-api.svc.cluster.local:8080/',
-  'echo-server': 'http://echo-server.echo-server.svc.cluster.local:8080/',
-}
 
 export function Traffic({ notify }: TrafficProps) {
   const { data, loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.traffic, api.getTraffic)
@@ -35,16 +29,32 @@ export function Traffic({ notify }: TrafficProps) {
   const [profile, setProfile] = useState('')
   const [rps, setRps] = useState(50)
   const [duration, setDuration] = useState('')
-  const [targetApp, setTargetApp] = useState('go-api')
+  const [targetApp, setTargetApp] = useState('')
   const [customUrl, setCustomUrl] = useState('')
   const { busy, run } = useJobRunner(notify)
+
+  // The targets are whatever apps the lab has, with the in-cluster address each
+  // one declares in its contract. Hardcoding the list here meant a new app — or
+  // an app on a non-default port — was invisible to the traffic generator.
+  const { data: apps } = useApiQuery(qk.apps, api.listApps)
+  const targets = (apps ?? []).filter(a => a.serviceUrl)
 
   useEffect(() => {
     if (!profile && profiles.length > 0) setProfile(profiles[0])
   }, [profile, profiles])
 
+  // Default to the app the lab is bound to, not whichever app sorts first —
+  // load aimed at a workload nobody is looking at is worse than no default.
+  const boundApp = data?.workload?.app
+  useEffect(() => {
+    if (targetApp || targets.length === 0) return
+    setTargetApp(targets.find(a => a.name === boundApp)?.name ?? targets[0].name)
+  }, [targetApp, targets, boundApp])
+
   // Resolve the target URL from the picker; 'custom' uses the typed URL.
-  const resolvedTarget = targetApp === 'custom' ? customUrl.trim() : TARGETS[targetApp]
+  const resolvedTarget = targetApp === 'custom'
+    ? customUrl.trim()
+    : targets.find(a => a.name === targetApp)?.serviceUrl
   const targetInvalid = targetApp === 'custom' && !/^https?:\/\//.test(customUrl.trim())
 
   function start() {
@@ -118,14 +128,19 @@ export function Traffic({ notify }: TrafficProps) {
                 aria-label="Traffic target"
                 onChange={e => setTargetApp(e.target.value)}
               >
-                <option value="go-api">go-api (in-cluster)</option>
-                <option value="echo-server">echo-server (in-cluster)</option>
+                {targets.map(a => (
+                  <option key={a.name} value={a.name}>
+                    {a.name}{a.name === boundApp ? ' (bound workload)' : ''}{a.deployed ? '' : ' — not deployed'}
+                  </option>
+                ))}
                 <option value="custom">Custom URL…</option>
               </select>
               <span className="field-help">
                 {targetApp === 'custom'
                   ? 'Any http(s) URL reachable from the cluster.'
-                  : <>Requests go to <code>{TARGETS[targetApp]}</code></>}
+                  : resolvedTarget
+                    ? <>Requests go to <code>{resolvedTarget}</code></>
+                    : 'No app declares an in-cluster address — check apps/<name>/app.env, or use a custom URL.'}
               </span>
             </label>
 

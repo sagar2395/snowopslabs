@@ -68,6 +68,10 @@ func isAuthEndpoint(path string) bool {
 // browser would send it back. Direct TLS sets r.TLS; a TLS-terminating proxy
 // signals it via X-Forwarded-Proto. Plain localhost HTTP stays non-Secure so
 // the cookie still works there.
+//
+// Forging X-Forwarded-Proto only ever adds Secure to the forger's own cookie;
+// stripping it from someone else's needs the proxy hop, which sees the traffic
+// anyway.
 func isSecureRequest(r *http.Request) bool {
 	if r.TLS != nil {
 		return true
@@ -149,8 +153,9 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusInternalServerError, "session_error", "could not create session")
 		return
 	}
-	//nolint:gosec // G124: Secure is set under TLS; localhost HTTP omits it so
-	// the cookie still works there. HttpOnly + SameSite=Strict always apply.
+	//nolint:gosec // G124: HttpOnly and SameSite=Strict always apply; Secure
+	// tracks TLS so the cookie still works over localhost HTTP. Spoofing
+	// X-Forwarded-Proto can only ADD Secure to the spoofer's own cookie.
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.CookieName,
 		Value:    sess.Token,
@@ -176,6 +181,8 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	s.sessions.Delete(auth.TokenFromRequest(r))
 	//nolint:gosec // G124: see the login handler — Secure is conditional on TLS.
+	// Clearing a cookie must repeat the attributes it was set with, or the
+	// browser treats it as a different cookie and leaves the original in place.
 	http.SetCookie(w, &http.Cookie{
 		Name:     auth.CookieName,
 		Value:    "",

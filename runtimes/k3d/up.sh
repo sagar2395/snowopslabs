@@ -125,6 +125,53 @@ raise_inotify_limits() {
   done
 }
 
+# A node container can be "Up" with no k3s running inside it. When Docker (or
+# the Colima VM under it) restarts, the node containers come back with
+# reshuffled bridge IPs and k3s exits immediately -- the address recorded for
+# the node no longer matches any local interface ("failed to find interface
+# with specified node ip"). k3d's entrypoint then loops on `kubectl uncordon`
+# forever, so the container stays Up, Docker never restarts it, and the node
+# sits NotReady indefinitely. Restarting the container re-runs k3s against the
+# address the node now has. Returns 0 only when something was restarted.
+restart_dead_nodes() {
+  local node role restarted=""
+  for node in $(docker ps --filter "label=k3d.cluster=${CLUSTER_NAME}" --format '{{.Names}}' 2>/dev/null); do
+    role="$(docker inspect "$node" --format '{{index .Config.Labels "k3d.role"}}' 2>/dev/null || true)"
+    # Only server and agent containers run k3s; the load-balancer runs nginx and
+    # exits on its own when it dies, so Docker restarts it without our help.
+    case "$role" in
+      server | agent) ;;
+      *) continue ;;
+    esac
+    # Matched on a captured string, not through a pipe: `set -o pipefail` plus
+    # grep -q's early exit reports the whole pipeline as failed on a match.
+    case "$(docker top "$node" 2>/dev/null || true)" in
+      */bin/k3s*) continue ;;
+    esac
+    echo "Node '$node' is running but k3s inside it is not — restarting it."
+    docker restart "$node" >/dev/null 2>&1 || true
+    restarted="$restarted $node"
+  done
+  [ -n "$restarted" ]
+}
+
+# Give a just-restarted cluster time to answer before anything judges it. A
+# restarted server node takes tens of seconds to serve /healthz, and deciding
+# it is unreachable would delete the lab.
+wait_for_nodes() {
+  local retries=0
+  until cluster_reachable; do
+    retries=$((retries + 1))
+    if [ "$retries" -ge 30 ]; then
+      return 0 # let the probe below report the failure
+    fi
+    sleep 2
+  done
+  echo "Waiting for all nodes to report Ready..."
+  kubectl wait --for=condition=Ready node --all --timeout=120s >/dev/null 2>&1 ||
+    echo "WARNING: not every node reached Ready; 'kubectl get nodes' has the detail." >&2
+}
+
 # Disable the bundled Traefik so we manage our own install in the traefik namespace.
 # This prevents two competing Traefik instances from causing 404 errors.
 create_cluster() {
@@ -171,6 +218,9 @@ if k3d cluster list "$CLUSTER_NAME" &>/dev/null; then
   # Rebuild the kubeconfig entry in case it was removed or points at a stale port.
   k3d kubeconfig merge "$CLUSTER_NAME" --kubeconfig-merge-default &>/dev/null || true
   normalize_apiserver_host
+  if restart_dead_nodes; then
+    wait_for_nodes
+  fi
   if cluster_reachable; then
     echo "Cluster '$CLUSTER_NAME' is healthy; skipping creation."
     raise_inotify_limits

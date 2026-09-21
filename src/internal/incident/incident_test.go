@@ -3,14 +3,17 @@ package incident
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 )
 
@@ -324,5 +327,161 @@ func TestResolveCheck_Exported(t *testing.T) {
 				t.Fatalf("ResolveCheck() = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+// A fault injected into one app must be detected and resolved against that app.
+// Status and Resolve run in a later process than Inject, so reading the binding
+// from ambient config pointed the detection check at a namespace nothing broke —
+// where it passes, and a passing check clears the incident and scores it solved.
+func TestActiveRecordsTheAppItWasInjectedInto(t *testing.T) {
+	e, _ := testEngine(t, "marker-fault")
+	e.Workload = workload.Default("java-api")
+	if err := e.MarkInjected("marker-fault", false); err != nil {
+		t.Fatalf("MarkInjected: %v", err)
+	}
+	active, err := e.Active()
+	if err != nil || active == nil {
+		t.Fatalf("Active: %v (active=%v)", err, active)
+	}
+	if active.App != "java-api" {
+		t.Errorf("Active.App = %q, want java-api", active.App)
+	}
+}
+
+// Read paths describe a fault bound to an app without rebinding the shared
+// engine: the API serves many requests from one engine, and an injection that
+// rebound it would be observed by every concurrent reader.
+func TestListBoundResolvesWithoutRebindingTheEngine(t *testing.T) {
+	root := t.TempDir()
+	createApp(t, root, "go-api")
+	writeBoundFault(t, root, "bound-fault")
+	e := NewEngine(root, "k3d.local")
+	e.Workload = workload.Default("go-api")
+
+	faults := e.ListBound(workload.Default("java-api"))
+	if len(faults) != 1 {
+		t.Fatalf("got %d faults, want 1", len(faults))
+	}
+	f := faults[0]
+	if f.Target.Namespace != "java-api" || f.Target.Workload != "java-api" {
+		t.Errorf("target = %s/%s, want java-api/java-api", f.Target.Namespace, f.Target.Workload)
+	}
+	if !strings.Contains(f.Description, "java-api") {
+		t.Errorf("description was not resolved against the binding: %q", f.Description)
+	}
+	if e.Workload.Name != "go-api" {
+		t.Errorf("ListBound rebound the engine to %q", e.Workload.Name)
+	}
+}
+
+// Everything a reader is shown has to be resolved, not just the fields anyone
+// happened to notice: an unresolved snippet shipped a literal
+// "{{.WorkloadNamespace}}" into the first thing a learner reads.
+func TestResolvedCoversEverythingAReaderSees(t *testing.T) {
+	root := t.TempDir()
+	createApp(t, root, "go-api")
+	writeBoundFault(t, root, "bound-fault")
+	e := NewEngine(root, "k3d.local")
+	e.Workload = workload.Default("java-api")
+
+	f, err := e.Get("bound-fault")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	for label, got := range map[string]string{
+		"description":     f.Description,
+		"snippet label":   f.Snippets[0].Label,
+		"snippet body":    f.Snippets[0].YAML,
+		"reference note":  f.References[0].Note,
+		"prerequisite ap": f.Prerequisites.Apps[0],
+	} {
+		if strings.Contains(got, "{{") {
+			t.Errorf("%s left a raw template: %q", label, got)
+		}
+	}
+	if f.Prerequisites.Apps[0] != "java-api" {
+		t.Errorf("prerequisite app = %q, want java-api", f.Prerequisites.Apps[0])
+	}
+}
+
+// An app prerequisite written as a template is the binding, not a requirement.
+// Presenting it as "requires go-api" told users that content which runs against
+// any conforming app ran against one.
+func TestPinnedAppsExcludesTheBinding(t *testing.T) {
+	root := t.TempDir()
+	createApp(t, root, "go-api")
+	writeBoundFault(t, root, "bound-fault")
+	e := NewEngine(root, "k3d.local")
+
+	if got := e.PinnedApps("bound-fault"); len(got) != 0 {
+		t.Errorf("PinnedApps = %v, want none — the only entry is the binding", got)
+	}
+	if got := e.PinnedApps("no-such-fault"); got == nil || len(got) != 0 {
+		t.Errorf("PinnedApps for an unknown fault = %v, want an empty slice", got)
+	}
+}
+
+const boundFaultYAML = `name: %s
+displayName: "Bound Fault"
+description: "{{.WorkloadName}} is on fire"
+category: workload
+severity: medium
+target:
+  namespace: "{{.WorkloadNamespace}}"
+  workload: "{{.WorkloadName}}"
+prerequisites:
+  apps:
+    - "{{.WorkloadName}}"
+references:
+  - label: "Docs"
+    url: "https://example.invalid/"
+    note: "how {{.WorkloadName}} is wired"
+snippets:
+  - label: "Patch {{.WorkloadName}}"
+    yaml: |
+      metadata:
+        namespace: "{{.WorkloadNamespace}}"
+detection:
+  name: resolved-when-marker-gone
+  type: script
+  script: checks/resolved.sh
+  timeoutSeconds: 5
+`
+
+// writeBoundFault creates a fault that names its workload through the binding
+// rather than pinning an app — the shape all shipped content uses.
+func writeBoundFault(t *testing.T, root, name string) {
+	t.Helper()
+	writeFault(t, root, name)
+	path := filepath.Join(root, "incidents", name, "fault.yaml")
+	if err := os.WriteFile(path, []byte(strings.Replace(boundFaultYAML, "%s", name, 1)), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The incident counterpart of the scenario display guard: everything a reader is
+// shown must come back resolved, checked by walking the response rather than by
+// naming fields, so a field added to the schema and forgotten fails here.
+func TestResolvedLeavesNoTemplateAReaderCouldSee(t *testing.T) {
+	root := t.TempDir()
+	createApp(t, root, "go-api")
+	writeBoundFault(t, root, "bound-fault")
+	e := NewEngine(root, "k3d.local")
+
+	faults := e.ListBound(workload.Default("java-api"))
+	if len(faults) != 1 {
+		t.Fatalf("got %d faults, want 1", len(faults))
+	}
+	f := faults[0]
+	body, err := json.Marshal(f)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if left := regexp.MustCompile(`{{\.\w[^}]*}}`).FindAllString(string(body), -1); len(left) > 0 {
+		t.Errorf("unresolved templates reached the reader: %v", left)
+	}
+	if !strings.Contains(f.Description, "java-api") {
+		t.Errorf("resolved against the wrong binding: %q", f.Description)
 	}
 }

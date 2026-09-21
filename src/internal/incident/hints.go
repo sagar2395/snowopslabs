@@ -41,6 +41,27 @@ func ParseHints(dir string) ([]string, error) {
 	return hints, nil
 }
 
+// HintCount returns how many hints a fault ships, so a caller that reveals the
+// whole solution can bill for all of them. Unknown faults count as zero.
+func (e *Engine) HintCount(name string) int {
+	if name == "" {
+		active, err := e.Active()
+		if err != nil || active == nil {
+			return 0
+		}
+		name = active.Fault
+	}
+	f, err := e.Get(name)
+	if err != nil {
+		return 0
+	}
+	hints, err := ParseHints(f.Dir)
+	if err != nil {
+		return 0
+	}
+	return len(hints)
+}
+
 // Hint is one revealed hint.
 type Hint struct {
 	Index int    `json:"index"` // 1-based
@@ -74,7 +95,11 @@ func (e *Engine) NextHint() (*Hint, error) {
 	if err := e.saveActive(active); err != nil {
 		return nil, fmt.Errorf("recording hint reveal: %w", err)
 	}
-	return &Hint{Index: active.HintsRevealed, Total: len(hints), Text: hints[active.HintsRevealed-1]}, nil
+	// Resolved, not raw: a hint that names {{.WorkloadName}} must read as the app
+	// the learner is actually looking at, or it sends them hunting for a
+	// deployment that does not exist.
+	text := e.resolveTemplate(hints[active.HintsRevealed-1])
+	return &Hint{Index: active.HintsRevealed, Total: len(hints), Text: text}, nil
 }
 
 // Solution returns the full walkthrough for the active incident (or a named
@@ -99,5 +124,5 @@ func (e *Engine) Solution(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(data), nil
+	return e.resolveTemplate(string(data)), nil
 }

@@ -176,8 +176,7 @@ If you have deployed go-api, verify its metrics are scraped:
 make deploy-app APP_NAME=go-api
 
 # In Prometheus UI, search for these metrics:
-# - http_requests_total
-# - http_request_duration_seconds
+# - http_server_request_duration_seconds (its _count series is the request count)
 # - up{job="go-api"}
 
 # Or in terminal:
@@ -309,8 +308,10 @@ bash platform/monitoring/grafana/status.sh
 Go-API exposes metrics in Prometheus format at `GET /metrics` (port 8080 by default).
 
 Metrics include:
-- `http_requests_total`: Total HTTP requests by endpoint
-- `http_request_duration_seconds`: Request latency distribution (histogram)
+- `http_server_request_duration_seconds`: request latency distribution (histogram),
+  OpenTelemetry semantic conventions. `_count` is the request count — semconv
+  defines no separate counter — and `http_response_status_code` carries the
+  status, so error rates derive from the same series.
 - Standard Go runtime metrics
 
 Pod annotations in [apps/go-api/deploy/helm/templates/deployment.yaml](../../apps/go-api/deploy/helm/templates/deployment.yaml):

@@ -23,6 +23,11 @@ const (
 	KindChallenge = "challenge"
 	KindModule    = "module"   // a learn path module completion
 	KindScenario  = "scenario" // a scenario verification
+	// KindComparison is one workload's measured run in a `labctl compare`. One
+	// record per (scenario, workload) pair: the comparison itself is the set of
+	// records that share a scenario and a run id, so a later run against a third
+	// app extends the comparison instead of invalidating it.
+	KindComparison = "comparison"
 )
 
 // CheckOutcome is one check's result as recorded in a scenario verification. It
@@ -86,7 +91,34 @@ type Record struct {
 	Score     int                    `json:"score"`          // 0–100; -1 = not scored
 	Outcome   string                 `json:"outcome"`        // passed | failed | aborted | resolved | auto-resolved
 	HintsUsed int                    `json:"hintsUsed,omitempty"`
-	Meta      map[string]interface{} `json:"meta,omitempty"` // kind-specific extra fields
+	Workload  string                 `json:"workload,omitempty"` // app the run was bound to (ADR-0014)
+	Meta      map[string]interface{} `json:"meta,omitempty"`     // kind-specific extra fields
+}
+
+// NewComparisonRecord builds a record for one workload's measured window in a
+// comparison. It is not scored: a comparison reports numbers and the scenario's
+// checks remain the only thing that decides pass/fail, so Score is -1 and the
+// outcome is "measured".
+//
+// The fair-run controls are recorded alongside the values because a measurement
+// only means something next to the load that produced it — two records with
+// different warmups are not comparable however similar their numbers look.
+func NewComparisonRecord(scenario, app string, values map[string]float64, controls map[string]string, startedAt, endedAt time.Time) Record {
+	return Record{
+		Kind:      KindComparison,
+		Name:      scenario,
+		Workload:  app,
+		User:      UserOr(""),
+		StartedAt: startedAt,
+		EndedAt:   endedAt,
+		Elapsed:   int64(endedAt.Sub(startedAt).Seconds()),
+		Score:     -1,
+		Outcome:   "measured",
+		Meta: map[string]interface{}{
+			"metrics":  values,
+			"controls": controls,
+		},
+	}
 }
 
 // Store is a JSONL append-only results store.

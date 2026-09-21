@@ -345,6 +345,39 @@ func humanizeQuantity(q string) string {
 	return q
 }
 
+// NamespaceHealth counts the pods in a namespace and how many of them are
+// fully ready. exists reports whether the namespace is there at all, so a
+// caller can tell "not installed" from "installed and broken".
+func NamespaceHealth(ctx context.Context, namespace string) (ready, total int, exists bool) {
+	if !NamespaceExists(ctx, namespace) {
+		return 0, 0, false
+	}
+	pods, err := GetNamespacePods(ctx, namespace)
+	if err != nil {
+		return 0, 0, true
+	}
+	for _, p := range pods {
+		total++
+		// A finished Job pod is not a fault; counting it as unready would
+		// leave every namespace that ever ran one permanently degraded.
+		if p.Status == "Succeeded" || (p.Status == "Running" && allContainersReady(p.Ready)) {
+			ready++
+		}
+	}
+	return ready, total, true
+}
+
+// allContainersReady parses the "n/m" readiness string PodInfo carries.
+func allContainersReady(readyField string) bool {
+	n, m, found := strings.Cut(readyField, "/")
+	if !found {
+		return false
+	}
+	got, err1 := strconv.Atoi(n)
+	want, err2 := strconv.Atoi(m)
+	return err1 == nil && err2 == nil && want > 0 && got == want
+}
+
 // NamespaceExists checks if a namespace exists.
 func NamespaceExists(ctx context.Context, namespace string) bool {
 	_, err := kubectl(ctx, "get", "namespace", namespace, "--no-headers")
@@ -379,6 +412,30 @@ func HelmReleaseExists(ctx context.Context, namespace, release string) bool {
 // GetCurrentContext returns the current kubectl context name.
 func GetCurrentContext(ctx context.Context) (string, error) {
 	return kubectl(ctx, "config", "current-context")
+}
+
+// IngressHosts returns every hostname an Ingress in the cluster serves, in the
+// order kubectl lists them. Duplicates and rules without a host are dropped.
+func IngressHosts(ctx context.Context) ([]string, error) {
+	out, err := kubectl(ctx, "get", "ingress", "--all-namespaces",
+		"-o", `jsonpath={range .items[*]}{range .spec.rules[*]}{.host}{"\n"}{end}{end}`)
+	if err != nil {
+		return nil, err
+	}
+	return uniqueLines(out), nil
+}
+
+func uniqueLines(out string) []string {
+	seen := map[string]bool{}
+	lines := []string{}
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !seen[line] {
+			seen[line] = true
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // RunKubectl executes a kubectl command and returns its stdout.

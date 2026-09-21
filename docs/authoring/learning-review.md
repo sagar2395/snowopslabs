@@ -246,10 +246,16 @@ annotations, no orphaned namespace, no armed PrometheusRule.
 | 1 | **Grading integrity** | 0.25 | Zero-work submit scores ~0, a genuine fix scores high, and the arithmetic matches the published formula |
 | 2 | **Par-time calibration** | 0.20 | `parTime` traced to a real timed run, reachable with one or two lookups |
 | 3 | **Underlying content** | 0.15 | The wrapped incident or scenario is itself review-clean |
-| 4 | **Completability** | 0.15 | Finishable on a fresh lab, start to submit, without outside help |
+| 4 | **Completability** | 0.10 | Finishable on a fresh lab, start to submit, without outside help |
 | 5 | **Abort & cleanliness** | 0.10 | `abort` undoes the setup from any state, leaving no residue |
 | 6 | **Framing** | 0.10 | The description sets the task and the stakes without giving away the answer |
 | 7 | **Invariant compliance** | 0.10 | `useDetectionCheck` preferred, README table current, one active challenge honoured |
+
+Both weight sets sum to 1.00. (They did not: the challenge weights summed to
+1.05, so a flawless challenge scored 5.14 and every score above about 4.8 was
+inflated. Completability moved from 0.15 to 0.10 — it is the dimension most
+nearly implied by the other six, since a challenge that grades honestly, aborts
+cleanly and frames its task is by construction completable.)
 
 **Anchors** for both. 5 — no finding. 4 — one cosmetic finding. 3 — a finding a
 learner would notice. 2 — a finding that misleads a learner. 1 — the dimension's

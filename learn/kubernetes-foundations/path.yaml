@@ -1,10 +1,11 @@
 name: kubernetes-foundations
 displayName: "Kubernetes Foundations"
 description: >
-  A hands-on tour of the lab: spin up a cluster, deploy the demo apps,
-  enable observability, and face your first production incident. By the end
-  you will have used kubectl, Helm, Prometheus, and the incident engine on
-  a real Kubernetes cluster.
+  A hands-on tour of the lab, written for someone starting from no cluster at
+  all: spin one up, deploy the demo apps, enable observability, and face your
+  first production incident. By the end you will have used kubectl, Helm,
+  Prometheus, and the incident engine on a real Kubernetes cluster. If you
+  already have a lab running, the first two modules will pass immediately.
 tags: [kubernetes, observability, incidents]
 estimatedMinutes: 45
 modules:
@@ -27,7 +28,7 @@ modules:
       type: command
       ref: "labctl app deploy go-api"
     check:
-      name: go-api-healthy
+      name: workload-healthy
       type: http
       url: "http://go-api.${DOMAIN_SUFFIX:-k3d.local}/health"
       expectStatus: 200

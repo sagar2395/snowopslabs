@@ -155,5 +155,10 @@ echo ""
 echo "  Follow live output:  kubectl logs -f job/traffic-k6 -n $NAMESPACE"
 echo "  Check status:        labctl traffic status"
 echo "  Stop:                labctl traffic stop"
-echo "  See it in go-api's logs:  kubectl -n go-api logs deploy/go-api -f | grep request"
+# The workload under load, not a hardcoded app: the same generator drives
+# whichever app the lab is bound to, and naming go-api sent the reader to a
+# namespace with no traffic in it.
+TARGET_WL="${WORKLOAD_NAME:-go-api}"
+TARGET_NS="${WORKLOAD_NAMESPACE:-$TARGET_WL}"
+echo "  See it in ${TARGET_WL}'s logs:  kubectl -n ${TARGET_NS} logs deploy/${TARGET_WL} -f | grep request"
 echo "  Watch impact in Grafana next to the app's request-rate panels."

@@ -105,10 +105,17 @@ Activated via the `chaos-engineering` scenario. Includes a web dashboard (port-f
 Service mesh providing mTLS, traffic management, and L7 telemetry between meshed
 workloads. Swappable via `MESH_PROVIDER`.
 
-| Provider | Charts | Inject marker | Sidecar |
-|----------|--------|---------------|---------|
-| **istio** | `istio/base`, `istio/istiod` | namespace label `istio-injection=enabled` | `istio-proxy` |
-| **linkerd** | `linkerd/linkerd-crds`, `linkerd/linkerd-control-plane` | namespace annotation `linkerd.io/inject=enabled` | `linkerd-proxy` |
+| Provider | Charts | Control-plane ns | Inject marker | Sidecar |
+|----------|--------|------------------|---------------|---------|
+| **istio** | `istio/base`, `istio/istiod` | `istio-system` | namespace label `istio-injection=enabled` | `istio-proxy` |
+| **linkerd** | `linkerd/linkerd-crds`, `linkerd/linkerd-control-plane` | `linkerd` | namespace annotation `linkerd.io/inject=enabled` | `linkerd-proxy` |
+
+> A provider whose control-plane namespace differs from its own name must
+> declare it as `namespace:` under its entry in the category's
+> `_interface.yaml`. Prerequisite detection resolves a component to a namespace
+> and checks whether it exists; without the declaration the name is assumed, and
+> an installed component (istio in `istio-system`, nginx in `ingress-nginx`) is
+> reported missing on a correctly-provisioned cluster.
 
 `install.sh` enrols the workload namespace (`MESH_NAMESPACE`, default `go-api`)
 into the mesh and restarts its deployments so sidecars are injected;

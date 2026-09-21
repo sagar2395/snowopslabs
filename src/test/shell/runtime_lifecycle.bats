@@ -53,6 +53,31 @@ teardown() {
   refute_called k3d "cluster create"
 }
 
+@test "k3d up restarts a node container whose k3s has died" {
+  # After a Docker/Colima restart the node containers come back with different
+  # bridge IPs and k3s exits at once, but k3d's entrypoint keeps the container
+  # Up — so the node sits NotReady and nothing self-heals. `init` must restart
+  # it, not leave it or delete the cluster.
+  stub_when docker "label=k3d.cluster" 0 "k3d-testcluster-agent-0"
+  stub_when docker "k3d.role" 0 "agent"
+  # `docker top` prints nothing: no k3s process inside the running container.
+  run bash "$ROOT/runtimes/k3d/up.sh" testcluster
+  [ "$status" -eq 0 ]
+  assert_called docker "restart k3d-testcluster-agent-0"
+  assert_called kubectl "wait --for=condition=Ready node"
+  refute_called k3d "cluster delete"
+  refute_called k3d "cluster create"
+}
+
+@test "k3d up leaves a node alone when k3s is running inside it" {
+  stub_when docker "label=k3d.cluster" 0 "k3d-testcluster-agent-0"
+  stub_when docker "k3d.role" 0 "agent"
+  stub_when docker "top" 0 "root 1 /bin/k3s agent"
+  run bash "$ROOT/runtimes/k3d/up.sh" testcluster
+  [ "$status" -eq 0 ]
+  refute_called docker "restart"
+}
+
 @test "k3d down is a clean no-op when the cluster is absent" {
   stub_when k3d "cluster list" 1
   run bash "$ROOT/runtimes/k3d/down.sh" testcluster

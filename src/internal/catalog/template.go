@@ -2,25 +2,15 @@
 package catalog
 
 import (
-	"fmt"
-	"strings"
-	"text/template"
+	"time"
+
+	"github.com/sagar2395/snowopslabs/internal/tmpl"
 )
 
 // TemplateContext is the typed set of variables content templates may reference.
-// It is deliberately a struct, not a map: text/template rejects a reference to a
-// field that does not exist, so a typo like {{.DomainSufix}} fails loudly at
-// validation time instead of silently resolving to empty.
-type TemplateContext struct {
-	// DomainSuffix is the ingress domain suffix, e.g. "k3d.local".
-	DomainSuffix string
-	// MonitoringNamespace is where the monitoring stack lives, e.g. "monitoring".
-	MonitoringNamespace string
-	// ProjectRoot is the absolute path to the repository/content root.
-	ProjectRoot string
-	// LokiRetentionPeriod is Loki's configured retention, e.g. "72h".
-	LokiRetentionPeriod string
-}
+// The definition lives in internal/tmpl so the validator and the two run-time
+// engines cannot drift apart on which variables exist.
+type TemplateContext = tmpl.Context
 
 // DefaultTemplateContext returns a context populated with the standard defaults
 // used when a caller only wants to validate that templates are well-formed and
@@ -31,25 +21,21 @@ func DefaultTemplateContext(projectRoot string) TemplateContext {
 		MonitoringNamespace: "monitoring",
 		ProjectRoot:         projectRoot,
 		LokiRetentionPeriod: "72h",
+		IngressClass:        "traefik",
+		WorkloadName:        "go-api",
+		WorkloadNamespace:   "go-api",
+		WorkloadService:     "go-api.go-api.svc.cluster.local",
+		WorkloadPort:        "8080",
+		WorkloadMetric:      "http_server_request_duration_seconds",
+		SinceActivation:     tmpl.Since(time.Time{}, time.Now()),
 	}
 }
 
-// Resolve expands the Go-template variables in input against ctx. Input without
-// "{{" is returned unchanged. Referencing an unknown key — or any malformed
-// template — is an error naming the offending template, so authoring mistakes
-// surface at validation instead of producing a broken URL or namespace at run
-// time.
-func Resolve(input string, ctx TemplateContext) (string, error) {
-	if !strings.Contains(input, "{{") {
-		return input, nil
-	}
-	tmpl, err := template.New("content").Option("missingkey=error").Parse(input)
-	if err != nil {
-		return "", fmt.Errorf("malformed template %q: %w", input, err)
-	}
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, ctx); err != nil {
-		return "", fmt.Errorf("template %q: %w", input, err)
-	}
-	return buf.String(), nil
+// Validate reports a reference to an unknown labctl template variable, so an
+// authoring typo surfaces at validation instead of producing a broken URL or
+// namespace at run time. Other systems' templating in the same string — Loki,
+// Prometheus, Grafana, Helm — is left alone, exactly as the run-time expander
+// leaves it. See internal/tmpl.
+func Validate(input string, extra ...string) error {
+	return tmpl.Validate(input, extra...)
 }

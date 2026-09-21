@@ -32,7 +32,13 @@ func (s *Server) handleTrafficInfo(w http.ResponseWriter, r *http.Request) {
 	if profiles == nil {
 		profiles = []string{}
 	}
-	writeJSONCached(w, r, http.StatusOK, map[string]any{"profiles": profiles})
+	// The bound workload travels with the profiles so the UI can preselect the app
+	// the lab is actually working on. Without it the target defaulted to whichever
+	// app sorted first, and load went somewhere nobody was looking.
+	writeJSONCached(w, r, http.StatusOK, map[string]any{
+		"profiles": profiles,
+		"workload": workloadResp(s.boundWorkload("")),
+	})
 }
 
 // handleTrafficStart validates the requested profile/rps/duration/target, then

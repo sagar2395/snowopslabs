@@ -1,19 +1,22 @@
-# KEDA ScaledObject: scale go-api on its Prometheus request rate (RPS).
+# KEDA ScaledObject: scale {{.WorkloadName}} on its Prometheus request rate (RPS).
 # The Prometheus server address reads the monitoring namespace from the engine
 # template ({{.MonitoringNamespace}}) — no hardcoded namespace (rule 3/4).
 #
 # Threshold is RPS-per-replica: desiredReplicas = ceil(totalRPS / threshold),
 # clamped to [minReplicaCount, maxReplicaCount]. With the spike profile holding
-# ~100 RPS and threshold 25, go-api scales to ~4 replicas; at the 10 RPS
+# ~100 RPS and threshold 25, {{.WorkloadName}} scales to ~4 replicas; at the 10 RPS
 # baseline it returns to 1 after the cooldown.
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: go-api
-  namespace: go-api
+  name: "{{.WorkloadName}}"
+  namespace: "{{.WorkloadNamespace}}"
 spec:
   scaleTargetRef:
-    name: go-api
+    name: "{{.WorkloadName}}"
+  # Unquoted: these are integers in the ScaledObject schema, and a quoted
+  # template renders as the string "1", which the CRD rejects. The trigger's
+  # metadata below is map[string]string, so threshold stays quoted.
   minReplicaCount: {{.MinReplicas}}
   maxReplicaCount: {{.MaxReplicas}}
   pollingInterval: 15      # seconds between metric polls
@@ -29,5 +32,5 @@ spec:
     - type: prometheus
       metadata:
         serverAddress: "http://prometheus-kube-prometheus-prometheus.{{.MonitoringNamespace}}.svc:9090"
-        query: "sum(rate(http_requests_total{app=\"go-api\"}[1m]))"  # total RPS across pods
+        query: "sum(rate({{.WorkloadMetric}}_count{app=\"{{.WorkloadName}}\"}[1m]))"  # total RPS across pods
         threshold: "{{.Threshold}}"                                  # RPS per replica

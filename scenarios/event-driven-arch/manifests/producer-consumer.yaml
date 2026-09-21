@@ -1,6 +1,12 @@
-# A continuous producer and a consumer group for the 'orders' topic, using the
-# Apache Kafka image's console tools (no custom app needed). The producer emits
-# one order roughly every 0.5s; the consumer reads the 'order-processors' group.
+# The steady state: one producer and one consumer on the 'orders' topic, built
+# from Kafka's own console tools so no application image is involved.
+#
+# The consumer does REAL WORK PER MESSAGE — a 50ms sleep standing in for the
+# database write or downstream call a real order processor makes. That cost is
+# the whole scenario: it caps one consumer at roughly 18 orders/second, so when
+# stage 2 ramps producers past that, the group falls behind and stays behind.
+# A consumer that only prints its input can absorb any load this lab can
+# generate, and the lag exercise becomes unperformable.
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -25,8 +31,14 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
+              # A ~1KB order body, built by doubling rather than with tr or
+              # head: the Kafka image is slim and carries neither.
+              PAD=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+              PAD=$PAD$PAD$PAD$PAD
+              PAD=$PAD$PAD$PAD$PAD
+              PAD=$PAD$PAD
               while true; do
-                echo "order-$(date +%s)-${RANDOM}";
+                echo "{\"id\":\"order-$(date +%s)-${RANDOM}\",\"items\":3,\"body\":\"$PAD\"}";
                 sleep 0.5;
               done | /opt/kafka/bin/kafka-console-producer.sh \
                 --bootstrap-server lab-kafka-kafka-bootstrap:9092 \
@@ -62,11 +74,24 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - |
+              # No --from-beginning: the group starts at the live end of the
+              # topic, so lag measures what THIS run fell behind by rather than
+              # the whole retention window.
+              #
+              # The 1KB bodies matter here too. The pipe holds 64KB, so the
+              # consumer stops fetching within about sixty messages of falling
+              # behind, and the committed offset tracks processed work instead
+              # of running thousands of messages ahead of it.
+              n=0
               /opt/kafka/bin/kafka-console-consumer.sh \
                 --bootstrap-server lab-kafka-kafka-bootstrap:9092 \
                 --topic orders \
-                --group order-processors \
-                --from-beginning
+                --group order-processors |
+              while read -r _order; do
+                sleep 0.05
+                n=$((n + 1))
+                [ $((n % 50)) -eq 0 ] && echo "processed $n orders"
+              done
           resources:
             requests:
               cpu: 50m

@@ -165,3 +165,17 @@ func TestRepoFaults_InjectTwiceSucceeds(t *testing.T) {
 		}
 	}
 }
+
+// A shared script library lives alongside the faults; it is not a fault and
+// must not be reported as one missing its fault.yaml.
+func TestRepoFaults_UnderscoreDirsAreNotFaults(t *testing.T) {
+	e := NewEngine(repoRoot(t), "k3d.local")
+	for _, name := range []string{"_lib"} {
+		if _, err := e.Get(name); err == nil {
+			t.Errorf("%q loaded as a fault", name)
+		}
+		if _, reported := e.LoadErrors()[name]; reported {
+			t.Errorf("%q was reported as a failed fault load", name)
+		}
+	}
+}

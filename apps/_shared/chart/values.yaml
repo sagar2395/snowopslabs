@@ -1,0 +1,69 @@
+# Defaults mirror the workload contract's own defaults (internal/workload).
+# engine/deploy/helm.sh overrides them from the app's app.env, so the deployed
+# pod and the declared contract cannot disagree.
+appName: ""
+namespace: ""
+
+image:
+  # reference is the full image ref, used verbatim when set. A pre-built app
+  # keeps the reference it was published under — retagging it locally breaks the
+  # digest the imported manifest points at, and the pod then cannot find it.
+  reference: ""
+  repository: ""
+  # Local image ID, set by engine/deploy/helm.sh. Surfaces as a pod annotation
+  # so a rebuild under an unchanged tag still rolls out.
+  id: ""
+  tag: latest
+  # IfNotPresent, not Never: the image is normally imported into k3d/kind so
+  # nothing is pulled, but a failed import falls back to the registry instead of
+  # leaving a pod stuck in ErrImageNeverPull.
+  pullPolicy: IfNotPresent
+
+port: 8080
+replicaCount: 1
+
+probes:
+  healthPath: /health
+  readyPath: /ready
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+metrics:
+  enabled: true
+  path: /metrics
+
+ingress:
+  enabled: true
+  className: traefik
+  # Defaults to <appName>.<domainSuffix> when left empty.
+  host: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 500m
+    memory: 128Mi
+
+# Extra environment variables, as a list of {name, value}.
+env: []
+
+# Paths mounted as emptyDir so they stay writable under a read-only root
+# filesystem. /tmp is the default because almost every runtime and web server
+# needs it, and losing it is the most common reason a hardened BYO image
+# crashloops. Add more with APP_WRITABLE_PATHS in app.env.
+writablePaths:
+  - /tmp
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]

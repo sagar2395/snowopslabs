@@ -40,9 +40,11 @@ conventions:
 implementations:
   traefik:
     chart: traefik/traefik
+    namespace: traefik
     ingress_class: traefik
     notes: "Default for k3d (ships with k3s). API dashboard available."
   nginx:
     chart: ingress-nginx/ingress-nginx
+    namespace: ingress-nginx
     ingress_class: nginx
     notes: "Default for cloud runtimes (AKS, EKS). Widely used in production."

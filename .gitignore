@@ -6,6 +6,7 @@
 *.swp
 *.swo
 *~
+.vscode/
 
 ## Go build output (golden rule 6: never commit build artifacts)
 bin/
@@ -23,6 +24,9 @@ coverage.html
 ## Embedded UI in the binary (copied at build time by make cli-build)
 src/internal/webui/dist/*
 !src/internal/webui/dist/.gitkeep
+
+## Vitest's run cache — a build artifact, and it changes on every test run
+src/.vite/
 
 ## SPA build output and dependencies
 src/ui/node_modules/

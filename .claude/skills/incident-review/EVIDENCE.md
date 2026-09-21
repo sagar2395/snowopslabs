@@ -96,7 +96,7 @@ Then the on-call view — dashboards and the pager:
 
 ```sh
 curl -s --get "$PROM/api/v1/query" \
-  --data-urlencode 'query=sum by (code) (rate(http_requests_total[5m]))'
+  --data-urlencode 'query=sum by (http_response_status_code) (rate(http_server_request_duration_seconds_count[5m]))'
 curl -s "$ALERTMANAGER_URL/api/v2/alerts" | jq -r '.[].labels.alertname' 2>/dev/null
 ```
 

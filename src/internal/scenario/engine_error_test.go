@@ -117,6 +117,28 @@ func TestNewEngine_CorruptedYAML_PopulatesLoadErrors(t *testing.T) {
 	}
 }
 
+// Shared script directories such as scenarios/_lib hold no scenario, and must not
+// be listed as one that failed to load.
+func TestNewEngine_SkipsUnderscoreDirectories(t *testing.T) {
+	root := t.TempDir()
+	lib := filepath.Join(root, "scenarios", "_lib")
+	if err := os.MkdirAll(lib, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lib, "workload.sh"), []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	engine := NewEngine(root, "k3d.local", "k3d")
+
+	if errs := engine.LoadErrors(); len(errs) != 0 {
+		t.Errorf("load errors = %v, want none", errs)
+	}
+	if n := len(engine.List()); n != 0 {
+		t.Errorf("listed %d scenarios, want 0", n)
+	}
+}
+
 func TestVerify_UnknownScenarioReturnsError(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "scenarios"), 0755)

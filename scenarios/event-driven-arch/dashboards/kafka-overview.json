@@ -720,7 +720,7 @@
         "x": 14,
         "y": 25
       },
-      "description": "How long the broker takes to handle a produce or fetch. Rises before lag does when the broker is the bottleneck.",
+      "description": "How long the broker took to answer each request type. FetchConsumer sitting near 500ms is a consumer long-polling for new records (fetch.max.wait.ms), not a slow broker; Produce is the one that shows broker strain.",
       "type": "timeseries",
       "options": {
         "legend": {

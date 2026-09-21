@@ -19,6 +19,7 @@ category: observability               # grouping label
 prerequisites:
   platform: [ingress, monitoring/metrics]
   apps: [go-api]
+  capabilities: [prometheus-metrics]   # what the bound app must promise
 
 runtimes: [k3d, kind]                 # optional; compatible runtimes
 
@@ -88,6 +89,42 @@ components:
 | `manifest` | `kubectl apply` of the YAML at `path` |
 | `grafana-dashboard` | Creates a ConfigMap from the dashboard JSON at `path`, which the Grafana sidecar picks up |
 | `script` | Runs the shell script at `script` |
+
+### Dashboards — an App selector, and legends a reader can follow
+
+A dashboard that shows the workload declares an `app` variable, plus a
+`namespace` variable when its queries need one, and its queries use `$app` and
+`$namespace` rather than `{{.WorkloadName}}`. The variables default to the
+activation's app, and the reader can switch to any other:
+
+```json
+{
+  "name": "app", "type": "query",
+  "query": {"query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))"},
+  "regex": "/app=\"([^\"]+)\"/",
+  "current": {"text": "{{.WorkloadName}}", "value": "{{.WorkloadName}}"}
+},
+{
+  "name": "namespace", "type": "query",
+  "query": {"query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)"},
+  "current": {"text": "{{.WorkloadNamespace}}", "value": "{{.WorkloadNamespace}}"}
+}
+```
+
+The `or label_replace(vector(1), …)` keeps the activation's app in the list even
+when it exposes no request metric. The dashboard `uid` and `title` stay fixed.
+
+`labctl validate` lints every dashboard's legends:
+
+- A query grouped `by (label)` must name one of those labels in its legend,
+  e.g. `{{namespace}}: available`. Otherwise every line carries the same name and
+  nobody can tell the environments apart. A label pinned with `label="value"`
+  yields one series and needs no legend label.
+- A legend may only name labels the query returns. `{{code}}` on a query grouped
+  by `http_response_status_code` renders empty.
+
+Queries using `without`, `label_replace` or `label_join` are not judged, and
+neither are tables.
 
 ### `platformValues` — one values file per component
 
@@ -215,6 +252,61 @@ labctl scenario up autoscaling-under-load --set MaxReplicas=4 --set Threshold=15
 An `int` parameter is bounds-checked and parsed before substitution, for both
 the default and any override.
 
+## Prerequisites
+
+| Field | Meaning |
+|---|---|
+| `platform` | Platform components that must be installed |
+| `apps` | Apps whose `apps/<name>/app.env` must exist |
+| `capabilities` | What the **bound workload** must declare |
+
+### `apps` is for a pinned app, not for the one you are bound to
+
+Write `apps: ["{{.WorkloadName}}"]` and the entry means "the bound workload must
+exist" — not "this scenario requires go-api". Every shipped scenario is written
+this way, and the UI treats the two differently: a templated entry is shown as
+**Runs against**, with a picker offering every app in the lab; a literal one is
+shown as a requirement the user has to satisfy, and it disables the picker.
+
+Prefer `capabilities` over a literal app. Pinning one is a restriction that
+cannot be lifted at activation time.
+
+### `capabilities` — stating what you need, not who provides it
+
+A scenario that names an app can only ever run against that app. One that states
+what it needs of an app can run against any app that provides it — including a
+user's own. See [ADR-0014](../adr/0014-workload-binding-and-app-contract.md).
+
+```yaml
+prerequisites:
+  capabilities:
+    - prometheus-metrics
+    - otlp-tracing
+```
+
+The vocabulary is closed — `labctl app capabilities` lists it, and an unknown
+name fails `labctl validate` rather than silently meaning "never satisfied":
+
+| Capability | The app… |
+|---|---|
+| `prometheus-metrics` | serves the metrics path in Prometheus format, including the request-duration histogram |
+| `otlp-tracing` | honours `OTEL_EXPORTER_OTLP_ENDPOINT` and exports spans |
+| `readiness-toggle` | can have its readiness flipped to failing on demand |
+
+Require only what the scenario genuinely uses. A requirement is a restriction on
+which apps can run it, so an unnecessary one narrows the scenario for nothing.
+
+Preflight refuses to activate a scenario the bound app cannot satisfy, before
+anything installs. `labctl scenario info` shows the requirement graded against
+the app currently bound:
+
+```
+Prerequisites (workload capabilities), bound to "echo-server":
+  - prometheus-metrics     ok
+  - otlp-tracing           missing
+  - readiness-toggle       missing
+```
+
 ## Template variables
 
 URLs, commands, namespaces, snippets and manifests are Go templates.
@@ -224,8 +316,180 @@ URLs, commands, namespaces, snippets and manifests are Go templates.
 | `{{.DomainSuffix}}` | `k3d.local` | Ingress domain suffix from the active runtime |
 | `{{.MonitoringNamespace}}` | `monitoring` | Where the monitoring stack lives |
 | `{{.ProjectRoot}}` | `/path/to/project` | Absolute path to the content root |
+| `{{.LokiRetentionPeriod}}` | `72h` | Loki's configured retention |
+| `{{.IngressClass}}` | `traefik` | Ingress class for scenario Ingress manifests |
+| `{{.WorkloadName}}` | `go-api` | The bound app's name, and its Deployment name |
+| `{{.WorkloadNamespace}}` | `go-api` | Where the bound app is deployed |
+| `{{.WorkloadService}}` | `go-api.go-api.svc.cluster.local` | Its in-cluster DNS name |
+| `{{.WorkloadPort}}` | `8080` | The port it serves HTTP on |
+| `{{.WorkloadMetric}}` | `http_server_request_duration_seconds` | The request-duration histogram it exposes |
+| `{{.SinceActivation}}` | `95m` | Time since the scenario was activated (or the incident injected), as a PromQL range; `1m` when nothing is active |
 
 An unknown variable is a validation error, not an empty string.
+
+### Grading something that already happened
+
+A check for an event — an alert fired, a backlog built up — looks back over a
+range. Use `{{.SinceActivation}}` for it, not a fixed window:
+
+```yaml
+query: 'max_over_time((count(ALERTS{scenario="my-scenario",alertstate="firing"}) or vector(0))[{{.SinceActivation}}:1m])'
+```
+
+A fixed `[15m:1m]` fails a learner who did the drill early and verified later.
+An unbounded one counts the previous run's alerts. The range opens when
+`scenario up` finishes, and re-activating opens a new one.
+
+### The workload variables
+
+A scenario names the app it acts on through `{{.Workload*}}` rather than a
+literal, so the same scenario runs against a built-in app or one the user brings
+(see [ADR-0014](../adr/0014-workload-binding-and-app-contract.md)):
+
+```yaml
+checks:
+  - name: app-scaled-up
+    type: kubectl
+    resource: deployment/{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
+    jsonpath: "{.status.readyReplicas}"
+    operator: ">="
+    value: "3"
+
+  - name: latency-within-slo
+    type: promql
+    query: 'histogram_quantile(0.99, sum(rate({{.WorkloadMetric}}_bucket[5m])) by (le))'
+    operator: "<"
+    value: "1.5"
+```
+
+`{{.WorkloadMetric}}` names the histogram rather than assuming it, because each
+language's instrumentation library picks its own. Derive a request rate from its
+`_count` series (`rate({{.WorkloadMetric}}_count[5m])`) — the OpenTelemetry
+semantic conventions the app contract mandates define no separate counter.
+
+The names are flat (`{{.WorkloadName}}`, not `{{.Workload.Name}}`). The expander
+matches a single dotted identifier on purpose, so it never rewrites the Helm,
+Prometheus and Grafana templating that shares these files; a nested reference
+would pass through unresolved and reach kubectl verbatim.
+
+### Templates in content, environment variables in scripts
+
+The engine resolves `{{.Workload*}}` in everything it reads itself — `scenario.yaml`,
+the manifests it applies, dashboard JSON, snippets and prose. It does **not**
+resolve a script: a script is executed as a file, so a `{{.WorkloadName}}` inside
+one reaches `kubectl` verbatim.
+
+Scripts get the binding as flags or from the environment. Every component
+script, check script and fault script run by the engine is given:
+
+| Variable | Example |
+|---|---|
+| `WORKLOAD_NAME` | `go-api` |
+| `WORKLOAD_NAMESPACE` | `go-api` |
+| `WORKLOAD_PORT` | `8080` |
+| `WORKLOAD_METRIC` | `http_server_request_duration_seconds` |
+
+A learner also runs scripts by hand, from a terminal that has none of these. So
+a scenario script sources the shared helper first, which takes the binding from
+`--app` and `--namespace` flags and removes them from `"$@"`:
+
+```sh
+#!/usr/bin/env bash
+set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
+
+kubectl -n "$WORKLOAD_NAMESPACE" get deploy "$WORKLOAD_NAME"
+```
+
+Flags win over the environment, and `--app` without `--namespace` means a
+namespace of the same name. With neither, the script stops with a usage error
+rather than guessing an app. Never write a `:-go-api` fallback: a script run by
+hand for echo-server would quietly act on go-api.
+
+Every command that calls such a script passes both flags, so the copied text is
+already filled in for the activation's app:
+
+```yaml
+explore:
+  commands:
+    - label: "Build the new version"
+      command: "bash scenarios/env-promotion/scripts/build-image.sh v1.1.0 --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}"
+```
+
+`labctl validate` fails an explore command, check remediation, tip or snippet
+`apply` that calls a script sourcing the helper without `--app`.
+
+A manifest the learner applies by hand goes through `labctl scenario render`,
+never `kubectl apply -f` on the file itself, which would send the literal
+`{{.WorkloadName}}` to the cluster. `labctl validate` fails the second form when
+the file contains a template variable:
+
+```yaml
+      command: "labctl scenario render node-drain-drill manifests/baseline.yaml --app {{.WorkloadName}} | kubectl apply -f -"
+```
+ Apply the same
+rule to traffic: write `labctl traffic start --app {{.WorkloadName}}`.
+
+> Incident scripts additionally receive `TARGET_NAMESPACE` and `TARGET_WORKLOAD`
+> from the fault's own `target:` block, which is what a fault pinned to one
+> application uses. See [incidents/README.md](../../incidents/README.md).
+
+### What not to template
+
+- **File paths.** `path: manifests/{{.WorkloadName}}-tls.yaml` looks for a file
+  that does not exist. Name the file for its role instead.
+- **Check names.** They are recorded against scores, so a templated name makes a
+  result history incomparable. Name the check for what it asserts —
+  `workload-healthy`, not `go-api-healthy`.
+- **Dashboard UIDs**, for the same reason: they are stable identities.
+
+### Writing a check that does not grade the language
+
+A threshold calibrated against one application grades that application's runtime,
+not the engineer's work. A p99 bound a Go service clears easily is one a JVM
+fails on warmup alone — and a user's own application has no calibration at all,
+so it would fail a check it has no way to satisfy.
+
+Per-application baselines do not fix this: a conforming app still arrives without
+one, and a *declared* baseline can simply be set generously enough to pass. Write
+the assertion so it needs no calibration instead.
+
+| Instead of | Assert | Why it travels |
+|---|---|---|
+| `p99 < 1.5` | `p99 / p50 < N` | Tail amplification is the same question for a 2ms service and a 200ms one — it measures degradation, not speed |
+| `readyReplicas >= 3` | `readyReplicas > {{.MinReplicas}}` | "It scaled" is the lesson; a fixed count encodes one runtime's throughput per replica |
+| a latency bound | error ratio `< 0.01` | Saturation shows up as errors in every runtime |
+
+Most checks need no thought here: `readyReplicas >= 1`, `deployment exists`, and
+`the metric is being scraped` already grade configuration rather than speed.
+
+**When an absolute number really is the lesson** — an availability SLO in a
+drill — make it a parameter so it reads as a deliberate choice, and say in its
+description what a failure means:
+
+```yaml
+parameters:
+  - name: AvailabilitySLO
+    displayName: "Availability SLO across the drain"
+    description: "Lower it if your workload is slower to become Ready than the
+      drill allows — a slow-starting runtime failing this is a real finding about
+      replica count and readiness gating, not a defect in the application."
+    default: "0.995"
+    type: string
+
+checks:
+  - name: availability-held-during-drain
+    type: promql
+    query: '...'
+    operator: ">="
+    value: "{{.AvailabilitySLO}}"
+```
+
+A check is graded against the values the scenario was **activated** with, so
+`--set AvailabilitySLO=0.99` changes what `verify` requires. Parameters declared
+by the scenario are legal template variables anywhere in it, and `labctl validate`
+rejects a reference to one that is not declared.
 
 Everything `labctl scenario info` and the UI display is resolved before it is
 shown — component namespaces and charts included — using the scenario's
@@ -241,8 +505,9 @@ would corrupt the very thing the snippet is teaching.
 ## References and snippets
 
 Two optional blocks that turn a scenario into a jumping-off point. Both are
-shown by `labctl scenario info` and are template-resolved, so they display with
-the deployment's real namespaces and domains.
+shown by `labctl scenario info` and the UI's Implementation tab, template-resolved
+for the app the scenario runs against, so they display with its real names,
+namespaces and domains.
 
 ```yaml
 references:
@@ -261,18 +526,29 @@ snippets:
       metadata:
         name: demo
         namespace: "{{.MonitoringNamespace}}"
-  - label: "Helm values, not a kubectl manifest"
-    path: values/overprovisioned.yaml
-    apply: "helm upgrade -f -"
+  - label: "The autoscaler you write"
+    path: manifests/scaledobject.yaml
+    exercise: true
+  - label: "Wiring the app to the collector"
+    path: scripts/enable-tracing.sh
+    exercise: true
+    apply: "bash scenarios/observability-sre/scripts/enable-tracing.sh --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}"
 ```
 
 - A reference needs a `label` and an `http(s)` `url`; `note` is optional.
 - A snippet needs a `label` and **exactly one** of `yaml` (inline text) or
   `path` (a file in the scenario directory). `labctl validate` fails on a `path`
   that does not resolve, naming the file and the snippet.
-- `apply` overrides the per-snippet "apply with" hint, which defaults to
-  `kubectl apply -f -`. Set it when the snippet is not a kubectl manifest, so
-  the learner is not told to apply something that is not appliable.
+- `exercise: true` marks a snippet nothing installs, because applying it is the
+  learner's task. The UI badges it **You apply this** and offers a ready-to-run
+  command. Say what it does in `description`, not "apply this yourself".
+- `apply` is the complete command for an exercise. Leave it empty for a manifest:
+  the command becomes the manifest piped into `kubectl apply -f -`. Set it for
+  anything else, such as a script.
+- `description` is shown above the body, and is where the explanation belongs.
+  The body is trimmed for reading: the file's leading comment banner and every
+  block of two or more comment lines are dropped, while single-line comments,
+  comments after code, heredoc bodies and YAML block scalars stay.
 
 ## `verified`
 
@@ -298,6 +574,11 @@ Enforced at load time — an invalid scenario refuses to load, and CI fails on i
   traversal are rejected.
 - Template variables must be known.
 - A `path` on a snippet or component must resolve.
+- A command that calls a workload-bound script passes `--app`.
+- A command never runs `kubectl apply|create|replace|delete -f` on a templated
+  scenario file; it pipes `labctl scenario render` instead.
+- A dashboard legend names the labels its query groups by, and only labels the
+  query returns.
 
 ```bash
 labctl validate            # everything: scenarios, incidents, paths, challenges

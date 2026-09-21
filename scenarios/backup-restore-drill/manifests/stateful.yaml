@@ -12,14 +12,14 @@
 #     DIFFERENT boot-id. The object round-tripped; the data did not. That is the
 #     exact failure mode this drill exists to rehearse.
 #
-# The image is the go-api image already imported into the cluster (alpine-based,
+# The image is the {{.WorkloadName}} image already imported into the cluster (alpine-based,
 # so it has a shell); imagePullPolicy: Never keeps activation offline and fast.
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: restore-data
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: backup-restore-drill
 spec:
@@ -33,7 +33,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: data-writer
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app.kubernetes.io/part-of: backup-restore-drill
     app: data-writer
@@ -50,7 +50,7 @@ spec:
     spec:
       containers:
         - name: writer
-          image: go-api:latest
+          image: "{{.WorkloadName}}:latest"
           imagePullPolicy: Never
           command: ["/bin/sh", "-c"]
           args:

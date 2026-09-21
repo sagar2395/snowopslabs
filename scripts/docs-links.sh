@@ -4,7 +4,10 @@
 # failure here rather than a bug report from a reader.
 set -eu
 
-root=$(unset CDPATH; cd -- "$(dirname -- "$0")/.." && pwd)
+root=$(
+  unset CDPATH
+  cd -- "$(dirname -- "$0")/.." && pwd
+)
 cd "$root"
 
 fail=0
@@ -14,9 +17,9 @@ for f in $files; do
   dir=$(dirname "$f")
   # Pull the target out of every ](...) link, then keep only relative ones.
   targets=$(sed -n 's/.*](\([^)]*\)).*/\1/p' "$f" |
-            grep -v '^https\{0,1\}:' |
-            grep -v '^#' |
-            grep -v '^mailto:' || true)
+    grep -v '^https\{0,1\}:' |
+    grep -v '^#' |
+    grep -v '^mailto:' || true)
   for t in $targets; do
     # Strip any anchor; a bare anchor was already filtered out above.
     path=${t%%#*}

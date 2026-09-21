@@ -37,20 +37,15 @@ var (
 	logger      *slog.Logger
 	redisClient *redis.Client
 
-	httpRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "http_requests_total",
-		Help: "Total number of HTTP requests",
-	}, []string{"method", "path", "code", "app"})
-
+	// OpenTelemetry semantic conventions — see the note in go-api/main.go.
 	httpRequestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "http_request_duration_seconds",
-		Help:    "HTTP request duration in seconds",
-		Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1},
-	}, []string{"method", "path", "app"})
+		Name:    "http_server_request_duration_seconds",
+		Help:    "Duration of HTTP server requests in seconds.",
+		Buckets: []float64{.005, .01, .025, .05, .075, .1, .25, .5, .75, 1, 2.5, 5, 7.5, 10},
+	}, []string{"http_request_method", "http_route", "http_response_status_code", "app"})
 )
 
 func init() {
-	prometheus.MustRegister(httpRequestsTotal)
 	prometheus.MustRegister(httpRequestDuration)
 }
 
@@ -352,8 +347,7 @@ func handleCache(w http.ResponseWriter, r *http.Request) {
 }
 
 func recordMetrics(r *http.Request, code int, start time.Time) {
-	httpRequestsTotal.WithLabelValues(r.Method, r.URL.Path, strconv.Itoa(code), serviceName).Inc()
-	httpRequestDuration.WithLabelValues(r.Method, r.URL.Path, serviceName).Observe(time.Since(start).Seconds())
+	httpRequestDuration.WithLabelValues(r.Method, r.URL.Path, strconv.Itoa(code), serviceName).Observe(time.Since(start).Seconds())
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {

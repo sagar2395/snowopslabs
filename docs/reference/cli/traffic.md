@@ -12,6 +12,7 @@ Starts the generator, replacing any active run.
 
 ```bash
 labctl traffic start                                # steady 10 rps for 10m against go-api
+labctl traffic start --app echo-server --rps 25     # the same against echo-server, in-cluster
 labctl traffic start --profile spike --rps 20       # 20 rps baseline, 200 rps spike
 labctl traffic start --profile soak --duration 4h
 labctl traffic start --target http://echo-server.k3d.local/ --rps 50
@@ -22,7 +23,8 @@ labctl traffic start --target http://echo-server.k3d.local/ --rps 50
 | `--profile` | `steady` | one of the profiles below |
 | `--rps` | `10` | requests per second; the baseline for `spike` |
 | `--duration` | profile-specific | run length (`30s`, `10m`, `1h30m`). steady 10m, soak 2h, spike fixed |
-| `--target` | go-api `/`, in-cluster | URL to load. Multi-endpoint profiles treat it as a base origin |
+| `--app` | go-api | the workload to load, at its in-cluster root. Scenario commands pass the app they were activated for |
+| `--target` | the `--app` workload's `/` | URL to load, overriding `--app`. Multi-endpoint profiles treat it as a base origin |
 | `--method` | profile-specific | HTTP method for the `write` and `errors` profiles |
 
 ## Profiles

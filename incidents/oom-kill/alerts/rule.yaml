@@ -14,11 +14,11 @@ spec:
     - name: labfault-oom-kill
       rules:
         - alert: LabFaultOOMKill
-          expr: max(kube_pod_container_status_last_terminated_reason{reason="OOMKilled", namespace="echo-server"}) > 0
+          expr: max(kube_pod_container_status_last_terminated_reason{reason="OOMKilled", namespace="${TARGET_NAMESPACE}"}) > 0
           for: 1m
           labels:
             labfault: "true"
             severity: critical
           annotations:
-            summary: "echo-server containers are being OOMKilled"
-            description: "A container in namespace echo-server was killed by the kernel for exceeding its memory limit. Check the deployment's resources block."
+            summary: "${TARGET_WORKLOAD} containers are being OOMKilled"
+            description: "A container in namespace ${TARGET_NAMESPACE} was killed by the kernel for exceeding its memory limit. Check the deployment's resources block."

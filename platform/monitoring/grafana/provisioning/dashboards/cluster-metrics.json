@@ -66,7 +66,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "percentunit"
         },
         "overrides": []
       },
@@ -89,15 +90,16 @@
       },
       "targets": [
         {
-          "expr": "sum(node_cpu_seconds_total{mode=\"user\"}) by (node)",
+          "expr": "(1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))) * on (instance) group_left (nodename) node_uname_info",
           "format": "time_series",
           "hide": false,
-          "legendFormat": "{{ node }}",
+          "legendFormat": "{{nodename}}",
           "refId": "A"
         }
       ],
-      "title": "Node CPU Usage (by node)",
-      "type": "timeseries"
+      "title": "Node CPU used",
+      "type": "timeseries",
+      "description": "Busy CPU as node-exporter sees it. On k3d and kind every node is a container on one machine, so each node reports the same host figure; the per-node panels below show what each node actually runs."
     },
     {
       "datasource": {
@@ -146,7 +148,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "percentunit"
         },
         "overrides": []
       },
@@ -169,15 +172,16 @@
       },
       "targets": [
         {
-          "expr": "sum(node_memory_MemAvailable_bytes) by (node) / sum(node_memory_MemTotal_bytes) by (node)",
+          "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * on (instance) group_left (nodename) node_uname_info",
           "format": "time_series",
           "hide": false,
-          "legendFormat": "{{ node }}",
+          "legendFormat": "{{nodename}}",
           "refId": "A"
         }
       ],
-      "title": "Node Memory Usage (by node)",
-      "type": "timeseries"
+      "title": "Node memory used",
+      "type": "timeseries",
+      "description": "Memory in use as node-exporter sees it. On k3d and kind every node is a container on one machine, so each node reports the same host figure; the per-node panels below show what each node actually runs."
     },
     {
       "datasource": {
@@ -208,14 +212,17 @@
       },
       "id": 4,
       "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom"
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "pieType": "donut",
-        "tooltip": {
-          "mode": "single"
-        }
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "value"
       },
       "targets": [
         {
@@ -226,8 +233,8 @@
           "refId": "A"
         }
       ],
-      "title": "Total Pods in Cluster",
-      "type": "piechart"
+      "title": "Pods in the cluster",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -276,7 +283,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "Bps"
         },
         "overrides": []
       },
@@ -299,15 +307,180 @@
       },
       "targets": [
         {
-          "expr": "increase(node_network_transmit_bytes_total[1m]) / 1024",
+          "expr": "sum by (instance) (rate(node_network_transmit_bytes_total{device!~\"lo|veth.*|cni.*|flannel.*\"}[5m])) * on (instance) group_left (nodename) node_uname_info",
           "format": "time_series",
           "hide": false,
-          "legendFormat": "{{ device }}",
+          "legendFormat": "{{nodename}}",
           "refId": "A"
         }
       ],
-      "title": "Network Transmit (KB/s)",
+      "title": "Node network transmit",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (node) (container_memory_working_set_bytes{container!=\"\", pod!=\"\"})",
+          "legendFormat": "{{node}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Memory used by pods, per node",
+      "type": "timeseries",
+      "description": "Working-set memory of every pod container, summed per node. This is where k3d nodes actually differ."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (node) (kube_pod_container_resource_requests{resource=\"memory\"})",
+          "legendFormat": "{{node}}: requested",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (node) (kube_node_status_allocatable{resource=\"memory\"})",
+          "legendFormat": "{{node}}: allocatable",
+          "refId": "B"
+        }
+      ],
+      "title": "Memory requested vs allocatable, per node",
+      "type": "timeseries",
+      "description": "What the scheduler has promised on each node against what it can promise. A node whose requests reach allocatable cannot take another pod, and its new pods sit Pending. On k3d and kind every node advertises the whole machine's memory as allocatable, so the scheduler can promise several times the memory that exists; watch the sum of requests against the machine, not each node."
     }
   ],
   "refresh": "30s",

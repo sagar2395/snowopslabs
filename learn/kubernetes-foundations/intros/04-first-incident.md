@@ -12,29 +12,29 @@ The incident engine injects faults via shell scripts that mutate live
 Kubernetes resources, records your time-to-detect and MTTR, and confirms
 resolution through a machine-verifiable check.
 
+This one is a classic: every health indicator stays green while the service is
+completely dark. Nothing in the app is wrong, and nothing will tell you so.
+
 ## Objective
 
-Inject the fault, diagnose it, fix it, and confirm resolution.
+Inject the fault, diagnose it yourself, fix it, and confirm resolution.
 
 ```bash
-# Inject
 bin/labctl incident inject service-selector-broken
-curl http://go-api.k3d.local/health   # 503 — broken
-
-# Diagnose
-kubectl get pods -n go-api            # healthy — suspicious
-kubectl get endpoints go-api -n go-api   # <none> — there's your lead
-
-# Fix
-kubectl -n go-api patch svc go-api \
-  -p '{"spec":{"selector":{"app.kubernetes.io/name":"go-api"}}}'
-
-# Verify
-bin/labctl incident status            # RESOLVED
+curl http://go-api.k3d.local/health          # see what users see
 ```
 
-**Completion check:** `labctl incident status` reports RESOLVED or no
-active incident.
+Then work it the way you would on call. Two questions carry this one: *is the
+thing that serves traffic actually pointing at anything*, and *what does the
+cluster think should be behind it*. `kubectl get pods` will look reassuring;
+keep going past it.
 
-**Note:** use `bin/labctl incident hint` if you are stuck, and
-`bin/labctl incident resolve` as the escape hatch.
+When you have a theory, fix it by hand — with `kubectl`, not with labctl.
+
+**Completion check:** the most recent run of `service-selector-broken` in your
+history was resolved **by hand**. `labctl incident resolve` is the escape hatch
+and does not count: it undoes the fault for you, which is not the exercise.
+
+**Note:** `bin/labctl incident hint` walks you in one rung at a time if you get
+stuck, and `bin/labctl incident solution` is there when you would rather read
+the answer than find it — you can always inject it again and do it properly.

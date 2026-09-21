@@ -50,7 +50,7 @@ checks:
     value: "1"
   - name: latency-ok
     type: promql
-    query: 'histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))'
+    query: 'histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket[5m])) by (le))'
     operator: "<"
     value: "0.3"
 `

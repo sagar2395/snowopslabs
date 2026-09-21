@@ -21,7 +21,7 @@ export type IconName =
   | 'check' | 'check-circle' | 'x-circle' | 'alert-triangle' | 'info'
   | 'x' | 'chevron-down' | 'chevron-up' | 'chevron-right' | 'arrow-right'
   | 'play' | 'stop' | 'clock' | 'zap' | 'plus' | 'trash' | 'hammer'
-  | 'lightbulb' | 'target' | 'terminal' | 'dot' | 'trending-up'
+  | 'lightbulb' | 'target' | 'terminal' | 'dot' | 'trending-up' | 'compare'
 
 // Inner markup per icon. Paths use round joins/caps set on the parent <svg>.
 const PATHS: Record<IconName, JSX.Element> = {
@@ -36,6 +36,9 @@ const PATHS: Record<IconName, JSX.Element> = {
   challenges: <><path d="M4 22h16" /><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22" /><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22" /><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z" /></>,
   results: <><line x1="12" y1="20" x2="12" y2="10" /><line x1="18" y1="20" x2="18" y2="4" /><line x1="6" y1="20" x2="6" y2="16" /></>,
   leaderboard: <><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></>,
+  // Two tracks running opposite ways: the diff glyph, distinct from the bar
+  // chart already used for results.
+  compare: <><path d="M9 3 5 7l4 4" /><path d="M5 7h9a4 4 0 0 1 4 4v1" /><path d="m15 21 4-4-4-4" /><path d="M19 17h-9a4 4 0 0 1-4-4v-1" /></>,
 
   // A six-fold crystal built from one arm rotated 60° at a time — the same
   // glyph as the brand mark, favicon and logo lockups (docs/assets/brand).

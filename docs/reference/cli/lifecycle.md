@@ -44,12 +44,32 @@ labctl check ingress    # the ingress controller is running and responding
 
 Manages a labctl-owned block in `/etc/hosts` so cluster ingress hostnames
 (`*.k3d.local`) resolve. The block is delimited and rewritten in place, so it is
-safe to run repeatedly. Needs privileges to write `/etc/hosts`.
+safe to run repeatedly.
 
 ```bash
-labctl hosts add        # add or refresh the managed block
-labctl hosts remove     # remove it
+labctl hosts add      # add or refresh the managed block; asks for sudo to write
+labctl hosts remove   # remove it
 ```
+
+Run it without `sudo`. It reads the cluster as you, then elevates only to write
+the file; under `sudo` kubectl reads root's kubeconfig and finds no cluster.
+
+The block lists three sources, sorted:
+
+- the platform components' hostnames (`grafana`, `prometheus`, `alertmanager`,
+  `opencost`, `argocd`, `traefik`, `dashboard`, `chaos`, `vault`), so a run
+  straight after `labctl init` covers components not installed yet
+- one hostname per app under `apps/`
+- every Ingress host in the cluster under the domain suffix — the source of
+  truth for hostnames a scenario adds, such as env-promotion's
+  `<app>-dev`, `<app>-staging` and `<app>-prod`
+
+A host outside the domain suffix is never written. If the cluster cannot be
+read, the platform and app hostnames are still written and a warning says so.
+
+`labctl scenario up` and `labctl app deploy` list any Ingress hostname the
+managed block does not cover yet, so a new hostname is announced before a
+browser fails to resolve it. Re-run `hosts add` when they do.
 
 ## The cluster
 

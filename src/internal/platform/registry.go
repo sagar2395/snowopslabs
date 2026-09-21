@@ -18,6 +18,7 @@ type Provider struct {
 	Name         string // e.g., "traefik", "prometheus"
 	Path         string // Filesystem path to the provider directory
 	monitoringNS string // resolved monitoring namespace (set by Registry)
+	declaredNS   string // namespace from _interface.yaml, when declared
 }
 
 // HasScript checks if the provider has a specific script.
@@ -28,7 +29,10 @@ func (p *Provider) HasScript(name string) bool {
 
 // Namespace returns the Kubernetes namespace for this provider.
 // Monitoring, logging, and tracing providers share the configured monitoring
-// namespace (default "monitoring"). Other providers use their own name.
+// namespace (default "monitoring"). Otherwise the provider's _interface.yaml
+// wins, because the installer's namespace is not always the provider's name —
+// istio installs into istio-system, nginx into ingress-nginx — and guessing it
+// makes an installed component undetectable.
 func (p *Provider) Namespace() string {
 	top := p.Category
 	if i := strings.Index(top, "/"); i >= 0 {
@@ -40,9 +44,11 @@ func (p *Provider) Namespace() string {
 			return p.monitoringNS
 		}
 		return "monitoring"
-	default:
-		return p.Name
 	}
+	if p.declaredNS != "" {
+		return p.declaredNS
+	}
+	return p.Name
 }
 
 // SharesNamespace reports whether this provider shares its namespace with other
@@ -308,12 +314,14 @@ func (r *Registry) scanDir(dir, prefix string) {
 
 		// Check if this directory is a provider (has install.sh)
 		if _, err := os.Stat(filepath.Join(fullPath, "install.sh")); err == nil {
-			r.providers[prefix] = append(r.providers[prefix], Provider{
+			p := Provider{
 				Category:     prefix,
 				Name:         entry.Name(),
 				Path:         fullPath,
 				monitoringNS: r.monitoringNS,
-			})
+			}
+			p.declaredNS = p.Meta().Namespace
+			r.providers[prefix] = append(r.providers[prefix], p)
 		} else {
 			// Recurse one level deeper
 			r.scanDir(fullPath, category)

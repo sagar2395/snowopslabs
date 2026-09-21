@@ -13,13 +13,23 @@ verifies it does not run.
 
 | Requirement | Check | If missing |
 |---|---|---|
-| Go 1.24+ | `go version` | https://go.dev/dl/ |
+| Go 1.25+ | `go version` | https://go.dev/dl/ |
 | Node 22+ | `node --version` | https://nodejs.org or `brew install node` |
 | bats | `bats --version` | `brew install bats-core` (macOS) / `npm install -g bats` |
 | shellcheck | `shellcheck --version` | `brew install shellcheck` / `apt install shellcheck` |
 | git | `git --version` | your package manager |
 
-Optional but exercised below: `golangci-lint`, `gosec`, `govulncheck`, `shfmt`.
+Optional but exercised below: `golangci-lint` (which also provides the `gosec`
+security gate), `govulncheck`, `shfmt`.
+
+`src/go.mod` pins `toolchain go1.26.6` while keeping the `go 1.25.0` language
+floor, so the build always runs on a toolchain patched against the standard
+library CVEs `make vuln` checks for. Go downloads it on demand; only
+`GOTOOLCHAIN=local` on an older install will refuse. CI installs Go 1.26
+directly (`GO_VERSION` in the workflows) rather than from the `go` line, because
+a downloaded toolchain leaves `GOROOT` pointing at the installed Go and tools
+that load packages — `go-licenses` in the license scan — then see no standard
+library.
 
 **Disk:** ~1.5 GB (Go module cache, node_modules, Playwright browser).
 **Network:** required — this step downloads dependencies.

@@ -60,6 +60,8 @@ func (c *Catalog) crossReference() {
 	}
 
 	c.checkSnippetPaths()
+	c.checkScriptBindings()
+	c.checkDashboards()
 }
 
 // checkSnippetPaths verifies that every snippet with a `path` points at a file
@@ -119,21 +121,25 @@ func (c *Catalog) refProblem(kind Kind, name, file string, node *yaml.Node, ref,
 // template context. A reference to an unknown key (a typo) or a malformed
 // template is reported with the file and line, so it fails at validation rather
 // than producing a broken URL or namespace at run time.
-func (c *Catalog) validateTemplates(projectRoot string) {
-	ctx := DefaultTemplateContext(projectRoot)
+func (c *Catalog) validateTemplates(_ string) {
 	for _, s := range c.scenarios {
 		key := sourceKey(KindScenario, s.Name)
-		c.resolveFields(KindScenario, s.Name, c.sources[key], c.nodes[key], scenarioTemplated(s), ctx)
+		// A scenario's own parameters are legal variables inside it.
+		params := make([]string, 0, len(s.Parameters))
+		for _, p := range s.Parameters {
+			params = append(params, p.Name)
+		}
+		c.resolveFields(KindScenario, s.Name, c.sources[key], c.nodes[key], scenarioTemplated(s), params...)
 	}
 	for _, f := range c.incidents {
 		key := sourceKey(KindIncident, f.Name)
-		c.resolveFields(KindIncident, f.Name, c.sources[key], c.nodes[key], incidentTemplated(f), ctx)
+		c.resolveFields(KindIncident, f.Name, c.sources[key], c.nodes[key], incidentTemplated(f))
 	}
 }
 
-func (c *Catalog) resolveFields(kind Kind, name, file string, node *yaml.Node, fields []string, ctx TemplateContext) {
+func (c *Catalog) resolveFields(kind Kind, name, file string, node *yaml.Node, fields []string, extra ...string) {
 	for _, raw := range fields {
-		if _, err := Resolve(raw, ctx); err != nil {
+		if err := Validate(raw, extra...); err != nil {
 			c.problems = append(c.problems, Problem{
 				Kind: kind, Name: name, File: file, Line: lineOfValue(node, raw), Message: err.Error(),
 			})
@@ -143,9 +149,14 @@ func (c *Catalog) resolveFields(kind Kind, name, file string, node *yaml.Node, f
 
 // scenarioTemplated returns every scenario string field that authors template.
 func scenarioTemplated(s *scenario.Scenario) []string {
-	var out []string
+	out := []string{s.Description}
+	out = append(out, s.Objectives...)
+	out = append(out, s.Explore.Tips...)
 	for _, u := range s.Explore.URLs {
-		out = append(out, u.URL)
+		out = append(out, u.URL, u.Label)
+	}
+	for _, c := range s.Explore.Commands {
+		out = append(out, c.Command, c.Label)
 	}
 	for _, comp := range s.AllComponents() {
 		out = append(out, comp.Namespace)
@@ -163,7 +174,10 @@ func scenarioTemplated(s *scenario.Scenario) []string {
 // incidentTemplated returns every incident string field that authors template.
 func incidentTemplated(f *incident.Fault) []string {
 	d := f.Detection
-	out := []string{d.URL, d.Resource, d.Namespace, d.Query, d.Value, d.BodyContains}
+	out := []string{d.URL, d.Resource, d.Namespace, d.Query, d.Value, d.BodyContains, f.Description}
+	// The target is templatable so a fault can follow the workload binding; a
+	// typo there must fail validation, not silently point scripts at nothing.
+	out = append(out, f.Target.Namespace, f.Target.Workload)
 	out = append(out, snippetTemplated(f.Snippets)...)
 	for _, r := range f.References {
 		out = append(out, r.URL)

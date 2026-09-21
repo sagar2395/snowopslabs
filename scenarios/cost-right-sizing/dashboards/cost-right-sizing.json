@@ -1,0 +1,338 @@
+{
+ "uid": "cost-right-sizing",
+ "title": "Cost & Capacity \u2014 Requests vs Usage",
+ "schemaVersion": 39,
+ "tags": [
+  "cost",
+  "capacity",
+  "opencost"
+ ],
+ "time": {
+  "from": "now-30m",
+  "to": "now"
+ },
+ "refresh": "30s",
+ "editable": true,
+ "graphTooltip": 1,
+ "annotations": {
+  "list": []
+ },
+ "templating": {
+  "list": [
+   {
+    "name": "app",
+    "label": "App",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+    "query": {
+     "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+     "refId": "app",
+     "qryType": 3
+    },
+    "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+    "regex": "/app=\"([^\"]+)\"/",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 1,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadName}}",
+     "value": "{{.WorkloadName}}"
+    },
+    "options": []
+   },
+   {
+    "name": "namespace",
+    "label": "Namespace",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "description": "Where the selected app runs.",
+    "query": {
+     "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+     "refId": "namespace",
+     "qryType": 1
+    },
+    "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+    "refresh": 1,
+    "includeAll": false,
+    "multi": false,
+    "sort": 0,
+    "current": {
+     "selected": true,
+     "text": "{{.WorkloadNamespace}}",
+     "value": "{{.WorkloadNamespace}}"
+    },
+    "options": []
+   }
+  ]
+ },
+ "panels": [
+  {
+   "title": "The waste is the gap",
+   "type": "text",
+   "gridPos": {
+    "h": 4,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "options": {
+    "mode": "markdown",
+    "content": "**Requests** are what the scheduler reserves and what a cloud bill is computed from \u2014 used or not. **Usage** is what the container actually consumes. The distance between the two lines below is money spent on nothing.\n\nRight-sizing moves the requests line down toward usage \u2014 and no further. A request *below* the usage peak is not a saving: CPU gets throttled, and memory gets the container OOM-killed."
+   }
+  },
+  {
+   "title": "CPU \u2014 request vs actual usage",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 8
+     },
+     "min": 0
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "requested (reserved & billed)"
+      },
+      "properties": [
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          10,
+          10
+         ]
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "max(kube_pod_container_resource_requests{namespace=\"$namespace\",container=\"$app\",resource=\"cpu\"})",
+     "legendFormat": "requested (reserved & billed)"
+    },
+    {
+     "refId": "B",
+     "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\",container=\"$app\"}[1m]))",
+     "legendFormat": "actually used"
+    }
+   ]
+  },
+  {
+   "title": "Memory \u2014 request vs actual usage",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 4
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 8
+     },
+     "min": 0
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "requested (reserved & billed)"
+      },
+      "properties": [
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          10,
+          10
+         ]
+        }
+       },
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "red"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "max(kube_pod_container_resource_requests{namespace=\"$namespace\",container=\"$app\",resource=\"memory\"})",
+     "legendFormat": "requested (reserved & billed)"
+    },
+    {
+     "refId": "B",
+     "expr": "max(container_memory_working_set_bytes{namespace=\"$namespace\",container=\"$app\"})",
+     "legendFormat": "actually used"
+    }
+   ]
+  },
+  {
+   "title": "CPU efficiency (used \u00f7 requested)",
+   "type": "stat",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 0,
+    "y": 13
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Under ~10% is waste. Over 100% means the request is below actual usage \u2014 throttling territory.",
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "red",
+        "value": null
+       },
+       {
+        "color": "orange",
+        "value": 0.1
+       },
+       {
+        "color": "green",
+        "value": 0.25
+       },
+       {
+        "color": "red",
+        "value": 1.0
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "(sum(rate(container_cpu_usage_seconds_total{namespace=\"$namespace\",container=\"$app\"}[5m])) / max(kube_pod_container_resource_requests{namespace=\"$namespace\",container=\"$app\",resource=\"cpu\"})) or vector(0)",
+     "legendFormat": "efficiency"
+    }
+   ]
+  },
+  {
+   "title": "OpenCost \u2014 $namespace CPU allocation",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 8,
+    "y": 13
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "The cores OpenCost bills the namespace for: the larger of what each container requests and what it uses. OpenCost reports each container more than once, so each is counted once here.",
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "sum(max by (pod, container) (container_cpu_allocation{namespace=\"$namespace\"})) or vector(0)",
+     "legendFormat": "allocated cores"
+    }
+   ]
+  },
+  {
+   "title": "CPU throttling",
+   "type": "timeseries",
+   "gridPos": {
+    "h": 5,
+    "w": 8,
+    "x": 16,
+    "y": 13
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "description": "Should stay at zero. Throttling appears when the LIMIT is cut too far \u2014 requests do not throttle, limits do.",
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 10
+     },
+     "min": 0
+    },
+    "overrides": []
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "expr": "(sum(rate(container_cpu_cfs_throttled_periods_total{namespace=\"$namespace\",container=\"$app\"}[5m])) / clamp_min(sum(rate(container_cpu_cfs_periods_total{namespace=\"$namespace\",container=\"$app\"}[5m])), 0.001)) or vector(0)",
+     "legendFormat": "throttled fraction"
+    }
+   ]
+  }
+ ]
+}

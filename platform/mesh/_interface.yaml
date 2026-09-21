@@ -48,11 +48,13 @@ conventions:
 implementations:
   istio:
     charts: [istio/base, istio/istiod]
+    namespace: istio-system
     inject_marker: "namespace label istio-injection=enabled"
     sidecar_container: istio-proxy
     notes: "Sidecar mode for broad demo compatibility. Control plane in istio-system."
   linkerd:
     charts: [linkerd/linkerd-crds, linkerd/linkerd-control-plane]
+    namespace: linkerd
     inject_marker: "namespace annotation linkerd.io/inject=enabled"
     sidecar_container: linkerd-proxy
     notes: "mTLS identity certs generated with openssl (no step CLI). Control plane in linkerd."

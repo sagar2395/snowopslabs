@@ -9,7 +9,7 @@ func TestDeactivateAll_ClearsMarkers(t *testing.T) {
 	e := NewEngine(t.TempDir(), "k3d.local", "k3d")
 
 	for _, n := range []string{"autoscaling-under-load", "observability-sre"} {
-		if err := e.markActive(n); err != nil {
+		if err := e.markActive(n, nil); err != nil {
 			t.Fatalf("markActive(%s): %v", n, err)
 		}
 	}

@@ -1,0 +1,221 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "schemaVersion": 39,
+  "tags": [
+    "operations",
+    "drain"
+  ],
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "title": "Node Drain Drill",
+  "uid": "node-drain-drill",
+  "panels": [
+    {
+      "title": "Success rate through the drain",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate({{.WorkloadMetric}}_count{app=\"$app\",http_response_status_code!~\"5..\"}[1m])) / sum(rate({{.WorkloadMetric}}_count{app=\"$app\"}[1m]))",
+          "legendFormat": "success rate"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "decimals": 4
+        },
+        "overrides": []
+      },
+      "description": "The grade. A dip here means the eviction outran the replacements \u2014 too few replicas, or a readiness probe that lets a pod take traffic before it can serve."
+    },
+    {
+      "title": "Nodes cordoned",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Rises to 1 while you hold a node cordoned and returns to 0 when you uncordon it. This is what the drill grades: that a node was actually taken out of service, and then put back.",
+      "targets": [
+        {
+          "expr": "sum(kube_node_spec_unschedulable)",
+          "legendFormat": "cordoned nodes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "lineInterpolation": "stepAfter"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "title": "Where the pods are running",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "count by (node) (kube_pod_info{namespace=\"$namespace\",created_by_kind=\"ReplicaSet\",created_by_name=~\"$app-[a-z0-9]+\"})",
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "none",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Watch a node's line fall to zero as it drains and the others rise to absorb the pods. If every pod was already on one node, the drain has nowhere to move them and the PDB blocks instead of protecting."
+    },
+    {
+      "title": "Replicas: ready vs desired",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "expr": "kube_deployment_status_replicas_ready{namespace=\"$namespace\",deployment=\"$app\"}",
+          "legendFormat": "ready"
+        },
+        {
+          "expr": "kube_deployment_spec_replicas{namespace=\"$namespace\",deployment=\"$app\"}",
+          "legendFormat": "desired"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10
+          },
+          "unit": "none",
+          "decimals": 0,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "description": "Ready dipping below desired during the drain is normal and expected; ready reaching zero is the failure the PodDisruptionBudget exists to prevent."
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "app",
+        "label": "App",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+        "query": {
+          "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+          "refId": "app",
+          "qryType": 3
+        },
+        "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+        "regex": "/app=\"([^\"]+)\"/",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1,
+        "current": {
+          "selected": true,
+          "text": "{{.WorkloadName}}",
+          "value": "{{.WorkloadName}}"
+        },
+        "options": []
+      },
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "description": "Where the selected app runs.",
+        "query": {
+          "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+          "refId": "namespace",
+          "qryType": 1
+        },
+        "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+        "refresh": 1,
+        "includeAll": false,
+        "multi": false,
+        "sort": 0,
+        "current": {
+          "selected": true,
+          "text": "{{.WorkloadNamespace}}",
+          "value": "{{.WorkloadNamespace}}"
+        },
+        "options": []
+      }
+    ]
+  }
+}

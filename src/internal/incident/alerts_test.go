@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sagar2395/snowopslabs/internal/executor"
 )
@@ -206,5 +207,42 @@ func TestRepoFaults_AlertRulesConsistent(t *testing.T) {
 	}
 	if paging < 3 {
 		t.Errorf("expected at least 3 paging faults, found %d", paging)
+	}
+}
+
+// A detection windowed with {{.SinceActivation}} grades this incident only: the
+// range opens at injection, so an alert from an earlier run cannot satisfy it.
+func TestStatus_SinceActivationOpensAtInjection(t *testing.T) {
+	_, root := testEngine(t, "fault-a")
+	yaml := strings.Replace(testFaultYAML, "%s", "fault-a", 1)
+	yaml = yaml[:strings.Index(yaml, "detection:")] + "detection:\n" +
+		"  name: fired-this-run\n  type: promql\n" +
+		"  query: 'max_over_time(ALERTS[{{.SinceActivation}}:1m])'\n" +
+		"  operator: \">=\"\n  value: \"1\"\n"
+	if err := os.WriteFile(filepath.Join(root, "incidents", "fault-a", "fault.yaml"), []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	e := NewEngine(root, "k3d.local")
+
+	var gotQuery string
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.Query().Get("query")
+		fmt.Fprint(w, `{"status":"success","data":{"result":[]}}`)
+	}))
+	defer prom.Close()
+
+	if err := e.saveActive(&Active{Fault: "fault-a", InjectedAt: time.Now().Add(-(29*time.Minute + 10*time.Second))}); err != nil {
+		t.Fatal(err)
+	}
+	r := testRunner()
+	r.PrometheusURL = prom.URL
+	if _, err := e.Status(context.Background(), r, ""); err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if want := "max_over_time(ALERTS[30m:1m])"; gotQuery != want {
+		t.Errorf("query = %q, want %q", gotQuery, want)
+	}
+	if !e.injectedAt.IsZero() {
+		t.Errorf("injectedAt = %v after Status, want it cleared", e.injectedAt)
 	}
 }

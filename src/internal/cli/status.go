@@ -33,24 +33,10 @@ var statusCmd = &cobra.Command{
 
 		// Platform
 		fmt.Println("\n=== Platform ===")
-		fmt.Printf("  Ingress:  %s", cfg.IngressProvider)
-		if cfg.IngressProvider != "" {
-			if p, err := reg.GetProvider("ingress", cfg.IngressProvider); err == nil {
-				if k8s.NamespaceExists(ctx, p.Namespace()) {
-					fmt.Print("  [running]")
-				}
-			}
-		}
-		fmt.Println()
-		fmt.Printf("  Metrics:  %s", cfg.MetricsProvider)
-		if cfg.MetricsProvider != "" {
-			if p, err := reg.GetProvider("monitoring/metrics", cfg.MetricsProvider); err == nil {
-				if k8s.NamespaceExists(ctx, p.Namespace()) {
-					fmt.Print("  [running]")
-				}
-			}
-		}
-		fmt.Println()
+		fmt.Printf("  Ingress:  %s%s\n", cfg.IngressProvider,
+			providerState(ctx, "ingress", cfg.IngressProvider))
+		fmt.Printf("  Metrics:  %s%s\n", cfg.MetricsProvider,
+			providerState(ctx, "monitoring/metrics", cfg.MetricsProvider))
 
 		// Apps
 		fmt.Println("\n=== Apps ===")
@@ -71,6 +57,36 @@ var statusCmd = &cobra.Command{
 
 		return nil
 	},
+}
+
+// providerState reports what a platform component is actually doing, by pod
+// readiness rather than by whether its namespace exists. The two are not the
+// same: an ingress controller in CrashLoopBackOff leaves the namespace in
+// place, and printing [running] over a dead controller sends the user looking
+// anywhere but at the thing that is broken.
+func providerState(ctx context.Context, kind, provider string) string {
+	if provider == "" {
+		return ""
+	}
+	p, err := reg.GetProvider(kind, provider)
+	if err != nil {
+		return ""
+	}
+	ready, total, exists := k8s.NamespaceHealth(ctx, p.Namespace())
+	return platformState(ready, total, exists)
+}
+
+func platformState(ready, total int, exists bool) string {
+	switch {
+	case !exists:
+		return "  [not installed]"
+	case total == 0:
+		return "  [no workloads]"
+	case ready < total:
+		return fmt.Sprintf("  [degraded %d/%d ready]", ready, total)
+	default:
+		return "  [running]"
+	}
 }
 
 func init() {

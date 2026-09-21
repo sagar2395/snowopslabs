@@ -33,10 +33,13 @@ Profiles (services/traffic/profiles/):
   write   POST a JSON body (best against echo-server /echo)
   errors  toggle go-api into simulated failure under load
 
-The target defaults to go-api's root (/), which is access-logged, so traffic
-shows up in 'kubectl logs deploy/go-api'. Point elsewhere with --target, e.g.
---target http://echo-server.echo-server.svc.cluster.local:8080/`,
+The target defaults to the app chosen with --app (go-api when none is), at
+its in-cluster root (/), which is access-logged. Point anywhere else with
+--target, e.g. --target http://echo-server.echo-server.svc.cluster.local:8080/`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if trafficOpts.Target == "" {
+			trafficOpts.Target = scenes.Workload.URL()
+		}
 		if err := trafficOpts.Validate(cfg.ProjectRoot); err != nil {
 			return err
 		}
@@ -84,7 +87,7 @@ var trafficProfilesCmd = &cobra.Command{
 
 func init() {
 	trafficStartCmd.Flags().StringVar(&trafficOpts.Profile, "profile", "steady", "load profile (see 'labctl traffic profiles')")
-	trafficStartCmd.Flags().StringVar(&trafficOpts.Target, "target", "", "URL to load (default: go-api's root /, in-cluster)")
+	trafficStartCmd.Flags().StringVar(&trafficOpts.Target, "target", "", "URL to load (default: the --app workload's root /, in-cluster)")
 	trafficStartCmd.Flags().IntVar(&trafficOpts.RPS, "rps", 10, "requests per second (baseline for the spike profile)")
 	trafficStartCmd.Flags().StringVar(&trafficOpts.Duration, "duration", "", "run length, e.g. 10m or 1h30m (default: profile-specific)")
 	trafficStartCmd.Flags().StringVar(&trafficOpts.Method, "method", "", "HTTP method for write/errors profiles (GET/POST/PUT/PATCH/DELETE; default: profile-specific)")

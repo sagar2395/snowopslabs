@@ -22,18 +22,93 @@ fi
 
 # expected variables from app.env
 HELM_RELEASE="${HELM_RELEASE_NAME:?app.env must define HELM_RELEASE_NAME}"
-HELM_VALUES="${HELM_VALUES:?app.env must define HELM_VALUES}"
+# Optional: an app deployed from the shared chart has no values file of its own.
+# The per-app branch below still requires it.
+HELM_VALUES="${HELM_VALUES:-}"
 NAMESPACE="${NAMESPACE:-${APP_NAME}}" # default to app name
 HELM_WAIT_TIMEOUT="${HELM_WAIT_TIMEOUT:-5m}"
 
 HELM_CHART_PATH="apps/${APP_NAME}/deploy/helm"
+
+# Identify the image by content, not just by tag.
+#
+# A rebuild under a mutable tag (:latest, or any tag reused during iteration)
+# leaves the Deployment spec byte-identical, so helm upgrade is a no-op, no new
+# ReplicaSet is created, and the running pods keep serving the previous build —
+# while deploy reports success. Threading the local image ID into a pod
+# annotation makes the template change exactly when the image content does, so
+# a rebuilt app actually goes live. Empty when docker cannot resolve the
+# reference (image already in the cluster, or a remote-only build), which simply
+# leaves the annotation off.
+IMAGE_REF="${APP_IMAGE:-${APP_NAME}:${DOCKER_IMAGE_TAG:-latest}}"
+IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE_REF}" 2>/dev/null || true)"
+
+# An app brought as a pre-built image has no chart of its own. Fall back to the
+# shared workload chart, driven entirely by the app's declared contract so the
+# deployed pod and the declaration cannot disagree.
+SHARED_VALUES=()
+if [ ! -d "${HELM_CHART_PATH}" ]; then
+  HELM_CHART_PATH="apps/_shared/chart"
+  if [ ! -d "${HELM_CHART_PATH}" ]; then
+    echo "ERROR: no chart at apps/${APP_NAME}/deploy/helm and no shared chart at ${HELM_CHART_PATH}" >&2
+    exit 1
+  fi
+  echo "[chart] ${APP_NAME} has no chart of its own — using the shared workload chart"
+  SHARED_VALUES=(
+    --set "appName=${APP_NAME}"
+    --set "namespace=${NAMESPACE}"
+    --set "image.reference=${APP_IMAGE:-}"
+    --set "image.repository=${APP_NAME}"
+    --set "image.tag=${DOCKER_IMAGE_TAG:-latest}"
+    --set "image.id=${IMAGE_ID}"
+    --set "port=${APP_PORT:-8080}"
+    --set "probes.healthPath=${APP_HEALTH_PATH:-/health}"
+    --set "probes.readyPath=${APP_READY_PATH:-/ready}"
+    --set "metrics.path=${APP_METRICS_PATH:-/metrics}"
+    --set "ingress.className=${INGRESS_CLASS:-traefik}"
+    --set "ingress.host=${APP_NAME}.${DOMAIN_SUFFIX:-k3d.local}"
+  )
+  # Resources, when the app declares them. A JVM cannot run inside the defaults
+  # sized for a small Go service, and an app silently OOMKilled at startup is the
+  # least debuggable failure the lab can hand someone.
+  [ -n "${MEMORY_REQUEST:-}" ] && SHARED_VALUES+=(--set "resources.requests.memory=${MEMORY_REQUEST}")
+  [ -n "${MEMORY_LIMIT:-}" ] && SHARED_VALUES+=(--set "resources.limits.memory=${MEMORY_LIMIT}")
+  [ -n "${CPU_REQUEST:-}" ] && SHARED_VALUES+=(--set "resources.requests.cpu=${CPU_REQUEST}")
+  [ -n "${CPU_LIMIT:-}" ] && SHARED_VALUES+=(--set "resources.limits.cpu=${CPU_LIMIT}")
+
+  # Extra writable paths for a hardened image that needs more than /tmp.
+  if [ -n "${APP_WRITABLE_PATHS:-}" ]; then
+    SHARED_VALUES+=(--set "writablePaths={/tmp,${APP_WRITABLE_PATHS}}")
+  fi
+
+  # An app that does not claim prometheus-metrics must not be annotated for
+  # scraping, or Prometheus logs a scrape failure for every one of its pods.
+  case ",${APP_CAPABILITIES:-}," in
+    *,prometheus-metrics,*) : ;;
+    *) SHARED_VALUES+=(--set "metrics.enabled=false") ;;
+  esac
+fi
+
+# The shared chart carries its own defaults and creates no namespace of its own;
+# a per-app chart is configured by its values file and has a namespace template
+# that helm.sh disables, because it creates the namespace itself just above.
+if [ ${#SHARED_VALUES[@]} -gt 0 ]; then
+  VALUES_ARGS=("${SHARED_VALUES[@]}")
+else
+  if [ -z "${HELM_VALUES}" ]; then
+    echo "ERROR: apps/${APP_NAME} has its own chart, so app.env must define HELM_VALUES" >&2
+    exit 1
+  fi
+  VALUES_ARGS=(-f "${HELM_CHART_PATH}/${HELM_VALUES}" --set namespace.create=false
+    --set "image.id=${IMAGE_ID}")
+fi
 
 case "${COMMAND}" in
   deploy)
     echo "Deploying ${APP_NAME} to ${NAMESPACE} namespace..."
 
     echo "[lint] Linting chart with values..."
-    if ! helm lint "${HELM_CHART_PATH}" -f "${HELM_CHART_PATH}/${HELM_VALUES}"; then
+    if ! helm lint "${HELM_CHART_PATH}" "${VALUES_ARGS[@]}"; then
       echo "[lint] ERROR: chart failed lint — aborting deploy" >&2
       exit 1
     fi
@@ -41,9 +116,8 @@ case "${COMMAND}" in
 
     echo "[dry-run] Rendering chart templates..."
     if ! helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART_PATH}" \
-      -f "${HELM_CHART_PATH}/${HELM_VALUES}" \
+      "${VALUES_ARGS[@]}" \
       --namespace "${NAMESPACE}" --create-namespace \
-      --set namespace.create=false \
       --dry-run 2>&1; then
       echo "[dry-run] ERROR: dry-run failed — aborting deploy" >&2
       exit 1
@@ -54,9 +128,8 @@ case "${COMMAND}" in
     kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
 
     helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART_PATH}" \
-      -f "${HELM_CHART_PATH}/${HELM_VALUES}" \
-      --namespace "${NAMESPACE}" --create-namespace \
-      --set namespace.create=false
+      "${VALUES_ARGS[@]}" \
+      --namespace "${NAMESPACE}" --create-namespace
 
     echo "[rollout] Waiting for deployment to be ready (timeout: ${HELM_WAIT_TIMEOUT})..."
     if ! kubectl rollout status deployment/"${HELM_RELEASE}" \

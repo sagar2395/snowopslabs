@@ -203,6 +203,48 @@ discovered by diffing `kubectl get nodes` rather than assumed.
 
 ---
 
+## 9. The lab after the host restarts
+
+Stopping and restarting Docker (on macOS: restarting the laptop, which stops
+colima) leaves the cluster in a state that looks like a broken lab and never
+recovers on its own. `kubectl get nodes` shows the agents — sometimes the server
+too — stuck `NotReady` with "Kubelet stopped posting node status", while
+`docker ps` shows every node container `Up`.
+
+The cause is one line in each node's log:
+
+```
+level=error msg="Shutdown request received: failed to start networking: unable
+to initialize network policy controller: error getting node subnet: failed to
+find interface with specified node ip"
+```
+
+Docker hands the node containers their bridge addresses in whatever order they
+start, so after a restart the nodes have swapped IPs. k3s resolves the node's
+recorded address, finds no local interface holding it, and exits. It exits into
+k3d's entrypoint, which has already moved on to `until kubectl uncordon
+"$HOSTNAME"; do sleep 3; done` — a loop that can never succeed on a node with no
+kubeconfig. The container therefore stays `Up` with no k3s inside it, Docker's
+restart policy never fires, and the node stays `NotReady` until someone
+restarts the container by hand. The second start works: by then the Node object
+carries the address the container actually has.
+
+`runtimes/k3d/up.sh` does this itself (`restart_dead_nodes`), so `labctl init` /
+`make init` is the recovery — it restarts exactly the node containers with no
+k3s process and waits for every node to report Ready. This runs *before* the
+reachability probe on purpose: a dead server node would otherwise read as an
+unreachable cluster and be deleted along with the whole lab.
+
+Detecting it by hand is the same test the script makes:
+
+```sh
+docker top k3d-snowops-agent-0 | grep /bin/k3s || docker restart k3d-snowops-agent-0
+```
+
+`kind` is not affected: its nodes run kubelet under systemd, which restarts it.
+
+---
+
 ## Sign-off
 
 | Step | Result | Notes |

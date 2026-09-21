@@ -13,6 +13,7 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/scaffold"
 	scenariopkg "github.com/sagar2395/snowopslabs/internal/scenario"
 	scnsvc "github.com/sagar2395/snowopslabs/internal/service/scenario"
+	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 	"github.com/spf13/cobra"
 )
@@ -96,7 +97,7 @@ var scenarioUpCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := ensureAppsDeployed(cmd.Context(), s.Prerequisites.Apps, scenarioDeployPrereqs); err != nil {
+		if err := ensureAppsDeployed(cmd.Context(), scenes.ResolvedPrereqApps(s), scenarioDeployPrereqs); err != nil {
 			return err
 		}
 		// Platform prerequisites (opencost, prometheus, ingress, …) are not
@@ -109,9 +110,14 @@ var scenarioUpCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Scenario %s is already active. Re-run with --force to reinstall.\n", name)
 			return nil
 		}
-		return runScenarioOp(cmd, "activate", name, func(ctx context.Context, svc *scnsvc.Service) (string, error) {
+		err = runScenarioOp(cmd, "activate", name, func(ctx context.Context, svc *scnsvc.Service) (string, error) {
 			return svc.ActivateWithParams(ctx, name, scenarioUpForce, scenarioUpParams)
 		})
+		if err != nil {
+			return err
+		}
+		warnMissingHosts(cmd.Context(), os.Stderr, cfg.DomainSuffix)
+		return nil
 	},
 }
 
@@ -124,6 +130,10 @@ var scenarioDownCmd = &cobra.Command{
 		if s, err := scenes.Get(name); err == nil && !s.Active {
 			fmt.Fprintf(os.Stderr, "Scenario %s is not active.\n", name)
 			return nil
+		}
+		// Tear down against the workload the scenario was brought up against.
+		if err := rebindTo(scenes.ActiveApp(name)); err != nil {
+			return err
 		}
 		return runScenarioOp(cmd, "deactivate", name, func(ctx context.Context, svc *scnsvc.Service) (string, error) {
 			return svc.Deactivate(ctx, name)
@@ -219,6 +229,11 @@ With --watch, checks are re-run every --interval until they all pass or
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true, // a failing check is a result, not a usage error
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Grade against the workload the scenario was activated against — the
+		// check scripts read WORKLOAD_* from the executor environment.
+		if err := rebindTo(scenes.ActiveApp(args[0])); err != nil {
+			return err
+		}
 		runner := newCheckRunner()
 		ctx := context.Background()
 		startedAt := time.Now()
@@ -303,10 +318,21 @@ func newCheckRunner() *checks.Runner {
 		promURL = "http://prometheus." + cfg.DomainSuffix
 	}
 	r.PrometheusURL = promURL
+	// A check script grades the bound workload, so it needs the workload's
+	// identity for the same reason a component script does (ADR-0014).
+	// Without these a check can only hardcode an app name, which is the thing
+	// the workload binding exists to remove.
 	r.Env = []string{
 		"DOMAIN_SUFFIX=" + cfg.DomainSuffix,
 		"MONITORING_NAMESPACE=" + cfg.MonitoringNamespace,
 		"PROJECT_ROOT=" + cfg.ProjectRoot,
+		// The same Prometheus the promql checks use, so a script check and a
+		// promql check in one scenario cannot disagree about where to look.
+		"PROMETHEUS_URL=" + promURL,
+		"WORKLOAD_NAME=" + scenes.Workload.Name,
+		"WORKLOAD_NAMESPACE=" + scenes.Workload.Namespace,
+		"WORKLOAD_PORT=" + scenes.Workload.Port,
+		"WORKLOAD_METRIC=" + scenes.Workload.Metric,
 	}
 	return r
 }
@@ -378,6 +404,43 @@ func printVerifyRemediation(results []checks.Result) {
 	}
 }
 
+// bindForScenario binds a read-only command to the app it describes: the one
+// --app names, or else the app the scenario was activated for.
+func bindForScenario(cmd *cobra.Command, name string) error {
+	if f := cmd.Flags().Lookup("app"); f != nil && f.Changed {
+		return nil
+	}
+	return rebindTo(scenes.ActiveApp(name))
+}
+
+var scenarioRenderCmd = &cobra.Command{
+	Use:   "render <scenario-name> <file>",
+	Short: "Print a scenario file with its template variables filled in",
+	Long: `Prints a file from the scenario's directory as the engine would apply it:
+{{.WorkloadName}}, {{.DomainSuffix}} and the scenario's parameters are filled in
+for the app named by --app, or the app the scenario was activated for. Use it to
+apply a manifest the scenario leaves to you:
+
+  labctl scenario render node-drain-drill manifests/baseline.yaml --app go-api | kubectl apply -f -`,
+	Args:         cobra.ExactArgs(2),
+	SilenceUsage: true,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		s, err := scenes.Get(args[0])
+		if err != nil {
+			return err
+		}
+		if err := bindForScenario(cmd, s.Name); err != nil {
+			return err
+		}
+		body, err := scenes.RenderFile(s, args[1])
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(cmd.OutOrStdout(), body)
+		return err
+	},
+}
+
 var scenarioInfoCmd = &cobra.Command{
 	Use:   "info [scenario-name]",
 	Short: "Show detailed information about a scenario",
@@ -387,11 +450,20 @@ var scenarioInfoCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := bindForScenario(cmd, s.Name); err != nil {
+			return err
+		}
+
+		// Resolve with the scenario's parameter defaults, exactly as the HTTP API
+		// does for the UI. Without them the CLI printed a raw "{{.MinReplicas}}"
+		// for the same snippet the UI rendered as a real number.
+		defaults := scenes.ParamDefaults(s)
+		resolve := func(in string) string { return scenes.ResolveTemplateWithParams(in, defaults) }
 
 		fmt.Printf("Name:        %s\n", s.Name)
 		fmt.Printf("Display:     %s\n", s.DisplayName)
 		fmt.Printf("Category:    %s\n", s.Category)
-		fmt.Printf("Description: %s\n", s.Description)
+		fmt.Printf("Description: %s\n", resolve(s.Description))
 
 		status := "inactive"
 		if s.Active {
@@ -407,23 +479,42 @@ var scenarioInfoCmd = &cobra.Command{
 		}
 		if len(s.Prerequisites.Apps) > 0 {
 			fmt.Printf("\nPrerequisites (apps):\n")
-			for _, a := range s.Prerequisites.Apps {
+			for _, a := range scenes.ResolvedPrereqApps(s) {
 				fmt.Printf("  - %s\n", a)
+			}
+		}
+		// Show the requirement against the app actually bound, so a reader sees
+		// whether THIS lab can run the scenario, not just what it asks for.
+		if len(s.Prerequisites.Capabilities) > 0 {
+			fmt.Printf("\nPrerequisites (workload capabilities), bound to %q:\n", scenes.Workload.Name)
+			for _, name := range s.Prerequisites.Capabilities {
+				mark := "missing"
+				if c, err := workload.ParseCapability(name); err == nil && scenes.Contract.Has(c) {
+					mark = "ok"
+				}
+				fmt.Printf("  - %-22s %s\n", name, mark)
+			}
+		}
+
+		// Parameters are the knobs a learner is meant to turn — including the
+		// SLO a scenario grades against. Left unlisted, a threshold reads as an
+		// unexplained constant rather than a choice.
+		if len(s.Parameters) > 0 {
+			fmt.Printf("\nParameters (override with --set Name=value):\n")
+			for _, p := range s.Parameters {
+				fmt.Printf("  %-22s %s (default: %s)\n", p.Name, p.DisplayName, p.Default)
+				if p.Description != "" {
+					fmt.Printf("  %-22s   %s\n", "", p.Description)
+				}
 			}
 		}
 
 		if len(s.Objectives) > 0 {
 			fmt.Printf("\nObjectives:\n")
 			for _, o := range s.Objectives {
-				fmt.Printf("  - %s\n", o)
+				fmt.Printf("  - %s\n", resolve(o))
 			}
 		}
-
-		// Resolve with the scenario's parameter defaults, exactly as the HTTP API
-		// does for the UI. Without them the CLI printed a raw "{{.MinReplicas}}"
-		// for the same snippet the UI rendered as a real number.
-		defaults := scenes.ParamDefaults(s)
-		resolve := func(in string) string { return scenes.ResolveTemplateWithParams(in, defaults) }
 
 		printComponent := func(c scenariopkg.Component, indent string) {
 			renderComponent(os.Stdout, c, indent, resolve)
@@ -464,7 +555,7 @@ var scenarioInfoCmd = &cobra.Command{
 			}
 		}
 
-		renderReferences(os.Stdout, s.References)
+		renderReferences(os.Stdout, s.References, resolve)
 		renderSnippets(os.Stdout, s.Snippets, s.Dir, resolve)
 
 		return nil
@@ -489,6 +580,7 @@ func init() {
 	scenarioCmd.AddCommand(scenarioResetCmd)
 	scenarioCmd.AddCommand(scenarioStatusCmd)
 	scenarioCmd.AddCommand(scenarioInfoCmd)
+	scenarioCmd.AddCommand(scenarioRenderCmd)
 	scenarioCmd.AddCommand(scenarioVerifyCmd)
 	rootCmd.AddCommand(scenarioCmd)
 }

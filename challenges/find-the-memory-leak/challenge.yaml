@@ -1,9 +1,10 @@
 name: find-the-memory-leak
 displayName: "Find the memory leak"
 description: >
-  echo-server pods keep getting OOMKilled at startup — a memory limit was
-  recently changed. Find the resource limit that was misconfigured and
-  restore the pod to a healthy Running state.
+  The ticket says "memory leak in go-api". What is known: the workload came
+  up clean, served fine for a minute, and then began restarting over and
+  over once traffic arrived. It is still restarting now. Stop it — and leave
+  the workload able to serve the traffic it is getting.
 category: resources
 parTime: "8m"
 setup:

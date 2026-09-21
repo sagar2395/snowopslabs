@@ -3,7 +3,7 @@ set -euo pipefail
 
 # External Secrets Operator (ESO), wired to Vault as its backend.
 # Demonstrates the full sync chain:
-#   Vault KV (secret/go-api) -> ExternalSecret -> k8s Secret -> go-api env var.
+#   Vault KV (secret/<workload>) -> ExternalSecret -> k8s Secret -> workload env var.
 # Portable + idempotent.
 #
 # ESO depends on Vault. This script PREFLIGHTS for Vault rather than installing
@@ -12,14 +12,18 @@ set -euo pipefail
 # Config (env, with defaults — scripts never source .env themselves):
 #   ESO_CHART_VERSION     pinned external-secrets chart version (config/versions.env)
 #   VAULT_DEV_ROOT_TOKEN  Vault token ESO authenticates with (default: root)
-#   SECRETS_NAMESPACE     namespace to sync the secret into (default: go-api)
+#   SECRETS_NAMESPACE     namespace to sync into (default: the bound workload)
 #   VAULT_NAMESPACE       namespace where Vault runs (default: vault)
 
 NAMESPACE="external-secrets"
 CHART_VERSION="${ESO_CHART_VERSION:-0.10.5}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_TOKEN="${VAULT_DEV_ROOT_TOKEN:-root}"
-TARGET_NS="${SECRETS_NAMESPACE:-go-api}"
+TARGET_NS="${SECRETS_NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
+# The ExternalSecret, the Secret it writes and the Vault key it reads all name
+# the bound workload — the scenario seeds and rotates secret/<workload>, so a
+# hardcoded key here silently reads a different secret than the drill writes.
+WORKLOAD="${WORKLOAD_NAME:-go-api}"
 VAULT_NS="${VAULT_NAMESPACE:-vault}"
 
 # --- Preflight: Vault must already be installed --------------------------------
@@ -56,7 +60,7 @@ kubectl create secret generic vault-token \
   --from-literal=token="$ROOT_TOKEN" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# SecretStore (Vault backend) + ExternalSecret (sync secret/go-api -> k8s Secret).
+# SecretStore (Vault backend) + ExternalSecret (sync secret/<workload> -> k8s Secret).
 echo "Wiring SecretStore + ExternalSecret in '$TARGET_NS' ..."
 cat <<EOF | kubectl apply -f -
 apiVersion: external-secrets.io/v1beta1
@@ -78,7 +82,7 @@ spec:
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
-  name: go-api-secret
+  name: ${WORKLOAD}-secret
   namespace: ${TARGET_NS}
 spec:
   refreshInterval: 15s
@@ -86,21 +90,21 @@ spec:
     name: vault-backend
     kind: SecretStore
   target:
-    name: go-api-secrets
+    name: ${WORKLOAD}-secrets
     creationPolicy: Owner
   data:
     - secretKey: api-key
       remoteRef:
-        key: go-api
+        key: ${WORKLOAD}
         property: api-key
 EOF
 
 echo "Waiting for the ExternalSecret to sync..."
-kubectl wait externalsecret/go-api-secret -n "$TARGET_NS" \
+kubectl wait "externalsecret/${WORKLOAD}-secret" -n "$TARGET_NS" \
   --for=condition=Ready --timeout=120s || true
 
 echo ""
 echo "External Secrets Operator installed and wired."
-echo "    Synced secret: '${TARGET_NS}/go-api-secrets' (key: api-key)"
+echo "    Synced secret: '${TARGET_NS}/${WORKLOAD}-secrets' (key: api-key)"
 echo "    Refresh interval: 15s — rotate the Vault value and watch it propagate."
-echo "    Wire into go-api with envFrom.secretRef.name=go-api-secrets (see runbook)."
+echo "    Wire into ${WORKLOAD} with envFrom.secretRef.name=${WORKLOAD}-secrets (see runbook)."

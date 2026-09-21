@@ -15,6 +15,24 @@ labctl scenario down observability-sre      # deactivate: remove them
 labctl scenario status                      # which scenarios are active
 ```
 
+`scenario info` on an active scenario describes it for the app it was activated
+with, so its manifests, snippets and commands name that app, not the default.
+
+### `labctl scenario render`
+
+Prints a file from a scenario's directory with its template variables filled in,
+exactly as the engine would apply it. Use it for a manifest the scenario leaves
+to you, because `kubectl apply -f` on the raw file sends a literal
+`{{.WorkloadName}}` to the cluster:
+
+```bash
+labctl scenario render node-drain-drill manifests/baseline.yaml --app go-api | kubectl apply -f -
+```
+
+It renders for `--app` when given, otherwise for the app the scenario was
+activated with, and uses the activation's parameters (their defaults when the
+scenario is not active). A path outside the scenario's directory is refused.
+
 `scenario up` flags:
 
 | Flag | Default | Meaning |
@@ -29,6 +47,24 @@ labctl scenario up autoscaling-under-load --set threshold=15 --set maxReplicas=4
 
 Parameters a scenario accepts are declared in its `parameters` block — see the
 [schema](../scenario-schema.md#parameters).
+
+## Which application it runs against
+
+A scenario names its workload through `{{.WorkloadName}}` rather than an app
+([ADR-0014](../../adr/0014-workload-binding-and-app-contract.md)), so the same
+scenario runs against any app that meets the contract:
+
+```bash
+labctl scenario up autoscaling-under-load --app java-api
+```
+
+The app is **recorded with the activation**. `verify` and `down` read it back, so
+a scenario brought up against `java-api` is graded and torn down against
+`java-api` — not against whatever `APP_NAME` happens to say in the shell you come
+back to an hour later.
+
+The UI asks the same question in its activation dialog, and marks any app that
+does not declare a capability the scenario needs.
 
 ## `labctl scenario reset`
 
@@ -70,8 +106,10 @@ override with `PROMETHEUS_URL`.
   means "you have not done this drill step yet". `verify` still exits non-zero,
   but without the alarming "checks failed" wording.
 
-REST: `POST /api/v2/scenarios/{name}/verify` — synchronous and bounded to about
-12 seconds. Use the CLI's `--watch` for long convergence.
+REST: `POST /api/v2/scenarios/{name}/verify` — synchronous, with the same 30s
+per-check default as the CLI and the whole run bounded at 5 minutes. A check cut
+off by that bound says so, rather than blaming its own `timeoutSeconds`. Use the
+CLI's `--watch` for long convergence.
 
 ## `labctl scenario new`
 
@@ -114,7 +152,7 @@ sets the scenario up and **grades** the result.
 
 ```bash
 labctl scenario up env-promotion
-bash scenarios/env-promotion/scripts/build-image.sh v1.1.0
+bash scenarios/env-promotion/scripts/build-image.sh v1.1.0 --app go-api --namespace go-api
 kubectl -n env-dev set image deployment/go-api go-api=go-api:v1.1.0
 kubectl -n env-dev rollout status deployment/go-api
 # ...promote the same image forward to env-staging, then env-prod...

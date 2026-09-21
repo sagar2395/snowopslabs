@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+. "$(dirname "$0")/../../_lib/workload.sh"
 
-# Grades the isolation POSTURE of the go-api namespace, not the presence of a
+# Grades the isolation POSTURE of the workload's namespace, not the presence of a
 # NetworkPolicy object.
 #
 # The distinction matters: NetworkPolicies are additive, so `default-deny-all`
@@ -10,7 +11,7 @@ set -euo pipefail
 #
 # Everything here is kubectl and POSIX shell — no jq, no python.
 
-NS="go-api"
+NS="${WORKLOAD_NAMESPACE}"
 MON="${MONITORING_NAMESPACE:-monitoring}"
 NOTES=""
 
@@ -97,5 +98,35 @@ if [ -n "$NOTES" ]; then
   exit 1
 fi
 
+# 4. Everything above reads YAML, which proves the policies are WRITTEN
+#    correctly and nothing about whether they are ENFORCED. That is not a
+#    theoretical gap: a cluster whose CNI ignores NetworkPolicy silently makes
+#    this entire scenario theatre, and every check above still passes. So
+#    actually try the connection that must be refused.
+PROBE_NS="${ISOLATION_PROBE_NAMESPACE:-default}"
+PROBE="isolation-probe-$$"
+PORT="${WORKLOAD_PORT:-8080}"
+
+code=$(kubectl -n "$PROBE_NS" run "$PROBE" \
+  --image=curlimages/curl:8.11.1 --restart=Never --rm -i --quiet --timeout=90s \
+  --command -- curl -s -o /dev/null -w '%{http_code}' --max-time 8 \
+  "http://${WORKLOAD_NAME}.${NS}.svc.cluster.local:${PORT}/health" 2>/dev/null || true)
+kubectl -n "$PROBE_NS" delete pod "$PROBE" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+
+case "$code" in
+  000 | "")
+    ;;
+  *)
+    echo "FAIL: a pod in namespace $PROBE_NS reached $NS and got HTTP $code." >&2
+    echo "  The policy set reads correctly, so the rules are not being ENFORCED —" >&2
+    echo "  which makes every other result on this scenario meaningless. Either the" >&2
+    echo "  CNI does not implement NetworkPolicy, or a rule elsewhere admits that" >&2
+    echo "  namespace. Check what the cluster thinks is in force:" >&2
+    echo "    kubectl -n $NS describe networkpolicy default-deny-all" >&2
+    exit 1
+    ;;
+esac
+
 echo "Namespace $NS is default-deny in both directions, with DNS, ingress and"
 echo "$MON scraping explicitly re-opened and no rule cancelling the baseline."
+echo "Enforcement confirmed live: a pod in $PROBE_NS was refused (curl exit code 000)."

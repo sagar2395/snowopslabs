@@ -22,6 +22,7 @@ import { Learn } from './views/Learn'
 import { Challenges } from './views/Challenges'
 import { Results } from './views/Results'
 import { Leaderboard } from './views/Leaderboard'
+import { Compare } from './views/Compare'
 import { Traffic } from './views/Traffic'
 import { Runs } from './views/Runs'
 import { api } from './api/client'
@@ -59,6 +60,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { path: 'results',     label: 'Results',     icon: 'results' },
       { path: 'leaderboard', label: 'Leaderboard', icon: 'leaderboard' },
+      { path: 'compare',     label: 'Compare',     icon: 'compare' },
     ],
   },
 ]
@@ -111,6 +113,21 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | 
 function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void }) {
   const navigate = useNavigate()
   const location = useLocation()
+
+  // Keep the current section visible when the nav overflows.
+  //
+  // The sidebar scrolls once there are more sections than fit — at a 720px
+  // viewport the last one sat behind the pinned runtime footer, so the page you
+  // were on was the one you could not see. Scrolling it into view survives the
+  // nav growing again, which shaving spacing does not.
+  useEffect(() => {
+    const active = document.querySelector<HTMLElement>('.sidebar-nav .nav-item.active')
+    // Guarded: jsdom has no scrollIntoView, and this is a nicety — it must
+    // never be the reason a render throws.
+    if (typeof active?.scrollIntoView === 'function') {
+      active.scrollIntoView({ block: 'nearest' })
+    }
+  }, [location.pathname])
   const queryClient = useQueryClient()
   const [wsStatus, setWsStatus] = useState<WSStatus>('connecting')
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -491,6 +508,10 @@ function LeaderboardRoute() {
   const { notify } = useApp()
   return <Leaderboard notify={notify} />
 }
+function CompareRoute() {
+  const { notify } = useApp()
+  return <Compare notify={notify} />
+}
 
 /** Resolves authentication before mounting the app (which uses the WebSocket
  *  hook), so React hooks never run conditionally. */
@@ -536,6 +557,7 @@ export default function App() {
         <Route path="challenges" element={<ChallengesRoute />} />
         <Route path="results" element={<ResultsRoute />} />
         <Route path="leaderboard" element={<LeaderboardRoute />} />
+        <Route path="compare" element={<CompareRoute />} />
         {/* Unknown paths fall back to the dashboard rather than a blank screen. */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Route>

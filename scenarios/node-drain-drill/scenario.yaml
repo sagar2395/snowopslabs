@@ -1,91 +1,158 @@
 apiVersion: scenario.snowops.net/v2
 name: node-drain-drill
+verified: true
 displayName: "Day-2 Drill: Node Drain Under Load"
-description: "Cordon and drain a worker node while go-api serves live traffic. A PodDisruptionBudget keeps a minimum number of replicas available, so the scheduler reschedules pods onto the remaining nodes without dropping requests. The grade is the measured request success rate through the drain."
+description: "Take a worker node out of service while {{.WorkloadName}} serves live traffic. labctl gives the workload enough replicas to survive; you write the PodDisruptionBudget, cordon and drain the node with kubectl, watch the pods reschedule, and put the node back. The grade is the measured request success rate across the window."
 category: operations
 prerequisites:
   platform:
     - ingress
     - monitoring/metrics
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
 runtimes:
   - k3d
   - kind
 
 objectives:
-  - "Protect go-api availability during node maintenance with a PodDisruptionBudget"
-  - "Cordon and drain a worker node while traffic runs and watch pods reschedule"
-  - "Verify the PDB held and the request success rate stayed above the SLO"
-  - "Uncordon the node and confirm the cluster returns to full capacity"
+  - "Write and apply a PodDisruptionBudget that keeps {{.WorkloadName}} serving while a node is evicted"
+  - "Cordon and drain a worker node with kubectl while traffic runs, and watch pods reschedule"
+  - "Prove the request success rate held across the drain, from Prometheus"
+  - "Return the node to service and leave the cluster at full capacity"
+
+parameters:
+  - name: AvailabilitySLO
+    displayName: "Availability SLO across the drain (fraction of non-5xx requests)"
+    description: "The share of requests that must keep succeeding while a node is drained. Lower it if your workload is slower to become Ready than the drill allows — a slow-starting runtime failing this is a real finding about replica count and readiness gating, not a defect in the application."
+    default: "0.995"
+    type: string
 
 stages:
   - name: baseline
-    description: Scale go-api for HA and apply a PodDisruptionBudget so a drain cannot take all replicas down at once
+    description: Scale {{.WorkloadName}} so a PodDisruptionBudget has something to protect. The budget itself is yours to write.
     components:
-      - name: go-api-availability-budget
-        type: manifest
-        path: manifests/baseline.yaml
+      - name: workload-ha-replicas
+        type: script
+        script: scripts/stage-ha.sh
+        uninstallScript: scripts/unstage-ha.sh
+      - name: drain-dashboard
+        type: grafana-dashboard
+        path: dashboards/
+        namespace: "{{.MonitoringNamespace}}"
 
 checks:
-  - name: pdb-present
+  # Staged, so this is a guard rather than a grade: with one replica the PDB
+  # blocks the eviction forever instead of protecting anything, and the drill
+  # would read as a drain that "safely" never finished.
+  - name: workload-highly-available
     type: kubectl
-    resource: pdb/go-api-drill-pdb
-    namespace: go-api
-
-  - name: pdb-allows-disruptions
-    type: kubectl
-    resource: pdb/go-api-drill-pdb
-    namespace: go-api
-    jsonpath: "{.status.expectedPods}"
-    operator: ">="
-    value: "2"
-
-  - name: go-api-highly-available
-    type: kubectl
-    resource: deployment/go-api
-    namespace: go-api
+    resource: deployment/{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "2"
+    remediation: "The staging step should have scaled {{.WorkloadName}} out. If replicas are pending, the cluster may be short of schedulable nodes: kubectl get nodes && kubectl -n {{.WorkloadNamespace}} get pods -o wide"
+
+  - name: pdb-present
+    type: kubectl
+    resource: pdb/{{.WorkloadName}}-drill-pdb
+    namespace: "{{.WorkloadNamespace}}"
+    pending: true
+    remediation: "You have not applied the PodDisruptionBudget yet — it is what makes the drain safe. Apply it: labctl scenario render node-drain-drill manifests/baseline.yaml --app {{.WorkloadName}} | kubectl apply -f -"
+
+  # Not pending: a collision here is cluster state the learner must clear before
+  # the drill can work at all, not a step of the drill.
+  - name: one-pdb-per-workload
+    type: script
+    script: checks/check-single-pdb.sh
+    remediation: "More than one PodDisruptionBudget selects {{.WorkloadName}}. The eviction API refuses such a pod, so the drain fails partway through with an error that names neither budget. Another scenario left its own behind — 'kubectl -n {{.WorkloadNamespace}} get pdb' shows which, and 'labctl scenario down <that scenario>' removes it."
+
+  - name: pdb-protects-workload
+    type: kubectl
+    resource: pdb/{{.WorkloadName}}-drill-pdb
+    namespace: "{{.WorkloadNamespace}}"
+    jsonpath: "{.status.currentHealthy}"
+    operator: ">="
+    value: "2"
+    pending: true
+    remediation: "The PDB exists but tracks fewer than 2 healthy pods, so it will not block an eviction. A PDB whose selector matches nothing reports currentHealthy: 0 — compare its selector with the pod labels: kubectl -n {{.WorkloadNamespace}} get pdb {{.WorkloadName}}-drill-pdb -o yaml"
+
+  - name: traffic-is-flowing
+    type: promql
+    query: 'sum(rate({{.WorkloadMetric}}_count{app="{{.WorkloadName}}"}[10m]))'
+    operator: ">"
+    value: "0.5"
+    pending: true
+    remediation: "Prometheus sees almost no requests to {{.WorkloadName}}, so the availability grade below would be meaningless. Start load and let it run a couple of minutes: labctl traffic start --app {{.WorkloadName}} --profile steady --rps 20. If Prometheus itself is unreachable, you drained the node its storage is pinned to — uncordon it and wait for the pod to return before verifying."
+
+  # The drill's proof of work, read from the cluster rather than from a metric:
+  # draining the node that holds Prometheus's volume takes the observer down
+  # with it, and a metric-based check then reports that nothing happened.
+  - name: workload-pods-were-evicted
+    type: script
+    script: checks/check-pods-evicted.sh
+    pending: true
+    remediation: "No node that held {{.WorkloadName}} before the drill has been emptied, so no drain has moved a pod yet. Pick a node that is actually running one — 'kubectl -n {{.WorkloadNamespace}} get pods -l app={{.WorkloadName}} -o wide' — then: kubectl cordon <node> && kubectl drain <node> --ignore-daemonsets --delete-emptydir-data"
 
   - name: availability-held-during-drain
     type: promql
-    query: 'sum(rate(http_requests_total{app="go-api",code!~"5.."}[5m])) / sum(rate(http_requests_total{app="go-api"}[5m]))'
+    query: 'sum(rate({{.WorkloadMetric}}_count{app="{{.WorkloadName}}",http_response_status_code!~"5.."}[10m])) / sum(rate({{.WorkloadMetric}}_count{app="{{.WorkloadName}}"}[10m]))'
     operator: ">="
-    value: "0.995"
+    value: "{{.AvailabilitySLO}}"
+    pending: true
+    remediation: "More than the permitted share of requests failed across the drain. The usual cause is draining before the replicas were spread across nodes, so the PDB had nowhere to move a pod to. Check spread before you drain: kubectl -n {{.WorkloadNamespace}} get pods -o wide. A Prometheus error here rather than a low number means monitoring is still rescheduling — uncordon the node first, then verify."
 
   - name: no-node-left-cordoned
     type: script
-    script: scripts/check-no-cordon.sh
+    script: checks/check-no-cordon.sh
+    pending: true
+    remediation: "A node is still cordoned, so the cluster is short of capacity for everything that runs after this drill. Return it to service: kubectl uncordon <node>"
+
+references:
+  - label: "Kubernetes — Safely drain a node"
+    url: "https://kubernetes.io/docs/tasks/administer-cluster/safely-drain-node/"
+    note: "The cordon/drain/uncordon sequence this drill performs, and how eviction differs from deletion."
+  - label: "Kubernetes — Disruptions and PodDisruptionBudgets"
+    url: "https://kubernetes.io/docs/concepts/workloads/pods/disruptions/"
+    note: "Why maxUnavailable and minAvailable behave differently, and what a PDB does not protect against."
 
 snippets:
   - label: "PodDisruptionBudget that makes the drain non-disruptive"
-    description: "maxUnavailable: 1 means evicting one go-api pod blocks until a replacement is Ready on another node — the core mechanism that keeps the service up while a node is drained."
+    description: "Without it, draining evicts every {{.WorkloadName}} pod on the node at once and the service drops requests. With it, each eviction waits until a replacement is Ready elsewhere. maxUnavailable: 1 is the conservative choice — try minAvailable or a larger value and watch the drain's pace change."
     path: manifests/baseline.yaml
+    exercise: true
 
 explore:
   urls:
-    - label: "Grafana — go-api availability"
-      url: "http://grafana.{{.DomainSuffix}}/d/app-requests"
+    - label: "Grafana — node drain: success rate, cordons and pod placement"
+      url: "http://grafana.{{.DomainSuffix}}/d/node-drain-drill"
   commands:
-    - label: "1. Start steady background traffic (keep running in another terminal)"
-      command: "labctl traffic start --profile steady --rps 20"
-    - label: "2. Drain a worker node (cordons, evicts pods respecting the PDB, then uncordons)"
-      command: "bash {{.ProjectRoot}}/scenarios/node-drain-drill/scripts/drain.sh"
-    - label: "3. Watch go-api pods reschedule onto the remaining nodes"
-      command: "kubectl -n go-api get pods -o wide -w"
-    - label: "4. Verify the PDB held and success rate stayed above SLO"
-      command: "labctl scenario verify node-drain-drill"
-    - label: "Inspect node status (look for SchedulingDisabled during the drain)"
-      command: "kubectl get nodes"
-    - label: "Inspect the PDB status"
-      command: "kubectl -n go-api get pdb go-api-drill-pdb -o yaml"
+    - label: "1. Apply your PodDisruptionBudget (nothing stages it)"
+      command: "labctl scenario render node-drain-drill manifests/baseline.yaml --app {{.WorkloadName}} | kubectl apply -f -"
+    - label: "2. Start steady background traffic"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile steady --rps 20"
+    - label: "3. See where the pods are before you drain — a node with all of them has nowhere to move"
+      command: "kubectl -n {{.WorkloadNamespace}} get pods -o wide"
+    - label: "4. Check what else that node holds — pods with node-local storage cannot move"
+      command: "kubectl get pods -A -o wide --field-selector spec.nodeName=<node> | grep -vE 'DaemonSet|Completed'"
+    - label: "5. Take a worker node out of service"
+      command: "kubectl cordon <node>"
+    - label: "6. Evict its pods, respecting your PDB (this is where the budget does its work)"
+      command: "kubectl drain <node> --ignore-daemonsets --delete-emptydir-data --timeout=180s"
+    - label: "7. Watch the pods reschedule onto the remaining nodes"
+      command: "kubectl -n {{.WorkloadNamespace}} get pods -o wide -w"
+    - label: "8. Put the node back and grade the drill"
+      command: "kubectl uncordon <node> && labctl scenario verify node-drain-drill"
+    - label: "Read the PDB while the drain is blocking"
+      command: "kubectl -n {{.WorkloadNamespace}} get pdb {{.WorkloadName}}-drill-pdb -o yaml"
   tips:
-    - "Start traffic FIRST — the availability check reads http_requests_total from Prometheus, which needs live requests to be meaningful."
-    - "Grafana → the linked availability dashboard: RPS and success rate should stay flat through the drain. A visible dip means the PDB or replica headroom wasn't enough to cover the eviction."
-    - "The PDB uses maxUnavailable: 1, so at most one go-api pod can be evicted at a time; the drain blocks until a replacement is Ready elsewhere."
+    - "Start traffic before you drain. The availability grade reads {{.WorkloadMetric}}_count from Prometheus over a 10-minute window, and a drain with no traffic through it proves nothing."
+    - "Pick a worker node, never the k3d server node: 'kubectl get nodes' — the one with the control-plane role runs the API server."
+    - "cordon and drain are different operations. Cordon only stops NEW pods landing there; the running ones stay until drain evicts them."
+    - "The PDB uses maxUnavailable: 1, so at most one {{.WorkloadName}} pod can be evicted at a time and the drain blocks until a replacement is Ready elsewhere. That blocking is the budget working, not the drain hanging."
+    - "If the drain really does hang, a pod has no PDB headroom or no other node can host it. 'kubectl describe pod' on the pending replacement usually says which."
+    - "Expect the monitoring stack to go dark if you drain the node holding its storage. Prometheus, Loki and Alertmanager use local-path volumes, and a local PersistentVolume is pinned to one node by node affinity — so those pods cannot reschedule anywhere and sit Pending until you uncordon. That is not a lab artefact: it is how node-local storage behaves in production, and it is the reason stateful workloads need either replicated storage or a drain plan of their own."
+    - "Because of that, verify AFTER you uncordon. Prometheus keeps its data on the same volume, so the window covering your drain is still there once it restarts — but it cannot answer while it is Pending."
+    - "Uncordon when you are done. A node left cordoned starves every later scenario of capacity — which is why that is a graded step here, not an afterthought."
     - "On single-node clusters a drain has nowhere to reschedule pods. k3d defaults to 2 agents (AGENTS env var) precisely so this drill works."
-    - "drain.sh always uncordons the node at the end, even on failure, so the cluster never gets stuck SchedulingDisabled."
-    - "If the drain hangs, a pod likely has no PDB headroom or no other node can host it — kubectl describe the pending pod."
-    - "Tear down with 'labctl scenario down node-drain-drill' — removes the PDB; go-api stays running."
+    - "Tear down with 'labctl scenario down node-drain-drill' — it removes the PDB, scales {{.WorkloadName}} back and uncordons anything left behind."

@@ -13,15 +13,15 @@ set -euo pipefail
 #   BACKUP_DIR  where archives are written (default: .labctl/backups)
 #   RESOURCES   comma-separated kinds to capture (default: a sensible app set)
 
-NS="${1:?Usage: backup.sh <namespace>}"
-BACKUP_DIR="${BACKUP_DIR:-.labctl/backups}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=scripts/_backup_lib.sh
+. "${SCRIPT_DIR}/_backup_lib.sh"
+
+NS="$(backup_ns "${1:-}")"
+BACKUP_DIR="$(backup_dir)"
 RESOURCES="${RESOURCES:-deployment,service,configmap,secret,serviceaccount,ingress,pdb,horizontalpodautoscaler,persistentvolumeclaim}"
 
-if ! command -v jq >/dev/null 2>&1; then
-  echo "ERROR: 'jq' is required to scrub manifests but was not found." >&2
-  echo "       Install it: brew install jq  (macOS) | apt-get install jq (Debian/Ubuntu)" >&2
-  exit 1
-fi
+require_jq || exit 1
 
 if ! kubectl get namespace "$NS" >/dev/null 2>&1; then
   echo "ERROR: namespace '${NS}' not found." >&2
@@ -85,5 +85,20 @@ cp "$ARCHIVE" "$LATEST"
 echo "Backed up ${COUNT} object(s) to:"
 echo "  ${ARCHIVE}"
 echo "  ${LATEST}  (latest pointer)"
+
+# Record the fingerprint of the data this backup does NOT contain. A manifest
+# export captures the PVC object; the bytes on the volume are outside it
+# entirely. Noting the boot-id is the honest thing a manifest-level backup tool
+# can do about that — and it is what makes the loss measurable afterwards,
+# because a restored PVC binds to a brand-new volume with a different one.
+BOOT_ID="$(live_boot_id "$NS")"
+if [ -n "$BOOT_ID" ]; then
+  echo "${TIMESTAMP} ${BOOT_ID}" >>"$(bootid_log "$NS")"
+  echo ""
+  echo "PV data fingerprint at backup time: boot-id ${BOOT_ID}"
+  echo "  NOT in the archive — a manifest backup captures the PVC object, not the volume's"
+  echo "  contents. Recorded in $(bootid_log "$NS") so you can see it change after a restore."
+fi
+
 echo ""
 echo "Restore with: bash scenarios/backup-restore-drill/scripts/restore.sh ${NS}"

@@ -22,3 +22,8 @@ kubectl cluster-info
 
 **Completion check:** `kubectl cluster-info` exits 0 (the API server is
 reachable).
+
+If you already have a lab cluster running, this module is already done and will
+pass immediately — the same is true of module 2 if the demo apps are already
+deployed. The path is written for someone starting from nothing; skipping
+straight to module 3 on an existing lab is fine.

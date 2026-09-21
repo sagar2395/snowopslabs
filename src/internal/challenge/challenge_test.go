@@ -293,3 +293,34 @@ func TestHistory_EmptyIsNil(t *testing.T) {
 		t.Error("expected nil history when no runs")
 	}
 }
+
+// A failed submit must not end the run. Ending it gave the learner one shot,
+// discarded the score they were working towards, and left the injected fault
+// behind with no cleanup path — `abort` refuses once nothing is active.
+func TestAttemptGradesWithoutEndingTheRun(t *testing.T) {
+	e, cDir := makeEngine(t)
+	writeChallengeYAML(t, cDir, "test-challenge", validChallengeYAML)
+	if _, err := e.Start("test-challenge", false); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	rec, err := e.Attempt(0, 1)
+	if err != nil {
+		t.Fatalf("Attempt: %v", err)
+	}
+	if rec.Score != 0 {
+		t.Errorf("zero-work attempt scored %d, want 0", rec.Score)
+	}
+
+	active, err := e.Active()
+	if err != nil || active == nil {
+		t.Fatalf("Attempt ended the run: active=%v err=%v", active, err)
+	}
+
+	hist, _ := e.History()
+	for _, h := range hist {
+		if h.Outcome == "failed" {
+			t.Error("Attempt wrote a history record; only Complete may")
+		}
+	}
+}

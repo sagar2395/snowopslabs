@@ -29,11 +29,11 @@ displayName: "CrashLoop: broken container command"
 description: "What the victim experiences, not how it's injected"
 category: workload                # workload | network | resources | storage | config
 severity: medium                  # low | medium | high
-target:
-  namespace: go-api
-  workload: go-api
+target:                           # templatable — see "Targeting a workload"
+  namespace: "{{.WorkloadNamespace}}"
+  workload: "{{.WorkloadName}}"
 prerequisites:
-  apps: [go-api]                  # gated before injection
+  apps: ["{{.WorkloadName}}"]     # the bound workload must exist; gated before injection
 detection:                        # same schema as scenario checks
   name: rollout-healthy           # PASSES when the fault is RESOLVED
   type: script                    # http | kubectl | promql | script
@@ -57,12 +57,69 @@ snippets:                         # optional: applyable diagnose/remediate manif
                 command: null
 ```
 
+### Targeting a workload
+
+`target` names what the fault breaks. The engine exports it to `inject.sh`,
+`resolve.sh` and the detection check as `TARGET_NAMESPACE` and `TARGET_WORKLOAD`,
+which every script reads instead of hardcoding a name:
+
+```sh
+NS="${TARGET_NAMESPACE:-go-api}"
+DEPLOY="${TARGET_WORKLOAD:-go-api}"
+```
+
+`DOMAIN_SUFFIX` and `MONITORING_NAMESPACE` travel with them, to all three. A
+detection check needs the suffix as much as inject and resolve do — the checks
+that matter probe the workload through its own ingress — and a script check runs
+on the checks runner, which does not inherit the executor's environment.
+
+Both fields are template-resolved. A fault whose target reads
+`{{.WorkloadNamespace}}` / `{{.WorkloadName}}` follows whatever app the lab is
+bound to, so the same fault can be injected against a built-in app or a user's
+own (see [ADR-0014](../docs/adr/0014-workload-binding-and-app-contract.md)). A
+fault that pins a literal keeps breaking exactly the workload it names — correct
+when the fault only makes sense for that one app.
+
+### Scripts, and the shared library
+
+`inject.sh`, `resolve.sh` and the detection check are executed as files, so the
+engine does not template them. They read the target from the environment:
+
+```sh
+NS="${TARGET_NAMESPACE:-go-api}"
+DEPLOY="${TARGET_WORKLOAD:-go-api}"
+```
+
+A fault's own manifests (an alert rule, a NetworkPolicy) are applied by the
+script rather than by the engine, so they carry shell-style placeholders and are
+rendered through the shared helper before `kubectl` sees them:
+
+```sh
+# shellcheck source=/dev/null
+. "$(cd "$SCRIPT_DIR/../_lib" && pwd)/render.sh"
+render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f -
+```
+
+```yaml
+expr: max(kube_pod_container_status_last_terminated_reason{namespace="${TARGET_NAMESPACE}"}) > 0
+```
+
+Directories under `incidents/` beginning with `_` are not faults — `_lib` holds
+these shared helpers.
+
+**Calibrate against the binding, not a fixed app.** A fault that hardcodes an
+absolute number is wrong for the next application: `oom-kill` derives its memory
+limit from the workload's own request rather than naming 8Mi, because a value
+that reproduces the failure for a small Go service would stop a JVM from ever
+starting.
+
 `references` and `snippets` use the same shape as scenarios (see
 [scenario schema → References and snippets](../docs/reference/scenario-schema.md#references-and-snippets)):
 a reference is `{label, url, note?}`; a snippet is `{label, description?, yaml |
-path}` with exactly one of `yaml`/`path` (a `path` is relative to the incident
-directory). Both are template-resolved and shown by `labctl incident info
-<name>`. `labctl validate` fails on a dangling snippet `path`.
+path, exercise?, apply?}` with exactly one of `yaml`/`path` (a `path` is relative
+to the incident directory). Both are template-resolved for the app the fault is
+injected into and shown by `labctl incident info <name>`, with long comment
+blocks trimmed from the body. `labctl validate` fails on a dangling snippet `path`.
 
 ### Paging (`expectAlert`, on-call drills)
 
@@ -108,12 +165,12 @@ hatch from every state a learner can leave behind, and scores the result out of
 
 | Fault | Category | Severity | What breaks |
 |-------|----------|----------|-------------|
-| `crashloop-bad-config` | workload | medium | go-api's container command is replaced with one that exits immediately — new pods crash-loop |
-| `bad-deploy-rollout` | workload | medium | go-api is "deployed" with a nonexistent image tag — rollout sticks in ImagePullBackOff |
-| `oom-kill` | resources | high | echo-server's memory limit is cut just below what it needs under load, and k6 traffic is started — the pod idles fine and is OOMKilled once requests arrive |
-| `network-blackhole` | network | high | a deny-all-ingress NetworkPolicy lands in go-api's namespace — the service goes dark through the ingress |
-| `service-selector-broken` | config | medium | go-api's Service selector stops matching its pods — endpoints empty, pods perfectly healthy (sneaky) |
-| `noisy-neighbor` | resources | low | a CPU-burning deployment lands on the cluster with big requests and no limits |
+| `crashloop-bad-config` | workload | medium | the workload's container command is replaced with one that exits immediately — new pods crash-loop |
+| `bad-deploy-rollout` | workload | medium | the workload is "deployed" with a tag that was never pushed — rollout sticks in ImagePullBackOff |
+| `oom-kill` | resources | high | the workload's memory limit is cut just below what it needs under load, and k6 traffic is started — the pod idles fine and is OOMKilled once requests arrive |
+| `network-blackhole` | network | high | a deny-all-ingress NetworkPolicy lands in the workload's namespace — the service goes dark through the ingress |
+| `service-selector-broken` | config | medium | the workload's Service selector stops matching its pods — endpoints empty, pods perfectly healthy (sneaky) |
+| `noisy-neighbor` | resources | low | a batch tenant lands on the workload's node with big CPU requests and no limits, and takes the machine |
 
 `dns-blackhole` and `pvc-full` were considered and dropped: DNS exec probes
 and PVC behaviour vary too much with the local storage and CNI setup for

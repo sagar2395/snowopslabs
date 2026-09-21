@@ -1,104 +1,114 @@
-# Canary workload: two go-api versions behind one Service, split 90/10 by an
-# Istio VirtualService, with STRICT mTLS enforced on the canary pods.
-# Both deployments use the existing go-api image; the "version" label is what
-# the mesh splits on (a realistic canary shape without needing two real builds).
+# The canary workloads labctl stages: two versions of {{.WorkloadName}} behind one
+# Service, plus the DestinationRule that names the subsets a route can target.
+#
+# Both Deployments run the same image; APP_VERSION is what gives them distinct
+# identities, so /version reports which subset served a request and the split is
+# observable without building two images. The routing itself — the weighted
+# VirtualService and the mTLS policy — is the learner's work, not staged here.
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: go-api-v1
-  namespace: go-api
+  name: "{{.WorkloadName}}-v1"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
-    app: go-api-canary
+    app: "{{.WorkloadName}}-canary"
     version: v1
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: go-api-canary
+      app: "{{.WorkloadName}}-canary"
       version: v1
   template:
     metadata:
       labels:
-        app: go-api-canary
+        app: "{{.WorkloadName}}-canary"
         version: v1
     spec:
       containers:
-        - name: go-api
-          image: go-api:latest
+        - name: "{{.WorkloadName}}"
+          image: "{{.WorkloadName}}:latest"
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8080
+            - containerPort: {{.WorkloadPort}}
           env:
             - name: PORT
-              value: "8080"
+              value: "{{.WorkloadPort}}"
+            - name: APP_VERSION
+              value: v1
           resources:
             requests:
               cpu: 25m
               memory: 32Mi
             limits:
               cpu: 100m
-              memory: 64Mi
+              memory: 128Mi
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: go-api-v2
-  namespace: go-api
+  name: "{{.WorkloadName}}-v2"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
-    app: go-api-canary
+    app: "{{.WorkloadName}}-canary"
     version: v2
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: go-api-canary
+      app: "{{.WorkloadName}}-canary"
       version: v2
   template:
     metadata:
       labels:
-        app: go-api-canary
+        app: "{{.WorkloadName}}-canary"
         version: v2
     spec:
       containers:
-        - name: go-api
-          image: go-api:latest
+        - name: "{{.WorkloadName}}"
+          image: "{{.WorkloadName}}:latest"
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8080
+            - containerPort: {{.WorkloadPort}}
           env:
             - name: PORT
-              value: "8080"
+              value: "{{.WorkloadPort}}"
+            - name: APP_VERSION
+              value: v2
           resources:
             requests:
               cpu: 25m
               memory: 32Mi
             limits:
               cpu: 100m
-              memory: 64Mi
+              memory: 128Mi
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: go-api-canary
-  namespace: go-api
+  name: "{{.WorkloadName}}-canary"
+  namespace: "{{.WorkloadNamespace}}"
   labels:
-    app: go-api-canary
+    app: "{{.WorkloadName}}-canary"
 spec:
   selector:
-    app: go-api-canary
+    app: "{{.WorkloadName}}-canary"
   ports:
     - name: http
       port: 80
-      targetPort: 8080
+      targetPort: {{.WorkloadPort}}
 ---
+# Subsets only name the versions; they carry no routing decision of their own.
+# Without a VirtualService selecting them, the Service load-balances across both
+# Deployments as if the mesh were not there.
 apiVersion: networking.istio.io/v1beta1
 kind: DestinationRule
 metadata:
-  name: go-api-canary
-  namespace: go-api
+  name: "{{.WorkloadName}}-canary"
+  namespace: "{{.WorkloadNamespace}}"
 spec:
-  host: go-api-canary.go-api.svc.cluster.local
+  host: "{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
   subsets:
     - name: v1
       labels:
@@ -106,34 +116,3 @@ spec:
     - name: v2
       labels:
         version: v2
----
-apiVersion: networking.istio.io/v1beta1
-kind: VirtualService
-metadata:
-  name: go-api-canary
-  namespace: go-api
-spec:
-  hosts:
-    - go-api-canary.go-api.svc.cluster.local
-  http:
-    - route:
-        - destination:
-            host: go-api-canary.go-api.svc.cluster.local
-            subset: v1
-          weight: 90
-        - destination:
-            host: go-api-canary.go-api.svc.cluster.local
-            subset: v2
-          weight: 10
----
-apiVersion: security.istio.io/v1beta1
-kind: PeerAuthentication
-metadata:
-  name: go-api-mtls
-  namespace: go-api
-spec:
-  selector:
-    matchLabels:
-      app: go-api-canary
-  mtls:
-    mode: STRICT

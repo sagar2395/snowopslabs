@@ -9,6 +9,7 @@ package scenario
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,7 +64,7 @@ func TestRepoScenarios_AllLoadAndValidate(t *testing.T) {
 		loaded[filepath.Base(s.Dir)] = true
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), "_") {
 			continue
 		}
 		if !loaded[e.Name()] {

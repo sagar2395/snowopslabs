@@ -18,13 +18,12 @@ set -euo pipefail
 # Env:
 #   BACKUP_DIR  where archives live (default: .labctl/backups)
 
-if [ $# -lt 1 ]; then
-  echo "Usage: restore.sh <namespace> [archive.json]" >&2
-  exit 1
-fi
-NS="$1"
-BACKUP_DIR="${BACKUP_DIR:-.labctl/backups}"
-ARCHIVE="${2:-${BACKUP_DIR}/${NS}-latest.json}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=scripts/_backup_lib.sh
+. "${SCRIPT_DIR}/_backup_lib.sh"
+
+NS="$(backup_ns "${1:-}")"
+ARCHIVE="${2:-$(archive_path "$NS")}"
 
 if [ ! -f "$ARCHIVE" ]; then
   echo "ERROR: backup archive not found: ${ARCHIVE}" >&2

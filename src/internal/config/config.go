@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"github.com/spf13/viper"
+
+	"github.com/sagar2395/snowopslabs/internal/workload"
 )
 
 // Config holds the resolved project configuration.
@@ -71,6 +73,15 @@ type AppConfig struct {
 	HelmRelease    string
 	HelmValues     string
 	Namespace      string
+	// Contract is the runtime interface the app declares — the port, probe paths
+	// and capabilities a scenario binds to instead of naming the app (ADR-0014).
+	Contract workload.Contract
+}
+
+// Workload is the binding this app resolves to, taking its port and metric from
+// the app's own contract rather than a compiled-in guess.
+func (a *AppConfig) Workload() workload.Workload {
+	return a.Contract.Workload(a.AppName, a.Namespace)
 }
 
 // Load reads the project configuration from .env and the profile's runtime.env.
@@ -137,7 +148,7 @@ func Load(projectRoot string) (*Config, error) {
 	cfg.AutoscalingProvider = resolveEnv(fileVals, "AUTOSCALING_PROVIDER", "")
 	cfg.CostProvider = resolveEnv(fileVals, "COST_PROVIDER", "")
 
-	cfg.AppName = resolveEnv(fileVals, "APP_NAME", "go-api")
+	cfg.AppName = resolveEnv(fileVals, "APP_NAME", workload.DefaultApp)
 	cfg.HelmReleaseName = resolveEnv(fileVals, "HELM_RELEASE_NAME", "go-api")
 	cfg.HelmValues = resolveEnv(fileVals, "HELM_VALUES", "values-dev.yaml")
 
@@ -174,6 +185,18 @@ func LoadAppConfig(projectRoot, appName string) (*AppConfig, error) {
 		return nil, fmt.Errorf("reading app config: %w", err)
 	}
 
+	contractVals := make(map[string]string, 6)
+	for _, k := range []string{
+		workload.KeyPort, workload.KeyHealthPath, workload.KeyReadyPath,
+		workload.KeyMetricsPath, workload.KeyRequestMetric, workload.KeyCapabilities,
+	} {
+		contractVals[k] = v.GetString(k)
+	}
+	contract, err := workload.ParseContract(contractVals)
+	if err != nil {
+		return nil, fmt.Errorf("app %q: %s: %w", appName, appEnv, err)
+	}
+
 	return &AppConfig{
 		AppName:        v.GetString("APP_NAME"),
 		BuildStrategy:  v.GetString("BUILD_STRATEGY"),
@@ -181,6 +204,7 @@ func LoadAppConfig(projectRoot, appName string) (*AppConfig, error) {
 		HelmRelease:    v.GetString("HELM_RELEASE_NAME"),
 		HelmValues:     v.GetString("HELM_VALUES"),
 		Namespace:      v.GetString("NAMESPACE"),
+		Contract:       contract,
 	}, nil
 }
 

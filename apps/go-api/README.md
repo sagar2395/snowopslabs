@@ -76,8 +76,10 @@ curl http://localhost:8080/metrics
 ```
 
 Available metrics:
-- `http_requests_total` - Total HTTP requests counter
-- `http_request_duration_seconds` - Request latency histogram
+- `http_server_request_duration_seconds` - Request latency histogram, OpenTelemetry
+  semantic conventions. Its `_count` series is the request count: semconv defines
+  no separate counter. Labels: `http_request_method`, `http_route`,
+  `http_response_status_code`, `app`.
 
 ## Graceful Shutdown
 

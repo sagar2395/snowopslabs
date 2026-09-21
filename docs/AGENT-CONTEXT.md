@@ -44,6 +44,7 @@ contradict themselves, or you are editing the code in question.
 | Understand the run engine | [architecture §3](architecture/ARCHITECTURE.md), [R01](runbooks/R01-run-engine-and-cancellation.md) | `src/internal/run/` |
 | Write tests | [TESTING.md](TESTING.md) | — |
 | Ship a release | [RELEASING.md](../RELEASING.md) | — |
+| Pick up deferred work | [backlog](backlog.md) | — |
 
 Everything else: [docs/README index in the root README](../README.md#documentation).
 
@@ -73,6 +74,10 @@ These hold everywhere. Breaking one is a review rejection, not a discussion.
   timeout and a lock key. Never `exec.Command(...).Run()`.
 - Every operation is idempotent. `helm upgrade --install`, `kubectl apply`;
   interrupting and re-running must converge.
+- One gosec policy, in `src/.golangci.yml`. `make sec` runs gosec through
+  golangci-lint so it reads that file and the per-site `//nolint:gosec`
+  justifications. Suppress a finding at its call site with a reason, or exclude
+  the rule there with one — never by running the tool unconfigured.
 
 **Content**
 

@@ -50,19 +50,21 @@ func TestInstrument_MetersEveryRoute(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			httpRequestsTotal.Reset()
+			httpRequestDuration.Reset()
 			h := instrument(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 			}))
 			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, tt.path, nil))
 
-			// Assert on the actual exposition Prometheus scrapes.
-			want := `http_requests_total{app="` + serviceName + `",code="` + strconv.Itoa(tt.status) +
-				`",method="GET",path="` + tt.wantRoute + `"} ` + strconv.Itoa(tt.wantCount)
+			// Assert on the actual exposition Prometheus scrapes. Semconv has no
+			// request counter, so the histogram's _count series IS the count.
+			want := `http_server_request_duration_seconds_count{app="` + serviceName +
+				`",http_request_method="GET",http_response_status_code="` + strconv.Itoa(tt.status) +
+				`",http_route="` + tt.wantRoute + `"} ` + strconv.Itoa(tt.wantCount)
 			body := scrapeMetrics(t)
 			if tt.wantCount == 0 {
-				if strings.Contains(body, `path="`+tt.wantRoute+`"`) {
-					t.Errorf("expected no series for path=%q, got:\n%s", tt.wantRoute, body)
+				if strings.Contains(body, `http_route="`+tt.wantRoute+`"`) {
+					t.Errorf("expected no series for http_route=%q, got:\n%s", tt.wantRoute, body)
 				}
 				return
 			}

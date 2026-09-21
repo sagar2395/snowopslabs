@@ -18,7 +18,7 @@ import (
 // Options are the user-tunable knobs for a traffic run.
 type Options struct {
 	Profile  string // profile name (a .js file under services/traffic/profiles/)
-	Target   string // URL to load; empty keeps the script default (go-api in-cluster)
+	Target   string // URL to load; empty keeps the script's own default
 	RPS      int    // requests per second (baseline for spike)
 	Duration string // k6/Go duration syntax (e.g. 10m, 1h30m); empty keeps profile default
 	Method   string // HTTP method for profiles that honor it (write/errors); empty keeps profile default

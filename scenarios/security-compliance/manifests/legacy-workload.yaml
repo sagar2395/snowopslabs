@@ -14,7 +14,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: legacy-reporter
-  namespace: go-api
+  namespace: "{{.WorkloadNamespace}}"
   labels:
     app: legacy-reporter
     compliance.snowops.net/exempt: vendor-image
@@ -30,14 +30,14 @@ spec:
         compliance.snowops.net/exempt: vendor-image
       annotations:
         # Not scraped: this stands in for a third-party workload, and the
-        # go-api scrape checks must not start grading it.
+        # {{.WorkloadName}} scrape checks must not start grading it.
         prometheus.io/scrape: "false"
     spec:
       containers:
         # Deliberately declares no securityContext and no resource limits —
         # this is the violation the drill is about.
         - name: reporter
-          image: go-api:v1.2.0
+          image: "{{.WorkloadName}}:v1.2.0"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080

@@ -13,12 +13,15 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"text/template"
 	"time"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/sagar2395/snowopslabs/internal/config"
 	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/sagar2395/snowopslabs/internal/snippet"
+	"github.com/sagar2395/snowopslabs/internal/tmpl"
+	"github.com/sagar2395/snowopslabs/internal/workload"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 	"github.com/sagar2395/snowopslabs/pkg/scenario"
 )
@@ -133,6 +136,11 @@ type Active struct {
 	// FirstCheckedAt is when `incident status` first ran — the proxy for
 	// time-to-detect in the run record.
 	FirstCheckedAt time.Time `yaml:"firstCheckedAt,omitempty" json:"firstCheckedAt,omitempty"`
+	// App is the workload the fault was injected against. Status and Resolve run
+	// in a later process than Inject, so the binding cannot come from ambient
+	// config: a fault injected into java-api was otherwise detected and resolved
+	// against go-api's namespace, which reads as "already fixed".
+	App string `yaml:"app,omitempty" json:"app,omitempty"`
 }
 
 // Engine discovers faults and manages the (single) active incident.
@@ -142,19 +150,31 @@ type Engine struct {
 	// AlertmanagerURL is where Status queries fired alerts.
 	// Callers set it from ALERTMANAGER_URL or the ingress default.
 	AlertmanagerURL string
-	faults          map[string]*Fault
-	loadErrors      map[string]error
-	stateDir        string
+	// MonitoringNamespace is where the monitoring stack lives. Faults may name it
+	// as {{.MonitoringNamespace}}; before ADR-0014 the incident engine did not
+	// carry it and such a reference rendered as "<no value>".
+	MonitoringNamespace string
+	// Workload is the app faults are injected against. It seeds the target a
+	// fault does not pin itself, so one fault can break go-api or a user's app.
+	Workload   workload.Workload
+	faults     map[string]*Fault
+	loadErrors map[string]error
+	stateDir   string
+	// injectedAt is when the incident being graded was injected, set only while
+	// Status runs; {{.SinceActivation}} is measured from it.
+	injectedAt time.Time
 }
 
 // NewEngine scans incidents/ under the project root.
 func NewEngine(projectRoot, domainSuffix string) *Engine {
 	e := &Engine{
-		ProjectRoot:  projectRoot,
-		DomainSuffix: domainSuffix,
-		faults:       make(map[string]*Fault),
-		loadErrors:   make(map[string]error),
-		stateDir:     filepath.Join(projectRoot, ".labctl", "incidents"),
+		ProjectRoot:         projectRoot,
+		DomainSuffix:        domainSuffix,
+		MonitoringNamespace: "monitoring",
+		Workload:            workload.Default(workload.DefaultApp),
+		faults:              make(map[string]*Fault),
+		loadErrors:          make(map[string]error),
+		stateDir:            filepath.Join(projectRoot, ".labctl", "incidents"),
 	}
 	e.scan()
 	return e
@@ -167,7 +187,10 @@ func (e *Engine) scan() {
 		return
 	}
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		// A leading underscore marks a directory that is not content — shared
+		// script libraries live alongside the faults, as they do under platform/
+		// and apps/. Without this they are reported as faults missing a fault.yaml.
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), "_") {
 			continue
 		}
 		faultDir := filepath.Join(dir, entry.Name())
@@ -217,10 +240,15 @@ func loadFault(dir string) (*Fault, error) {
 }
 
 // List returns all faults, sorted by name.
-func (e *Engine) List() []*Fault {
-	var out []*Fault
+func (e *Engine) List() []*Fault { return e.ListBound(e.Workload) }
+
+// ListBound is List against an explicit binding. Read paths use it so describing
+// a fault bound to another app costs nothing — no engine mutation, and no lock
+// shared with an injection that runs for minutes.
+func (e *Engine) ListBound(bound workload.Workload) []*Fault {
+	out := make([]*Fault, 0, len(e.faults))
 	for _, f := range e.faults {
-		out = append(out, f)
+		out = append(out, e.resolvedFor(f, bound))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
@@ -232,7 +260,123 @@ func (e *Engine) Get(name string) (*Fault, error) {
 	if !ok {
 		return nil, fmt.Errorf("fault %q not found (see 'labctl incident list')", name)
 	}
-	return f, nil
+	return e.resolved(f), nil
+}
+
+// resolved copies a fault with its reader-facing fields expanded. The workload
+// binding is chosen after the faults are scanned, so this cannot happen at load
+// time — and without it the brief a learner is handed on inject reads
+// "Latency on {{.WorkloadName}} crept up", naming no app they can go and look at.
+// resolved returns a copy of the fault with every reader-facing field expanded
+// against the current binding.
+//
+// Everything the UI and the CLI display goes through here. The set has to be
+// complete rather than "the fields we noticed": snippets and prerequisites were
+// left raw and shipped a literal "{{.WorkloadName}}" into the fault detail a
+// learner reads first.
+func (e *Engine) resolved(f *Fault) *Fault { return e.resolvedFor(f, e.Workload) }
+
+// resolvedFor is resolved() against an explicit binding, for read paths that
+// must describe a fault bound to some app other than the engine's own without
+// mutating the engine — the engine is shared, and a read that rebinds it either
+// races other requests or has to lock them out for the length of an injection.
+func (e *Engine) resolvedFor(f *Fault, bound workload.Workload) *Fault {
+	resolveTemplate := func(in string) string { return tmpl.Expand(in, e.templateContextFor(bound), nil) }
+	c := *f
+	c.DisplayName = resolveTemplate(f.DisplayName)
+	c.Description = resolveTemplate(f.Description)
+	c.Target = Target{
+		Namespace: resolveTemplate(f.Target.Namespace),
+		Workload:  resolveTemplate(f.Target.Workload),
+	}
+	c.Prerequisites.Apps = resolveEach(f.Prerequisites.Apps, resolveTemplate)
+	if len(f.References) > 0 {
+		refs := make([]scenario.Reference, len(f.References))
+		for i, r := range f.References {
+			r.Label = resolveTemplate(r.Label)
+			r.URL = resolveTemplate(r.URL)
+			r.Note = resolveTemplate(r.Note)
+			refs[i] = r
+		}
+		c.References = refs
+	}
+	if len(f.Snippets) > 0 {
+		snips := make([]scenario.Snippet, len(f.Snippets))
+		for i, sn := range f.Snippets {
+			// The UI has no access to the fault directory, so the body travels
+			// with the snippet. A file that cannot be read renders without one.
+			snips[i], _ = snippet.Resolve(f.Dir, sn, resolveTemplate)
+		}
+		c.Snippets = snips
+	}
+	return &c
+}
+
+// resolveEach expands a list, preserving nil so an absent block stays absent.
+func resolveEach(in []string, resolve func(string) string) []string {
+	if in == nil {
+		return nil
+	}
+	out := make([]string, len(in))
+	for i, v := range in {
+		out[i] = resolve(v)
+	}
+	return out
+}
+
+// PinnedApps returns the app prerequisites the named fault declares literally —
+// the ones a user genuinely has to have. An entry written as {{.WorkloadName}}
+// is excluded: it is not a requirement but the binding itself.
+//
+// It reads the fault as authored. Every other reader gets faults through
+// resolved(), where {{.WorkloadName}} has already become "go-api" and the two
+// kinds of entry are indistinguishable.
+func (e *Engine) PinnedApps(name string) []string {
+	out := []string{}
+	f, ok := e.faults[name]
+	if !ok {
+		return out
+	}
+	for _, declared := range f.Prerequisites.Apps {
+		if declared != "" && !tmpl.IsTemplated(declared) {
+			out = append(out, declared)
+		}
+	}
+	return out
+}
+
+// BindTo binds the engine to an app by name, returning the function that
+// restores the previous binding. Faults inherit the app's namespace, port and
+// metric, so this is the one place a name becomes a binding.
+func (e *Engine) BindTo(app string) (func(), error) {
+	prev := e.Workload
+	restore := func() { e.Workload = prev }
+	if app == "" || app == e.Workload.Name {
+		return restore, nil
+	}
+	cfg, err := config.LoadAppConfig(e.ProjectRoot, app)
+	if err != nil {
+		return restore, fmt.Errorf("app %s: %w", app, err)
+	}
+	e.Workload = cfg.Workload()
+	return restore, nil
+}
+
+// BindToActive binds the engine to the app the active incident was injected
+// against, so status, hints and resolve act on the workload that was broken
+// rather than on whatever the ambient config names. It returns a no-op restore
+// when nothing is active.
+func (e *Engine) BindToActive() func() {
+	a, err := e.Active()
+	if err != nil || a == nil {
+		return func() {}
+	}
+	return e.bindToRecorded(a)
+}
+
+func (e *Engine) bindToRecorded(a *Active) func() {
+	restore, _ := e.BindTo(a.App)
+	return restore
 }
 
 // LoadErrors returns faults that failed to load, keyed by directory name.
@@ -301,7 +445,7 @@ func (e *Engine) MarkInjected(name string, silent bool) error {
 	if _, err := e.Get(name); err != nil {
 		return err
 	}
-	return e.saveActive(&Active{Fault: name, InjectedAt: time.Now().UTC(), Silent: silent})
+	return e.saveActive(&Active{Fault: name, InjectedAt: time.Now().UTC(), Silent: silent, App: e.Workload.Name})
 }
 
 // RecordScriptResolved scores and clears the active incident after resolve.sh
@@ -324,7 +468,10 @@ func (e *Engine) RecordScriptResolved(name, user string) {
 // preflight checks the fault's prerequisites before injection.
 func (e *Engine) preflight(f *Fault) error {
 	var errs []string
-	for _, app := range f.Prerequisites.Apps {
+	for _, declared := range f.Prerequisites.Apps {
+		// Resolved, so a fault that follows the binding states its app
+		// prerequisite as {{.WorkloadName}} rather than pinning one.
+		app := e.resolveTemplate(declared)
 		appEnv := filepath.Join(e.ProjectRoot, "apps", app, "app.env")
 		if _, err := os.Stat(appEnv); err != nil {
 			errs = append(errs, fmt.Sprintf("prerequisite app %q not found (expected %s)", app, appEnv))
@@ -336,16 +483,40 @@ func (e *Engine) preflight(f *Fault) error {
 	return nil
 }
 
-// targetEnv exports the fault's target to its scripts.
-func (f *Fault) targetEnv() map[string]string {
+// ResolvedTarget is the fault's target with its templates expanded against the
+// current workload binding. A fault that pins a literal namespace keeps breaking
+// that one; a fault whose target reads {{.WorkloadNamespace}} follows whatever
+// app the lab is bound to, which is what lets one fault be injected against a
+// user's own application.
+//
+// Every path that reaches a fault script must go through this — the scripts, the
+// durable service, and anything that displays the target — or one of them sends
+// a raw "{{.WorkloadNamespace}}" to kubectl.
+func (e *Engine) ResolvedTarget(f *Fault) Target {
+	return Target{
+		Namespace: e.resolveTemplate(f.Target.Namespace),
+		Workload:  e.resolveTemplate(f.Target.Workload),
+	}
+}
+
+// targetEnv exports the fault's resolved target to its scripts.
+//
+// The domain suffix and monitoring namespace travel with it because a DETECTION
+// script needs them as much as inject and resolve do: the checks that matter
+// probe the workload through its ingress, and a script check runs on the
+// checks.Runner, which does not inherit the executor's environment.
+func (e *Engine) targetEnv(f *Fault) map[string]string {
+	t := e.ResolvedTarget(f)
 	return map[string]string{
-		"TARGET_NAMESPACE": f.Target.Namespace,
-		"TARGET_WORKLOAD":  f.Target.Workload,
+		"TARGET_NAMESPACE":     t.Namespace,
+		"TARGET_WORKLOAD":      t.Workload,
+		"DOMAIN_SUFFIX":        e.DomainSuffix,
+		"MONITORING_NAMESPACE": e.MonitoringNamespace,
 	}
 }
 
 func (e *Engine) runFaultScript(f *Fault, script, label string, exec *executor.Executor) error {
-	for k, v := range f.targetEnv() {
+	for k, v := range e.targetEnv(f) {
 		exec.SetEnv(k, v)
 	}
 	rel, err := filepath.Rel(e.ProjectRoot, filepath.Join(f.Dir, script))
@@ -373,7 +544,7 @@ func (e *Engine) Inject(name string, exec *executor.Executor, force, silent bool
 	if err := e.runFaultScript(f, "inject.sh", "Inject incident: "+f.Name, exec); err != nil {
 		return f, fmt.Errorf("injecting %s: %w", f.Name, err)
 	}
-	if err := e.saveActive(&Active{Fault: f.Name, InjectedAt: time.Now().UTC(), Silent: silent}); err != nil {
+	if err := e.saveActive(&Active{Fault: f.Name, InjectedAt: time.Now().UTC(), Silent: silent, App: e.Workload.Name}); err != nil {
 		return f, fmt.Errorf("recording active incident: %w", err)
 	}
 	return f, nil
@@ -443,6 +614,12 @@ func (e *Engine) Status(ctx context.Context, runner *checks.Runner, user string)
 	if active == nil {
 		return nil, ErrNoActive
 	}
+	// Detect against the workload the fault was injected into, not the ambient
+	// binding — a check pointed at the wrong namespace passes, and a passing
+	// check clears the incident and scores it as solved.
+	defer e.bindToRecorded(active)()
+	e.injectedAt = active.InjectedAt
+	defer func() { e.injectedAt = time.Time{} }()
 	f, err := e.Get(active.Fault)
 	if err != nil {
 		return nil, fmt.Errorf("active incident %q no longer exists in the library: %w", active.Fault, err)
@@ -457,7 +634,7 @@ func (e *Engine) Status(ctx context.Context, runner *checks.Runner, user string)
 	}
 
 	runner.ScriptDir = f.Dir
-	for k, v := range f.targetEnv() {
+	for k, v := range e.targetEnv(f) {
 		runner.Env = append(runner.Env, k+"="+v)
 	}
 	result := runner.Run(ctx, e.resolveCheck(f.Detection))
@@ -486,6 +663,9 @@ func (e *Engine) Resolve(name string, exec *executor.Executor, user string) (*Fa
 			return nil, fmt.Errorf("%w (pass a fault name to force-resolve anyway)", ErrNoActive)
 		}
 		name = active.Fault
+	}
+	if active, _ := e.Active(); active != nil && active.Fault == name {
+		defer e.bindToRecorded(active)()
 	}
 	f, err := e.Get(name)
 	if err != nil {
@@ -529,19 +709,43 @@ func (e *Engine) ResolveTemplate(input string) string {
 }
 
 func (e *Engine) resolveTemplate(input string) string {
-	if input == "" || !strings.Contains(input, "{{") {
-		return input
+	return tmpl.Expand(input, e.templateContext(), nil)
+}
+
+// templateContext is the engine's binding of the shared variable set, so a fault
+// may reference exactly the variables a scenario may — and exactly the ones the
+// catalog validator accepts.
+func (e *Engine) templateContext() tmpl.Context {
+	return e.templateContextFor(e.Workload)
+}
+
+// templateContextFor is the same context bound to an explicit workload, for the
+// read paths that describe a fault against an app other than the one bound.
+func (e *Engine) templateContextFor(bound workload.Workload) tmpl.Context {
+	w := bound.WithDefaults()
+	return tmpl.Context{
+		DomainSuffix:        e.DomainSuffix,
+		MonitoringNamespace: e.MonitoringNamespace,
+		ProjectRoot:         e.ProjectRoot,
+		IngressClass:        "traefik",
+		WorkloadName:        w.Name,
+		WorkloadNamespace:   w.Namespace,
+		WorkloadService:     w.Service(),
+		WorkloadPort:        w.Port,
+		WorkloadMetric:      w.Metric,
+		SinceActivation:     tmpl.Since(e.injectedAt, time.Now()),
 	}
-	tmpl, err := template.New("fault").Parse(input)
-	if err != nil {
-		return input
-	}
-	var buf strings.Builder
-	if err := tmpl.Execute(&buf, map[string]string{
-		"DomainSuffix": e.DomainSuffix,
-		"ProjectRoot":  e.ProjectRoot,
-	}); err != nil {
-		return input
-	}
-	return buf.String()
+}
+
+// Clone returns a shallow copy that shares the scanned faults but owns its own
+// binding.
+//
+// The API server holds one engine and serves many requests from it. An injection
+// that rebound the shared engine would be seen by every concurrent read — so a
+// caller that needs a different binding takes a clone instead. The faults map and
+// stateDir are shared deliberately: content is read-only after scan, and active
+// state lives on disk.
+func (e *Engine) Clone() *Engine {
+	c := *e
+	return &c
 }

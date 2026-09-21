@@ -1,77 +1,171 @@
 {
-  "annotations": {
-    "list": []
-  },
-  "editable": true,
-  "fiscalYearStartMonth": 0,
-  "graphTooltip": 1,
-  "links": [],
-  "panels": [
-    {
-      "title": "Log Volume by Namespace",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
-      "datasource": { "type": "loki", "uid": "loki" },
-      "targets": [
-        {
-          "expr": "sum by (namespace) (count_over_time({namespace=~\".+\"}[1m]))",
-          "legendFormat": "{{ namespace }}"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "drawStyle": "bars", "lineWidth": 1, "fillOpacity": 50, "stacking": { "mode": "normal" } },
-          "unit": "short"
-        }
-      }
+    "annotations": {
+        "list": []
     },
-    {
-      "title": "go-api Logs",
-      "type": "logs",
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 8 },
-      "datasource": { "type": "loki", "uid": "loki" },
-      "targets": [
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 1,
+    "links": [],
+    "panels": [
         {
-          "expr": "{namespace=\"go-api\"}",
-          "refId": "A"
+            "title": "Log Volume by Namespace",
+            "type": "timeseries",
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "datasource": {
+                "type": "loki",
+                "uid": "loki"
+            },
+            "targets": [
+                {
+                    "expr": "sum by (namespace) (count_over_time({namespace=~\".+\"}[1m]))",
+                    "legendFormat": "{{ namespace }}"
+                }
+            ],
+            "fieldConfig": {
+                "defaults": {
+                    "custom": {
+                        "drawStyle": "bars",
+                        "lineWidth": 1,
+                        "fillOpacity": 50,
+                        "stacking": {
+                            "mode": "normal"
+                        }
+                    },
+                    "unit": "short"
+                }
+            }
+        },
+        {
+            "title": "$app Logs",
+            "type": "logs",
+            "gridPos": {
+                "h": 12,
+                "w": 24,
+                "x": 0,
+                "y": 8
+            },
+            "datasource": {
+                "type": "loki",
+                "uid": "loki"
+            },
+            "targets": [
+                {
+                    "expr": "{namespace=\"$namespace\"}",
+                    "refId": "A"
+                }
+            ],
+            "options": {
+                "showTime": true,
+                "showLabels": true,
+                "showCommonLabels": false,
+                "wrapLogMessage": true,
+                "prettifyLogMessage": false,
+                "enableLogDetails": true,
+                "sortOrder": "Descending"
+            }
+        },
+        {
+            "title": "Error Logs (all namespaces)",
+            "type": "logs",
+            "gridPos": {
+                "h": 10,
+                "w": 24,
+                "x": 0,
+                "y": 20
+            },
+            "datasource": {
+                "type": "loki",
+                "uid": "loki"
+            },
+            "targets": [
+                {
+                    "expr": "{namespace=~\".+\"} |~ \"(?i)(error|err|panic|fatal)\"",
+                    "refId": "A"
+                }
+            ],
+            "options": {
+                "showTime": true,
+                "showLabels": true,
+                "wrapLogMessage": true,
+                "enableLogDetails": true,
+                "sortOrder": "Descending"
+            }
         }
-      ],
-      "options": {
-        "showTime": true,
-        "showLabels": true,
-        "showCommonLabels": false,
-        "wrapLogMessage": true,
-        "prettifyLogMessage": false,
-        "enableLogDetails": true,
-        "sortOrder": "Descending"
-      }
+    ],
+    "schemaVersion": 39,
+    "tags": [
+        "logs",
+        "loki",
+        "scenario"
+    ],
+    "templating": {
+        "list": [
+            {
+                "name": "app",
+                "label": "App",
+                "type": "query",
+                "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                },
+                "description": "The workload these panels show. Defaults to the app this scenario was activated for.",
+                "query": {
+                    "query": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+                    "refId": "app",
+                    "qryType": 3
+                },
+                "definition": "query_result(count by (app) ({{.WorkloadMetric}}_count) or label_replace(vector(1), \"app\", \"{{.WorkloadName}}\", \"\", \"\"))",
+                "regex": "/app=\"([^\"]+)\"/",
+                "refresh": 1,
+                "includeAll": false,
+                "multi": false,
+                "sort": 1,
+                "current": {
+                    "selected": true,
+                    "text": "{{.WorkloadName}}",
+                    "value": "{{.WorkloadName}}"
+                },
+                "options": []
+            },
+            {
+                "name": "namespace",
+                "label": "Namespace",
+                "type": "query",
+                "datasource": {
+                    "type": "prometheus",
+                    "uid": "prometheus"
+                },
+                "description": "Where the selected app runs.",
+                "query": {
+                    "query": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+                    "refId": "namespace",
+                    "qryType": 1
+                },
+                "definition": "label_values(kube_deployment_spec_replicas{deployment=\"$app\"}, namespace)",
+                "refresh": 1,
+                "includeAll": false,
+                "multi": false,
+                "sort": 0,
+                "current": {
+                    "selected": true,
+                    "text": "{{.WorkloadNamespace}}",
+                    "value": "{{.WorkloadNamespace}}"
+                },
+                "options": []
+            }
+        ]
     },
-    {
-      "title": "Error Logs (all namespaces)",
-      "type": "logs",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 20 },
-      "datasource": { "type": "loki", "uid": "loki" },
-      "targets": [
-        {
-          "expr": "{namespace=~\".+\"} |~ \"(?i)(error|err|panic|fatal)\"",
-          "refId": "A"
-        }
-      ],
-      "options": {
-        "showTime": true,
-        "showLabels": true,
-        "wrapLogMessage": true,
-        "enableLogDetails": true,
-        "sortOrder": "Descending"
-      }
-    }
-  ],
-  "schemaVersion": 39,
-  "tags": ["logs", "loki", "scenario"],
-  "templating": { "list": [] },
-  "time": { "from": "now-1h", "to": "now" },
-  "timepicker": {},
-  "timezone": "browser",
-  "title": "Log Explorer",
-  "uid": "scenario-log-explorer"
+    "time": {
+        "from": "now-1h",
+        "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "Log Explorer",
+    "uid": "scenario-log-explorer"
 }

@@ -31,7 +31,7 @@ description: no components, no prerequisites
 category: testing
 `)
 	eng := NewEngine(root, "k3d.local", "k3d", "monitoring")
-	if err := eng.markActive("force-test"); err != nil {
+	if err := eng.markActive("force-test", nil); err != nil {
 		t.Fatalf("markActive: %v", err)
 	}
 

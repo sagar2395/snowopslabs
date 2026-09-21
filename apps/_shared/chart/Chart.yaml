@@ -1,0 +1,9 @@
+apiVersion: v2
+name: snowops-workload
+description: |
+  Generic chart for an application brought to SnowOps Labs as a pre-built image.
+  Every value it needs comes from the app's declared workload contract, so an app
+  with no chart of its own is still deployable and still honours the contract a
+  scenario binds to.
+type: application
+version: 0.1.0

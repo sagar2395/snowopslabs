@@ -15,11 +15,15 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/runtime"
 	"github.com/sagar2395/snowopslabs/internal/scenario"
 	"github.com/sagar2395/snowopslabs/internal/services"
+	"github.com/sagar2395/snowopslabs/internal/workload"
 )
 
 var (
 	projectDir string
 	verbose    bool
+	// appOverride binds scenarios and faults to a different application for one
+	// command, without editing .env. Empty means "use APP_NAME".
+	appOverride string
 
 	cfg    *config.Config
 	exec   *executor.Executor
@@ -82,13 +86,34 @@ var rootCmd = &cobra.Command{
 		exec.SetEnv("PROFILE", cfg.Profile)
 		exec.SetEnv("MONITORING_NAMESPACE", cfg.MonitoringNamespace)
 		reg = platform.NewRegistryWithNamespace(cfg.ProjectRoot, cfg.MonitoringNamespace)
-		scenes = scenario.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix, cfg.Profile)
-		scenes.MonitoringNamespace = cfg.MonitoringNamespace
-		scenes.IngressClass = cfg.IngressClass
-		incEng = incident.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix)
-		incEng.AlertmanagerURL = os.Getenv("ALERTMANAGER_URL")
-		if incEng.AlertmanagerURL == "" {
-			incEng.AlertmanagerURL = "http://alertmanager." + cfg.DomainSuffix
+		// The workload binding both engines resolve {{.Workload*}} against.
+		// APP_NAME selects it, so a lab can run its scenarios and faults against
+		// a different application without editing content (ADR-0014). The port
+		// and metric come from that app's declared contract, not a guess.
+		//
+		// A missing or malformed app.env must not stop unrelated commands from
+		// running, so the binding falls back to the conventional defaults and
+		// `labctl app verify` is where the problem is reported.
+		// --app overrides APP_NAME for one command. Unlike the env var it is a
+		// deliberate, visible choice, so an unknown name is a usage error rather
+		// than a silent fall back to the defaults.
+		appName := cfg.AppName
+		if pinsWorkload(cmd) {
+			// Challenges and learning paths are graded against a fixed workload,
+			// so they ignore the binding entirely — see pinsWorkload.
+			if appOverride != "" {
+				return fmt.Errorf(
+					"--app does not apply to %s: challenges and learning paths are graded against the default workload (%s) so par times and scores stay comparable.\n"+
+						"To try your own application against the same fault, run the underlying scenario or incident directly:\n"+
+						"  labctl incident inject <name> --app %s",
+					cmd.CommandPath(), workload.DefaultApp, appOverride)
+			}
+			appName = workload.DefaultApp
+		} else if appOverride != "" {
+			appName = appOverride
+		}
+		if err := bindWorkload(appName, appOverride != ""); err != nil {
+			return err
 		}
 		svcReg = services.NewRegistry(cfg.ProjectRoot)
 		rtm = runtime.NewManager(cfg.ProjectRoot, cfg.ClusterName)
@@ -108,6 +133,90 @@ var rootCmd = &cobra.Command{
 // incident, …); those DO need the engines, so only the `runs` subcommands may
 // skip on those leaf names. Matching the leaf alone was a real bug: it made
 // `labctl scenario list` nil-panic because `scenes` was never constructed.
+// bindWorkload resolves the app name to a workload binding and rebuilds
+// everything that reads it: the script environment, the scenario engine and the
+// incident engine. Binding is a step, not a one-off during start-up, because
+// `labctl compare` runs the same scenario against several apps in turn and must
+// rebind between them (ADR-0014).
+//
+// explicit says the name came from a deliberate choice (--app, or --apps in a
+// comparison) rather than the ambient APP_NAME. A missing or malformed app.env must not stop unrelated
+// commands from running, so an ambient name falls back to the conventional
+// defaults and `labctl app verify` is where the problem is reported; an explicit
+// one is a usage error.
+func bindWorkload(appName string, explicit bool) error {
+	bound := workload.Default(appName)
+	var boundContract workload.Contract
+	appCfg, appErr := config.LoadAppConfig(cfg.ProjectRoot, appName)
+	switch {
+	case appErr != nil && explicit:
+		return fmt.Errorf("app %s: %w", appName, appErr)
+	case appErr != nil:
+		slog.Debug("workload binding fell back to defaults", "app", appName, "err", appErr)
+	default:
+		bound = appCfg.Workload()
+		boundContract = appCfg.Contract
+	}
+	slog.Debug("workload bound", "app", bound.Name, "namespace", bound.Namespace,
+		"port", bound.Port, "capabilities", boundContract.Capabilities)
+
+	// Component and fault scripts act on the bound workload, so they need it
+	// in their environment the same way they get DOMAIN_SUFFIX.
+	exec.SetEnv("WORKLOAD_NAME", bound.Name)
+	exec.SetEnv("WORKLOAD_NAMESPACE", bound.Namespace)
+	exec.SetEnv("WORKLOAD_PORT", bound.Port)
+	exec.SetEnv("WORKLOAD_METRIC", bound.Metric)
+
+	scenes = scenario.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix, cfg.Profile)
+	scenes.MonitoringNamespace = cfg.MonitoringNamespace
+	scenes.IngressClass = cfg.IngressClass
+	scenes.Workload = bound
+	scenes.Contract = boundContract
+
+	incEng = incident.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix)
+	incEng.MonitoringNamespace = cfg.MonitoringNamespace
+	incEng.Workload = bound
+	incEng.AlertmanagerURL = os.Getenv("ALERTMANAGER_URL")
+	if incEng.AlertmanagerURL == "" {
+		incEng.AlertmanagerURL = "http://alertmanager." + cfg.DomainSuffix
+	}
+	return nil
+}
+
+// rebindTo re-binds the whole lab to an app recorded in state — the workload a
+// scenario was activated against, or the one a fault was injected into.
+//
+// It must go through bindWorkload rather than setting the engine field alone:
+// the fault and component scripts read WORKLOAD_* from the executor's
+// environment, so a binding that stopped at the engine graded one app while the
+// scripts acted on another. A no-op when nothing was recorded (state written by
+// an older build) or the app is already bound.
+func rebindTo(app string) error {
+	if app == "" || app == scenes.Workload.Name {
+		return nil
+	}
+	return bindWorkload(app, true)
+}
+
+// pinsWorkload reports whether a command must run against the default workload
+// regardless of --app or APP_NAME.
+//
+// Challenges and learning paths compose scenarios and incidents by reference, so
+// the binding would otherwise flow straight through into them. They are scored
+// and timed: a par time is calibrated against one workload, and a leaderboard
+// comparing runs on different applications measures the language rather than the
+// engineer. Nothing is lost by pinning them — a user who wants to see their own
+// app under the same fault runs that scenario or incident directly with --app.
+func pinsWorkload(cmd *cobra.Command) bool {
+	for c := cmd; c != nil; c = c.Parent() {
+		switch c.Name() {
+		case "challenge", "learn":
+			return true
+		}
+	}
+	return false
+}
+
 func skipSharedInit(cmd *cobra.Command) bool {
 	switch cmd.Name() {
 	case "completion", "help", "doctor", "runs", "validate":
@@ -142,6 +251,7 @@ func Execute(version string) {
 func init() {
 	rootCmd.PersistentFlags().StringVar(&projectDir, "project-dir", "", "project root directory (auto-detected if not set)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable debug-level logging (config load, script exec, API calls)")
+	rootCmd.PersistentFlags().StringVar(&appOverride, "app", "", "application to bind scenarios and faults to for this command (default: APP_NAME)")
 
 	rootCmd.AddCommand(learnCmd())
 	rootCmd.AddCommand(challengeCmd())

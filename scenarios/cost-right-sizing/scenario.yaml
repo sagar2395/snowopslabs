@@ -2,7 +2,7 @@ apiVersion: scenario.snowops.net/v2
 name: cost-right-sizing
 verified: true
 displayName: "Cost & Capacity: Right-Sizing Over-Provisioned Resources"
-description: "Deploy go-api with deliberately over-provisioned CPU and memory requests, observe the inflated cost in OpenCost, then right-size the requests to a realistic baseline. Checks verify that requests were reduced to the target thresholds while go-api stays healthy under traffic. Teaches the observe-measure-reduce loop that keeps platform costs rational."
+description: "{{.WorkloadName}} arrives reserving 2000m CPU and 1Gi of memory — forty times what it uses. Drive real traffic, read the gap between reserved and used on the dashboard and in OpenCost, then right-size the requests. Grading has two sides: a request over the waste ceiling fails, and so does one under the peak the workload actually reached, because under-provisioning is how workloads get throttled and OOM-killed."
 category: cost
 prerequisites:
   platform:
@@ -10,52 +10,56 @@ prerequisites:
     - monitoring/metrics
     - ingress
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
 runtimes:
   - k3d
   - kind
 
 objectives:
-  - "Observe go-api's inflated cost in OpenCost and relate it to over-provisioned CPU/memory requests"
-  - "Right-size the CPU request from 2000m to ≤100m and memory request from 1Gi to ≤256Mi"
-  - "Verify go-api stays healthy under steady traffic with the reduced requests"
-  - "Understand that requests drive scheduling and billing, while limits cap usage"
+  - "Read the waste: compare {{.WorkloadName}}'s reserved CPU/memory against what it actually uses under load, on the dashboard and in OpenCost"
+  - "Right-size the requests down from 2000m/1Gi — above the observed peak, under the waste ceiling. Both bounds are graded"
+  - "Keep {{.WorkloadName}} healthy and un-throttled while doing it"
+  - "Know which knob does what: requests drive scheduling and billing, limits cap usage and are what actually throttles"
 
 stages:
   - name: inflate
-    description: Over-provision go-api's CPU/memory requests 40×/32× (the 'before' state to observe in OpenCost)
+    description: Over-provision {{.WorkloadName}}'s CPU/memory requests 40×/32× (the 'before' state to observe in OpenCost)
     components:
       # A script (not a bare helm component) because we mutate the EXISTING
-      # go-api Deployment in place with `kubectl set resources` — the exact
-      # inverse of the right-sizing fix. This is robust no matter how go-api was
+      # {{.WorkloadName}} Deployment in place with `kubectl set resources` — the exact
+      # inverse of the right-sizing fix. This is robust no matter how {{.WorkloadName}} was
       # deployed (helm, kubectl apply, or the kind-e2e bootstrap); an earlier
       # `helm upgrade` approach broke with server-side-apply field conflicts
-      # whenever go-api was not owned by helm.
-      - name: go-api-overprovisioned
+      # whenever {{.WorkloadName}} was not owned by helm.
+      - name: workload-overprovisioned
         type: script
         script: scripts/inflate.sh
+        # Without this, `down` leaves a workload every other scenario shares in
+        # whatever state this drill left it.
+        uninstallScript: scripts/restore-requests.sh
+
+      # The platform installs OpenCost but wires nothing to it, so its numbers
+      # live only inside its own UI and cannot be graphed beside the requests
+      # that caused them.
+      - name: opencost-metrics
+        type: manifest
+        path: manifests/opencost-metrics.yaml
+        namespace: opencost
+
+      - name: cost-dashboard
+        type: grafana-dashboard
+        path: dashboards/
+        namespace: "{{.MonitoringNamespace}}"
 
 checks:
-  - name: go-api-running
+  - name: workload-running
     type: kubectl
-    resource: deployment/go-api
-    namespace: go-api
+    resource: deployment/{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
-
-  - name: cpu-request-right-sized
-    type: script
-    script: scripts/check-cpu-request.sh
-
-  - name: memory-request-right-sized
-    type: script
-    script: scripts/check-memory-request.sh
-
-  - name: health-check-passes
-    type: http
-    url: "http://go-api.{{.DomainSuffix}}/health"
-    expectStatus: 200
+    remediation: "{{.WorkloadName}} is not running in {{.WorkloadNamespace}}, so there is nothing to right-size. Deploy it: labctl app deploy {{.WorkloadName}}"
 
   - name: opencost-running
     type: kubectl
@@ -64,50 +68,117 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "OpenCost is a platform prerequisite this scenario does not install. Bring it up: labctl platform up cost/opencost"
+
+  # Cost data has to reach Prometheus, or the 'observe the waste' half of this
+  # scenario has no destination and the dashboard's cost panel stays blank.
+  - name: cost-metrics-scraped
+    type: promql
+    query: 'count(container_cpu_allocation{namespace="{{.WorkloadNamespace}}"}) or vector(0)'
+    operator: ">="
+    value: "1"
+    remediation: "Prometheus has no OpenCost data for {{.WorkloadNamespace}}. Check the ServiceMonitor was created and carries the release label kube-prometheus-stack selects on: kubectl -n opencost get servicemonitor opencost -o yaml. If cost series exist but every one is labelled namespace=\"opencost\", honorLabels is missing — Prometheus overwrote the labels OpenCost exported."
+
+  # Sizing against an idle workload is not right-sizing. Without load the peak
+  # collapses to a couple of millicores and an absurd request clears the floor.
+  - name: workload-under-load
+    type: promql
+    query: 'sum(rate({{.WorkloadMetric}}_count{app="{{.WorkloadName}}"}[5m])) or vector(0)'
+    operator: ">="
+    value: "5"
+    pending: true
+    remediation: "{{.WorkloadName}} is idle, so its measured peak is meaningless and the sizing floor cannot bite. Drive steady traffic before you size anything: labctl traffic start --app {{.WorkloadName}} --profile steady --rps 25 --duration 20m"
+
+  - name: cpu-request-right-sized
+    type: script
+    script: scripts/check-cpu-request.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "The CPU request is not right-sized. The check says which bound it missed — over the waste ceiling, or under the peak the workload actually reached. Read the peak on the dashboard, then: kubectl -n {{.WorkloadNamespace}} set resources deploy/{{.WorkloadName}} --requests=cpu=<peak+headroom>"
+
+  - name: memory-request-right-sized
+    type: script
+    script: scripts/check-memory-request.sh
+    timeoutSeconds: 60
+    pending: true
+    remediation: "The memory request is not right-sized. The check says which bound it missed. Memory has no throttling — a request under the peak gets the container OOM-killed: kubectl -n {{.WorkloadNamespace}} set resources deploy/{{.WorkloadName}} --requests=memory=<peak+headroom>"
+
+  # Objective 4, graded. Requests do not throttle; limits do. A learner who cuts
+  # the limit to the same small number as the request has not right-sized, they
+  # have capped the workload below what it needs — and this is where that shows.
+  - name: workload-not-throttled
+    type: promql
+    query: '(sum(rate(container_cpu_cfs_throttled_periods_total{namespace="{{.WorkloadNamespace}}",container="{{.WorkloadName}}"}[5m])) / clamp_min(sum(rate(container_cpu_cfs_periods_total{namespace="{{.WorkloadNamespace}}",container="{{.WorkloadName}}"}[5m])), 0.001)) or vector(0)'
+    operator: "<"
+    value: "0.05"
+    remediation: "{{.WorkloadName}} is being CPU-throttled. Throttling is caused by the LIMIT, not the request — cutting both to the same small number caps the workload below what it needs. Raise the limit and leave headroom above the request: kubectl -n {{.WorkloadNamespace}} set resources deploy/{{.WorkloadName}} --limits=cpu=200m"
+
+  - name: health-check-passes
+    type: http
+    url: "http://{{.WorkloadName}}.{{.DomainSuffix}}/health"
+    expectStatus: 200
+    remediation: "{{.WorkloadName}} is not serving. If you have just cut its requests or limits, you may have gone below what it needs — check for restarts and OOMKills: kubectl -n {{.WorkloadNamespace}} get pods && kubectl -n {{.WorkloadNamespace}} describe deploy {{.WorkloadName}}"
+
+references:
+  - label: "Kubernetes — Requests and limits for pod resources"
+    url: "https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/"
+    note: "Requests are what the scheduler reserves and what a bill is computed from; limits are what throttles or OOM-kills. Right-sizing moves one without breaking the other."
+  - label: "Kubernetes — CPU throttling and the CFS quota"
+    url: "https://kubernetes.io/docs/tasks/configure-pod-container/assign-cpu-resource/#cpu-units"
+    note: "Why a CPU limit set at the request is a latency bug rather than a saving."
+  - label: "OpenCost — how cost is allocated to workloads"
+    url: "https://www.opencost.io/docs/specification"
+    note: "What the allocation figures on the dashboard are actually computed from."
+  - label: "Kubernetes — Quality of Service classes"
+    url: "https://kubernetes.io/docs/concepts/workloads/pods/pod-qos/"
+    note: "Guaranteed, Burstable and BestEffort — which one your sizing choice puts the pod in, and what gets evicted first."
 
 snippets:
-  - label: "The over-provisioned 'before' state (40× CPU, 32× memory)"
-    description: "go-api's deliberately inflated resource requests. This is the waste OpenCost surfaces — right-size these requests, re-deploy, and verify the cost drops."
-    path: values/overprovisioned.yaml
-    # This is a Helm VALUES file, not a kubectl manifest — it cannot be piped to
-    # `kubectl apply`. Reproduce the 'before' state directly instead:
-    apply: "kubectl -n go-api set resources deployment go-api --requests=cpu=2000m,memory=1Gi --limits=cpu=2000m,memory=1Gi  (Helm values reference — not kubectl-appliable)"
+  - label: "The over-provisioned 'before' state, and how it is applied"
+    description: "inflate.sh is the exact inverse of the fix you are about to perform: one 'kubectl set resources' putting the requests 40x/32x above what the workload needs. Read it to see precisely what was done to the Deployment."
+    path: scripts/inflate.sh
 
 explore:
   urls:
     - label: "OpenCost UI — per-namespace cost breakdown (via ingress)"
       url: "http://opencost.{{.DomainSuffix}}"
-    - label: "Grafana — go-api resource usage vs requests"
+    - label: "Grafana — requests vs usage, efficiency, cost and throttling (start here)"
+      url: "http://grafana.{{.DomainSuffix}}/d/cost-right-sizing"
+    - label: "Grafana — platform pod-resources dashboard"
       url: "http://grafana.{{.DomainSuffix}}/d/pod-resources"
   commands:
     - label: "0. Add the ingress DNS entries once (opencost.{{.DomainSuffix}} etc.) to /etc/hosts, then open http://opencost.{{.DomainSuffix}}"
-      command: "sudo labctl hosts add"
+      command: "labctl hosts add"
     - label: "0b. FALLBACK only if you haven't run 'labctl hosts add' — port-forward the UI instead, then open http://localhost:9090"
       command: "kubectl -n opencost port-forward svc/opencost 9090 &"
     - label: "1a. Drive steady traffic so 'healthy under load' is actually exercised (also warms the ingress route)"
-      command: "labctl traffic start --profile steady --rps 10"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile steady --rps 10"
     - label: "1b. Confirm the inflated state — checks fail while over-provisioned"
       command: "labctl scenario verify cost-right-sizing"
-    - label: "2. Right-size go-api with kubectl set resources"
-      command: "kubectl -n go-api set resources deployment go-api --requests=cpu=50m,memory=32Mi --limits=cpu=200m,memory=128Mi"
+    - label: "2. Read the PEAK over the load window — this is the number to size above"
+      command: "kubectl -n {{.WorkloadNamespace}} get deploy {{.WorkloadName}} -o jsonpath='{.spec.template.spec.containers[0].resources}{\"\\n\"}'   # then read the peak from the dashboard, not from a single kubectl top sample"
+    - label: "2b. Right-size the requests (leave the limits alone — limits throttle, requests bill)"
+      command: "kubectl -n {{.WorkloadNamespace}} set resources deploy/{{.WorkloadName}} --requests=cpu=<peak+headroom>,memory=<peak+headroom>"
     - label: "3. Wait for the rollout (a new pod is created with the new requests)"
-      command: "kubectl -n go-api rollout status deployment go-api"
+      command: "kubectl -n {{.WorkloadNamespace}} rollout status deployment {{.WorkloadName}}"
     - label: "4. Verify the right-sized state — all checks pass"
       command: "labctl scenario verify cost-right-sizing"
     - label: "5. Observe the cost difference in OpenCost at http://opencost.{{.DomainSuffix}} (wait ~1 min for a new data point). No ingress DNS entry yet? Fall back to the port-forward below."
       command: "kubectl -n opencost port-forward svc/opencost 9090 &"
     - label: "Inspect the current CPU request"
-      command: "kubectl -n go-api get deploy go-api -o jsonpath='{.spec.template.spec.containers[0].resources}'"
+      command: "kubectl -n {{.WorkloadNamespace}} get deploy {{.WorkloadName}} -o jsonpath='{.spec.template.spec.containers[0].resources}'"
     - label: "6. Stop the load generator when you're done"
       command: "labctl traffic stop"
   tips:
     - "OpenCost is exposed via ingress at http://opencost.{{.DomainSuffix}}. Run 'sudo labctl hosts add' once to add opencost.{{.DomainSuffix}} (and the other lab hostnames) to /etc/hosts — it manages a block between '# BEGIN snowops-labs' and '# END snowops-labs' and re-execs itself with sudo since /etc/hosts is root-owned. If you'd rather not touch /etc/hosts, use the port-forward fallback (command 0b) and browse http://localhost:9090 instead."
-    - "Generate load first (step 1a, or the UI 'Traffic' tab → start the 'steady' profile). It exercises the 'healthy under steady traffic' objective and makes go-api's real usage visible in Grafana/OpenCost — the low-usage-vs-high-request gap is the whole point."
+    - "Generate load first (step 1a, or the UI 'Traffic' tab → start the 'steady' profile). It exercises the 'healthy under steady traffic' objective and makes {{.WorkloadName}}'s real usage visible in Grafana/OpenCost — the low-usage-vs-high-request gap is the whole point."
     - "The first request through the ingress after a rollout can take a few seconds (cold Traefik route + pod warm-up) — the health check is not hung. Running traffic keeps the route warm."
     - "Grafana → the linked Pod Resources dashboard: compare the flat 'requests' line against the much lower 'usage' line — that gap is the waste. After right-sizing, requests should drop toward actual usage."
     - "OpenCost uses on-prem pricing defaults in k3d (~$0.048/CPU-hr, ~$0.006/GB-hr). Numbers are relative — useful for comparing before vs after, not real invoices."
     - "Requests drive Kubernetes scheduling and cloud node billing. Limits cap container usage but don't affect node cost. Right-sizing requests is where the savings are."
-    - "2000m CPU request = 2 vCPUs reserved per pod even at idle. At ~$0.048/vCPU-hr that's ~$2.30/pod/day before any actual load — for a go-api serving <1 RPS."
-    - "The resource checks convert Kubernetes quantity strings (50m, 4000m, 1Gi, 256Mi) to integers before comparing — they use script checks since the quantity format is not a plain float."
+    - "2000m CPU request = 2 vCPUs reserved per pod even at idle. At ~$0.048/vCPU-hr that's ~$2.30/pod/day before any actual load — for a {{.WorkloadName}} serving <1 RPS."
+    - "Grading has two sides. A request over the waste ceiling fails, and so does one BELOW what the workload actually uses — measured with kubectl top, not assumed. Right-sizing is not \"make the number small\": an under-provisioned request means throttling, and for memory it means the kernel OOM-kills the container."
     - "After right-sizing, the deployment rolls out a new pod with the new requests — the old over-provisioned pod terminates cleanly."
-    - "Tear down with 'labctl scenario down cost-right-sizing'. This is a no-op for the inflate step (it mutated the shared go-api release in place); to restore go-api to default dev requests, re-run 'labctl app deploy go-api' or the 'kubectl set resources' command above."
+    - "Tear down with 'labctl scenario down cost-right-sizing'. inflate.sh records the sizing the workload arrived with in an annotation, and teardown restores it — {{.WorkloadName}} is shared with every other scenario, so leaving it at whatever this drill ended on would break the next one."
+    - "Sizing an idle workload is not right-sizing. With no traffic the measured peak collapses to a couple of millicores and an absurd request clears the floor, which is why 'workload-under-load' is graded before the sizing checks are."
+    - "The floor is the peak over a window, not a spot reading. Production sizing works the same way: a value sampled while the workload happened to be quiet blesses a request that throttles the moment traffic returns."

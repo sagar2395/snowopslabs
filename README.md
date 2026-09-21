@@ -211,7 +211,7 @@ anywhere with `--project-dir /path/to/snowopslabs`.
 labctl doctor                         # check your OS has Docker + tools ready (fixes are printed inline)
 labctl setup-tools                    # install kubectl/helm/k3d for your OS (or skip; init does it)
 labctl init                           # setup-tools + create the cluster + install the platform
-labctl hosts add                      # map *.${DOMAIN_SUFFIX:-k3d.local} -> 127.0.0.1 (needs sudo; one-time)
+labctl hosts add                      # map lab hostnames -> 127.0.0.1 (asks for sudo; re-run when prompted)
 labctl app build go-api               # build the image and import it into the cluster
 labctl app deploy go-api              # deploy it (needs the image built first)
 labctl scenario list                  # then: labctl scenario info <name> for details
@@ -400,8 +400,9 @@ will check it's deployed (and, with `--deploy-prereqs`, deploy it for you).
 | SnowOps Labs UI | http://localhost:3939 | — |
 
 Domains follow `${DOMAIN_SUFFIX:-k3d.local}` — never hardcoded. Run
-`labctl hosts add` once (it needs sudo) so these hostnames resolve to
-`127.0.0.1`; `labctl hosts remove` cleans the managed block back out.
+`labctl hosts add` (it asks for sudo) so these hostnames resolve to
+`127.0.0.1`, and again when `scenario up` reports a hostname it does not cover;
+`labctl hosts remove` cleans the managed block back out.
 
 ## License
 

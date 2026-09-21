@@ -1,0 +1,28 @@
+# Applied by inject.sh into the monitoring namespace; the `release: prometheus`
+# label is required by kube-prometheus-stack's rule selector, and the `labfault`
+# alert label routes it to the pager (see
+# platform/monitoring/metrics/prometheus/values.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: labfault-network-blackhole
+  labels:
+    release: prometheus
+    labfault: "true"
+spec:
+  groups:
+    - name: labfault-network-blackhole
+      rules:
+        # Traefik's service label is "<namespace>-<service>-<port>@kubernetes".
+        # The endpoints are healthy here — the packets never arrive — so an
+        # endpoint-count alert cannot see this; the edge's own error rate can.
+        - alert: LabFaultIngressErrors
+          expr: |
+            sum by (service) (rate(traefik_service_requests_total{service=~"${TARGET_NAMESPACE}-${TARGET_WORKLOAD}-.*",code=~"5.."}[2m])) > 0
+          for: 1m
+          labels:
+            labfault: "true"
+            severity: critical
+          annotations:
+            summary: "${TARGET_NAMESPACE}/${TARGET_WORKLOAD} is returning 5xx at the ingress"
+            description: "The edge cannot get a response out of this service. Its pods may be Running and Ready — check whether anything is stopping the traffic reaching them."

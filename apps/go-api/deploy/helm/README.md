@@ -150,8 +150,8 @@ Then access via: `http://localhost:8080`
 ### Prometheus Metrics
 
 The application exposes Prometheus metrics at `/metrics` endpoint with:
-- `http_requests_total` - Total HTTP requests counter
-- `http_request_duration_seconds` - HTTP request duration histogram
+- `http_server_request_duration_seconds` - request latency histogram (semconv);
+  its `_count` series is the request count
 
 ### Enable ServiceMonitor (if using Prometheus Operator)
 

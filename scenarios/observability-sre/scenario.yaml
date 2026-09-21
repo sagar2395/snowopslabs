@@ -1,7 +1,7 @@
 name: observability-sre
 verified: true
 displayName: "Observability & SRE"
-description: "Full observability stack with log aggregation, distributed tracing, alerting rules, and SLO dashboards."
+description: "labctl stands up the three signals — Loki for logs, Tempo behind an Alloy collector for traces, Prometheus rules and SLO dashboards for metrics — and then leaves the wiring to you. Export {{.WorkloadName}}'s spans through the collector, drive real load with k6, follow one request from a log line to its trace, and take an SRE alert from inactive to firing by breaking readiness on purpose."
 category: observability
 prerequisites:
   platform:
@@ -9,17 +9,23 @@ prerequisites:
     - monitoring/metrics
     - monitoring/grafana
   apps:
-    - go-api
+    - "{{.WorkloadName}}"
+  # Three signals means the app must produce all three: metrics to graph, traces
+  # to correlate, and a way to break readiness so the alerts have something to
+  # fire on.
+  capabilities:
+    - prometheus-metrics
+    - otlp-tracing
+    - readiness-toggle
 runtimes:
   - k3d
   - kind
 
 objectives:
-  - "Aggregate application logs in Loki and query them from Grafana"
-  - "Export traces through a collector (Grafana Alloy) into Tempo, instead of pointing the app at the backend"
-  - "Correlate the three signals: jump from a log line to its trace, and from a span back to that pod's logs"
-  - "Drive the stack with real load from k6 and compare client-side against server-side request metrics"
-  - "Alert on high error rate / latency and track SLOs on dashboards"
+  - "Wire {{.WorkloadName}} to the collector and prove spans reach Tempo — the app exports OTLP to Alloy and never learns which backend is behind it"
+  - "Drive real load with k6 and confirm the app's own request metrics move with it"
+  - "Correlate the three signals: find a log line's trace_id in Loki and open that trace in Tempo"
+  - "Break readiness under load and drive an SRE alert from inactive to firing"
 
 stages:
   - name: log-aggregation
@@ -73,9 +79,15 @@ stages:
         namespace: "{{.MonitoringNamespace}}"
         valuesFile: values/alloy.yaml
 
-      - name: wire-app-to-collector
+      # Not the wiring — the UNWIRING. Connecting the app to the collector is
+      # objective 1, so staging it would hand the learner the answer and leave
+      # a check that only asserts what this stage just set. Running it on
+      # activation guarantees a clean starting point after a previous run, and
+      # on teardown it removes what the learner set so the app stops exporting
+      # to a Service that is about to disappear.
+      - name: reset-tracing-wiring
         type: script
-        script: scripts/enable-tracing.sh
+        script: scripts/disable-tracing.sh
         uninstallScript: scripts/disable-tracing.sh
 
   - name: alerting-and-slo
@@ -99,6 +111,7 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "Loki stores the logs this scenario queries. It is installed by the scenario — re-activate if it did not come up: labctl scenario up observability-sre --force"
 
   - name: promtail-ready
     type: kubectl
@@ -107,6 +120,7 @@ checks:
     jsonpath: "{.status.numberReady}"
     operator: ">="
     value: "1"
+    remediation: "Promtail ships the logs into Loki; without it every log query is empty. Check the DaemonSet: kubectl -n {{.MonitoringNamespace}} get ds promtail"
 
   - name: tempo-ready
     type: kubectl
@@ -115,6 +129,7 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "Tempo stores the traces. Note its HTTP API listens on 3200, not 3100 — a datasource pointing at the wrong port fails every query and looks like 'no traces were recorded'."
 
   - name: alloy-collector-ready
     type: kubectl
@@ -123,28 +138,8 @@ checks:
     jsonpath: "{.status.readyReplicas}"
     operator: ">="
     value: "1"
+    remediation: "Alloy is the collector the app exports to. If it is down, spans are dropped at the source: kubectl -n {{.MonitoringNamespace}} logs deploy/alloy"
 
-  # The app must actually be exporting, otherwise Tempo stays empty and the
-  # trace panels look broken rather than unconfigured.
-  - name: app-exports-traces-to-collector
-    type: kubectl
-    resource: deployment/go-api
-    namespace: go-api
-    jsonpath: '{.spec.template.spec.containers[0].env[?(@.name=="OTEL_EXPORTER_OTLP_ENDPOINT")].value}'
-    operator: "contains"
-    value: "alloy"
-    remediation: "go-api is not exporting traces. Wire it to the collector: bash scenarios/observability-sre/scripts/enable-tracing.sh (or kubectl -n go-api set env deployment/go-api OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy.{{.MonitoringNamespace}}.svc.cluster.local:4318)."
-
-  # Traffic must be flowing for any of the SLO panels to mean anything.
-  - name: app-request-metrics-present
-    type: promql
-    query: 'count(http_requests_total{app="go-api"})'
-    operator: ">="
-    value: "1"
-    remediation: "No request metrics for go-api. Generate load with 'labctl traffic start --profile steady --rps 25', then confirm Prometheus is scraping the pod: kubectl -n go-api get pod -o jsonpath='{.items[0].metadata.annotations}' should contain prometheus.io/scrape=true."
-
-  # Name the rule this scenario installs. A bare "prometheusrules" existence
-  # check passes on kube-prometheus-stack's own rules and grades nothing.
   - name: alerting-rules-installed
     type: kubectl
     resource: prometheusrule/scenario-observability-sre-alerts
@@ -158,17 +153,92 @@ checks:
     type: http
     url: "http://grafana.{{.DomainSuffix}}"
     expectStatus: 200
+    remediation: "Grafana is a platform prerequisite. Bring it up and confirm the host resolves: labctl platform up monitoring/grafana"
+
+  # ── the drill ───────────────────────────────────────────────────────────
+  # Everything above is the stack labctl stands up. Everything below is work
+  # the learner performs, and each one grades an outcome rather than a setting.
+
+  # The rate, not the existence of the series: kubelet probes are instrumented
+  # too, so a bare count() is green on an idle app and grades nothing. k6 at
+  # 25 rps sits two orders of magnitude above probe traffic.
+  - name: app-under-real-load
+    type: promql
+    query: 'sum(rate({{.WorkloadMetric}}_count{app="{{.WorkloadName}}"}[5m])) or vector(0)'
+    operator: ">="
+    value: "5"
+    pending: true
+    remediation: "{{.WorkloadName}} is only serving its own health probes. Drive real traffic — k6 holds a constant arrival rate, so latency shows up as queueing rather than as fewer requests: labctl traffic start --app {{.WorkloadName}} --profile steady --rps 25 --duration 20m"
+
+  # The lower bound of the wiring: the endpoint is set. Its own remediation is
+  # the precise command, which is why it is worth keeping alongside the
+  # outcome check below.
+  - name: app-exports-traces-to-collector
+    type: kubectl
+    resource: deployment/{{.WorkloadName}}
+    namespace: "{{.WorkloadNamespace}}"
+    jsonpath: '{.spec.template.spec.containers[0].env[?(@.name=="OTEL_EXPORTER_OTLP_ENDPOINT")].value}'
+    operator: "contains"
+    value: "alloy"
+    pending: true
+    remediation: "{{.WorkloadName}} is not exporting traces. Point it at the collector — not at Tempo; the app should never know which backend is behind it: kubectl -n {{.WorkloadNamespace}} set env deployment/{{.WorkloadName}} OTEL_EXPORTER_OTLP_ENDPOINT=http://alloy.{{.MonitoringNamespace}}.svc.cluster.local:4318 OTEL_SERVICE_NAME={{.WorkloadName}}"
+
+  # The upper bound: spans actually arrived. An endpoint can be set on a
+  # Deployment that never sends a span — wrong port, collector down, no
+  # traffic — and all of those pass the setting check above.
+  - name: traces-arrived-in-tempo
+    type: script
+    script: checks/traces-in-tempo.sh
+    timeoutSeconds: 90
+    pending: true
+    remediation: "Tempo holds no spans for {{.WorkloadName}}. Wire the app to Alloy, then send traffic — a correctly wired app with no requests produces no spans."
+
+  - name: logs-carry-trace-ids
+    type: script
+    script: checks/logs-carry-trace-ids.sh
+    timeoutSeconds: 90
+    pending: true
+    remediation: "Either no {{.WorkloadName}} logs are reaching Loki, or they carry no trace_id. The check says which. The trace_id is what turns three signals into one story: it is the link Grafana turns into a clickable jump from a log line to its trace."
+
+  # The point of an alert is that it fires. A rule that exists and has never
+  # left 'inactive' has not been tested, and this is the only check here that
+  # requires the learner to break something on purpose. Windowed to this
+  # activation: a fixed window forgot a drill done early in the run, and an
+  # open one would count a previous run's alerts.
+  - name: an-sre-alert-fired
+    type: promql
+    query: 'max_over_time((count(ALERTS{scenario="observability-sre",alertstate="firing"}) or vector(0))[{{.SinceActivation}}:1m])'
+    operator: ">="
+    value: "1"
+    pending: true
+    remediation: "No alert from this scenario has fired since it was activated. Break readiness while traffic is flowing and watch PodNotReady go pending then firing: kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:{{.WorkloadPort}}/toggle-failure — then Prometheus > Alerts. Toggle it back when you are done."
 
 snippets:
   - label: "Alloy — the collector config that receives OTLP and forwards to Tempo"
     description: "Three blocks: an OTLP receiver, a batch processor, and an exporter pointing at Tempo. Applications talk to the receiver and know nothing about Tempo — swapping trace backends is a change to the exporter alone, with no application redeploy."
     path: values/alloy.yaml
   - label: "enable-tracing.sh — wiring the app to the collector"
-    description: "A plain 'kubectl set env' on the Deployment. Setting OTEL_EXPORTER_OTLP_ENDPOINT patches the pod template, which rolls the pods — the same mechanism as any other config change. 'scenario down' runs disable-tracing.sh to undo it."
+    description: "Until you run it, the app exports nowhere and Tempo stays empty. It is a plain 'kubectl set env' on the Deployment — setting OTEL_EXPORTER_OTLP_ENDPOINT patches the pod template and rolls the pods, the same mechanism as any other config change."
     path: scripts/enable-tracing.sh
+    exercise: true
+    apply: "bash scenarios/observability-sre/scripts/enable-tracing.sh --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}"
   - label: "SRE alerting rules (error rate, latency, saturation, readiness)"
-    description: "A PrometheusRule with the golden-signal alerts this scenario installs: 5xx error rate, p99 latency, memory/CPU saturation, and pod readiness. Trip one with the traffic/fault commands and watch it fire."
+    description: "A PrometheusRule with the golden-signal alerts this scenario installs: 5xx error rate, p99 latency, memory/CPU saturation, and pod readiness. Trip one with the traffic/fault commands and watch it fire. The release: prometheus label is what makes Prometheus load the rules — a wrong value fails silently."
     path: manifests/alerting-rules.yaml
+
+references:
+  - label: "OpenTelemetry — the collector, and why applications export to it"
+    url: "https://opentelemetry.io/docs/collector/"
+    note: "Batching, retry and sampling belong to the collector, which is what lets the trace backend change without an application redeploy."
+  - label: "Grafana — correlating logs and traces"
+    url: "https://grafana.com/docs/grafana/latest/datasources/loki/configure-loki-data-source/#derived-fields"
+    note: "Derived fields are the mechanism behind the clickable trace_id: Grafana matches a pattern in the log line and turns it into a link to the trace datasource."
+  - label: "Prometheus Operator — PrometheusRule and ruleSelector"
+    url: "https://prometheus-operator.dev/docs/developer/alerting/"
+    note: "Why a rule whose labels miss the ruleSelector is silently never loaded — the failure this scenario's alerting-rules-installed check names."
+  - label: "Google SRE — Service Level Objectives"
+    url: "https://sre.google/sre-book/service-level-objectives/"
+    note: "The error-budget arithmetic behind the SLO dashboard's 30-day window."
 
 explore:
   urls:
@@ -177,32 +247,36 @@ explore:
     - label: "Prometheus"
       url: "http://prometheus.{{.DomainSuffix}}"
   commands:
-    - label: "1. Generate sustained load with k6 (not a curl loop — real arrival-rate traffic)"
-      command: "labctl traffic start --profile steady --rps 25 --duration 15m"
+    - label: "1. Wire the app to the collector (do this first — nothing stages it)"
+      command: "bash scenarios/observability-sre/scripts/enable-tracing.sh --app {{.WorkloadName}} --namespace {{.WorkloadNamespace}}"
+    - label: "2. Generate sustained load with k6 (not a curl loop — real arrival-rate traffic)"
+      command: "labctl traffic start --app {{.WorkloadName}} --profile steady --rps 25 --duration 20m"
     - label: "2. Watch the generator itself — this is a plain Kubernetes Job"
       command: "kubectl -n traffic get job,pod -l app=traffic-k6 && kubectl -n traffic logs -f job/traffic-k6"
     - label: "3. See the same requests arrive in the app's logs"
-      command: "kubectl -n go-api logs -f deploy/go-api | grep request"
+      command: "kubectl -n {{.WorkloadNamespace}} logs -f deploy/{{.WorkloadName}} | grep request"
     - label: "4. Confirm the app is counting them (server-side truth)"
-      command: "kubectl -n go-api exec deploy/go-api -- wget -qO- localhost:8080/metrics | grep '^http_requests_total'"
+      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:{{.WorkloadPort}}/metrics | grep '^{{.WorkloadMetric}}_count'"
     - label: "5. Compare client-side vs server-side in Grafana"
-      command: "open http://grafana.{{.DomainSuffix}}/d/app-requests  # k6 sent vs app handled — the two lines should overlap"
-    - label: "6. Query go-api logs in Loki"
-      command: "Open Grafana > Explore > Loki > {namespace=\"go-api\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\""
+      command: "open 'http://grafana.{{.DomainSuffix}}/d/app-requests?var-app={{.WorkloadName}}'  # k6 sent vs app handled — the two lines should overlap"
+    - label: "6. Query {{.WorkloadName}} logs in Loki"
+      command: "Open Grafana > Explore > Loki > {namespace=\"{{.WorkloadNamespace}}\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\""
     - label: "7. Jump from a log line to its trace"
       command: "In that same Loki result, expand a line and click the trace_id link — Grafana opens the trace in Tempo."
     - label: "8. Find slow requests in Tempo directly"
-      command: "Open Grafana > Explore > Tempo > Search: service.name=go-api, min duration 100ms"
+      command: "Open Grafana > Explore > Tempo > Search: service.name={{.WorkloadName}}, min duration 100ms"
     - label: "Stop the load"
       command: "labctl traffic stop"
     - label: "Break it on purpose: make the app fail readiness and watch every signal react"
-      command: "kubectl -n go-api exec deploy/go-api -- wget -qO- localhost:8080/toggle-failure"
+      command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:{{.WorkloadPort}}/toggle-failure"
   tips:
     - "Check the alert rules actually loaded: kubectl -n {{.MonitoringNamespace}} get prometheusrules, then Prometheus > Alerts. A PrometheusRule whose 'release' label does not match the kube-prometheus-stack release is silently ignored — it exists in the cluster and Prometheus never reads it."
     - "SLO dashboards appear in Grafana automatically via the sidecar ConfigMap loader."
+    - "Order matters: wire the app, then send traffic. A correctly wired app with no requests produces no spans, and Tempo looks broken when it is merely idle."
+    - "An alert that has never left 'inactive' has not been tested. Break readiness while traffic is flowing — PodNotReady goes pending after a minute and firing shortly after — then toggle it back."
     - "The app exports to Alloy, not to Tempo. That indirection is the point: the collector owns batching, retry and sampling, and the trace backend can be replaced without touching a single application."
-    - "Three signals, one request. Metrics say a request was slow, logs say what it did, traces say where the time went. The link between them is the trace_id go-api writes on every access-log line — Grafana's Loki datasource turns it into a clickable link to the trace."
+    - "Three signals, one request. Metrics say a request was slow, logs say what it did, traces say where the time went. The link between them is the trace_id {{.WorkloadName}} writes on every access-log line — Grafana's Loki datasource turns it into a clickable link to the trace."
     - "Tempo's HTTP API listens on 3200, not 3100. A Grafana datasource pointing at 3100 fails every trace query with a connection error and looks exactly like 'no traces were recorded'."
-    - "Use k6, not a curl loop: 'labctl traffic start --profile steady --rps 25'. k6 holds a constant ARRIVAL rate, so latency changes show up as queueing rather than as fewer requests. Its client-side metrics are remote-written to Prometheus and graphed next to the app's own counters on the Application Request Metrics dashboard."
+    - "Use k6, not a curl loop: 'labctl traffic start --app {{.WorkloadName}} --profile steady --rps 25'. k6 holds a constant ARRIVAL rate, so latency changes show up as queueing rather than as fewer requests. Its client-side metrics are remote-written to Prometheus and graphed next to the app's own counters on the Application Request Metrics dashboard."
     - "If a dashboard panel is empty, check the pipeline before the query: is Prometheus scraping the target (Status > Targets), is Promtail attaching the label your query filters on, is the app actually exporting? 'labctl scenario verify observability-sre' now checks each of those."
     - "Loki and Tempo are platform components. This scenario adopts them when they are already installed rather than upgrading them, because most of a StatefulSet's spec is immutable and re-applying different values fails outright."

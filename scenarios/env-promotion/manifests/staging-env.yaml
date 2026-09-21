@@ -1,5 +1,5 @@
 ---
-# staging environment — namespace, release metadata, go-api deployment + service + ingress.
+# staging environment — namespace, release metadata, {{.WorkloadName}} deployment + service + ingress.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -18,7 +18,7 @@ metadata:
     snowops.net/scenario: env-promotion
 data:
   env_name: "staging"
-  app: "go-api"
+  app: "{{.WorkloadName}}"
   declared_tag: "v1.0.0"
   promoted_from: ""
   promoted_at: ""
@@ -26,26 +26,26 @@ data:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: go-api
+  name: "{{.WorkloadName}}"
   namespace: env-staging
   labels:
-    app: go-api
+    app: "{{.WorkloadName}}"
     snowops.net/env: staging
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: go-api
+      app: "{{.WorkloadName}}"
       snowops.net/env: staging
   template:
     metadata:
       labels:
-        app: go-api
+        app: "{{.WorkloadName}}"
         snowops.net/env: staging
     spec:
       containers:
-        - name: go-api
-          image: go-api:v1.0.0
+        - name: "{{.WorkloadName}}"
+          image: "{{.WorkloadName}}:v1.0.0"
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -63,13 +63,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: go-api
+  name: "{{.WorkloadName}}"
   namespace: env-staging
   labels:
     snowops.net/env: staging
 spec:
   selector:
-    app: go-api
+    app: "{{.WorkloadName}}"
     snowops.net/env: staging
   ports:
     - port: 80
@@ -78,21 +78,21 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: go-api
+  name: "{{.WorkloadName}}"
   namespace: env-staging
   labels:
     snowops.net/env: staging
     snowops.net/scenario: env-promotion
 spec:
-  ingressClassName: {{.IngressClass}}
+  ingressClassName: "{{.IngressClass}}"
   rules:
-    - host: go-api-staging.{{.DomainSuffix}}
+    - host: "{{.WorkloadName}}-staging.{{.DomainSuffix}}"
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: go-api
+                name: "{{.WorkloadName}}"
                 port:
                   number: 80

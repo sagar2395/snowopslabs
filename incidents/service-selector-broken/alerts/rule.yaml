@@ -1,0 +1,32 @@
+# Applied by inject.sh into the monitoring namespace; the `release: prometheus`
+# label is required by kube-prometheus-stack's rule selector, and the `labfault`
+# alert label routes it to the pager (see
+# platform/monitoring/metrics/prometheus/values.yaml).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: labfault-service-selector-broken
+  labels:
+    release: prometheus
+    labfault: "true"
+spec:
+  groups:
+    - name: labfault-service-selector-broken
+      rules:
+        # absent(), not "count() == 0": kube-state-metrics emits one series per
+        # endpoint address, so when a Service has no backends there is no series
+        # to compare against zero and a count-based rule silently never fires.
+        #
+        # Matched on the endpointslice name rather than the `service` label:
+        # kube-state-metrics' own scrape overwrites `service` with its own
+        # Service name on every series it exports.
+        - alert: LabFaultServiceEndpointsEmpty
+          expr: |
+            absent(kube_endpointslice_endpoints{namespace="${TARGET_NAMESPACE}",endpointslice=~"${TARGET_WORKLOAD}-[a-z0-9]+",ready="true"})
+          for: 1m
+          labels:
+            labfault: "true"
+            severity: critical
+          annotations:
+            summary: "Service ${TARGET_NAMESPACE}/${TARGET_WORKLOAD} has no ready endpoints"
+            description: "Nothing is behind this Service, so the ingress has nowhere to send traffic and every request returns 503. The pods may well be healthy — check whether the Service still selects them."

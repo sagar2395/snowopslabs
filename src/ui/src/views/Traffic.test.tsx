@@ -17,6 +17,7 @@ vi.mock('../api/client', () => ({
     getTraffic: vi.fn(),
     startTraffic: vi.fn(),
     stopTraffic: vi.fn(),
+    listApps: vi.fn(),
   },
 }))
 
@@ -26,7 +27,17 @@ const mockApi = api as unknown as {
   getTraffic: Mock
   startTraffic: Mock
   stopTraffic: Mock
+  listApps: Mock
 }
+
+// The traffic targets come from the apps API — each app's in-cluster address is
+// the one it declares in its contract, not one the UI reconstructs.
+const APPS = [
+  { name: 'go-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true,
+    serviceUrl: 'http://go-api.go-api.svc.cluster.local:8080/' },
+  { name: 'java-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true,
+    serviceUrl: 'http://java-api.team-a.svc.cluster.local:9090/' },
+]
 
 function renderTraffic() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -42,6 +53,7 @@ function renderTraffic() {
 describe('Traffic view', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockApi.listApps.mockResolvedValue(APPS)
   })
 
   it('lists the k6 profiles and offers start/stop controls', async () => {
@@ -63,6 +75,7 @@ describe('Traffic view', () => {
     const { notify } = renderTraffic()
 
     await screen.findByRole('combobox', { name: /traffic profile/i })
+    await screen.findByRole('option', { name: /go-api/ })
     await user.selectOptions(screen.getByRole('combobox', { name: /traffic profile/i }), 'spike')
     await user.click(screen.getByRole('button', { name: /start traffic/i }))
 
@@ -98,5 +111,53 @@ describe('Traffic view', () => {
     mockApi.getTraffic.mockRejectedValue(new Error('boom'))
     renderTraffic()
     expect(await screen.findByText(/Failed to load traffic profiles/)).toBeInTheDocument()
+  })
+
+  // A new app — or one on a non-default port — must appear as a target without
+  // any UI change. The address is the app's own, never rebuilt by the client.
+  it('offers every app the API reports, at its declared in-cluster address', async () => {
+    mockApi.getTraffic.mockResolvedValue({ profiles: ['steady'] })
+    mockApi.startTraffic.mockResolvedValue({ jobId: 'job-3', status: 'accepted' })
+
+    const user = userEvent.setup()
+    renderTraffic()
+
+    const target = await screen.findByRole('combobox', { name: /traffic target/i })
+    expect(await screen.findByRole('option', { name: /java-api/ })).toBeInTheDocument()
+
+    await user.selectOptions(target, 'java-api')
+    await user.click(screen.getByRole('button', { name: /start traffic/i }))
+
+    await waitFor(() =>
+      expect(mockApi.startTraffic).toHaveBeenCalledWith(expect.objectContaining({
+        target: 'http://java-api.team-a.svc.cluster.local:9090/',
+      })))
+  })
+
+  it('says so rather than silently targeting nothing when no app declares an address', async () => {
+    mockApi.getTraffic.mockResolvedValue({ profiles: ['steady'] })
+    mockApi.listApps.mockResolvedValue([])
+    renderTraffic()
+
+    await screen.findByRole('combobox', { name: /traffic target/i })
+    expect(await screen.findByText(/No app declares an in-cluster address/i)).toBeInTheDocument()
+  })
+
+  // Load aimed at a workload nobody is looking at is worse than no default, and
+  // the first app alphabetically is not the one the lab is working on.
+  it('preselects the bound workload rather than the first app', async () => {
+    mockApi.getTraffic.mockResolvedValue({
+      profiles: ['steady'],
+      workload: { app: 'go-api', namespace: 'go-api', service: 'go-api.go-api.svc.cluster.local', port: '8080', metric: 'm' },
+    })
+    mockApi.listApps.mockResolvedValue([
+      { name: 'echo-server', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, serviceUrl: 'http://echo-server.echo-server.svc.cluster.local:8080/' },
+      { name: 'go-api', buildStrategy: 'docker', deployStrategy: 'helm', deployed: true, serviceUrl: 'http://go-api.go-api.svc.cluster.local:8080/' },
+    ])
+    renderTraffic()
+
+    const target = await screen.findByRole('combobox', { name: /traffic target/i }) as HTMLSelectElement
+    await waitFor(() => expect(target.value).toBe('go-api'))
+    expect(await screen.findByText('http://go-api.go-api.svc.cluster.local:8080/')).toBeInTheDocument()
   })
 })

@@ -133,6 +133,10 @@ export interface AppInfo {
   namespace?: string
   /** Ingress URL (http://<app>.<domainSuffix>), set once deployed. */
   url?: string
+  /** In-cluster base URL from the app's declared contract — the traffic target. */
+  serviceUrl?: string
+  /** Capabilities the app declares (ADR-0014). */
+  capabilities?: string[]
   /** Autoscaler state, present only when an HPA targets the app. */
   hpa?: HPAStatus
 }
@@ -149,6 +153,8 @@ export interface StatusResponse {
 export interface ScenarioPrerequisites {
   platform?: string[]
   apps?: string[]
+  /** Capabilities the bound workload must declare, e.g. prometheus-metrics. */
+  capabilities?: string[]
 }
 
 export interface ExploreURL {
@@ -205,16 +211,6 @@ export interface ScenarioCheck {
   value?: string
 }
 
-/** An applyable manifest fragment a scenario surfaces for hands-on learning.
- *  `yaml` carries the display content (inlined from `path` by the server, with
- *  parameter defaults resolved); `path` names its source file. */
-export interface ScenarioSnippet {
-  label: string
-  description?: string
-  yaml?: string
-  path?: string
-}
-
 export interface ScenarioStage {
   name: string
   description?: string
@@ -235,7 +231,14 @@ export interface Scenario {
   parameters?: ScenarioParameter[]
   objectives?: string[]
   checks?: ScenarioCheck[]
-  snippets?: ScenarioSnippet[]
+  snippets?: ContentSnippet[]
+  /** Apps the scenario names literally — the only app prerequisites a user has
+   *  to satisfy. An app that came from the binding is in `workload`, not here. */
+  pinnedApps?: string[]
+  /** The workload this scenario will run (or is running) against. */
+  workload?: WorkloadBinding
+  /** The app an active scenario was activated against (catalog rows only). */
+  app?: string
 }
 
 /** One check outcome from POST /api/v2/scenarios/{name}/verify (pkg/checks.Result).
@@ -476,10 +479,22 @@ export interface ResultRecord {
 
 // ── Incidents ─────────────────────────────────────────────────────────────────
 
-/** A doc/tool reference or an applyable manifest snippet a fault can surface
- *  (M2). Loosely typed — the view only reads label/url/description. */
+/** A doc/tool link a scenario or fault surfaces. */
 export interface ContentReference { label: string; url: string; note?: string }
-export interface ContentSnippet { label: string; description?: string; yaml?: string; path?: string }
+
+/** A file or fragment a scenario or fault shows the learner. `yaml` is the body
+ *  as the server renders it: read from `path`, trimmed of long comment blocks and
+ *  resolved for the bound workload. */
+export interface ContentSnippet {
+  label: string
+  description?: string
+  yaml?: string
+  path?: string
+  /** Nothing installs an exercise snippet: applying it is the learner's task. */
+  exercise?: boolean
+  /** Ready-to-run command for an exercise, when it has one. */
+  applyCommand?: string
+}
 
 /** One fault from the incident catalog (GET /api/v2/incidents → faults[]). */
 export interface Fault {
@@ -490,9 +505,24 @@ export interface Fault {
   category: string          // workload | network | resources | storage | config
   severity: string          // low | medium | high
   expectAlert?: string
-  prerequisites?: { platform?: string[]; apps?: string[] }
+  prerequisites?: { platform?: string[]; apps?: string[]; capabilities?: string[] }
   references?: ContentReference[]
   snippets?: ContentSnippet[]
+  /** Apps the fault names literally — the only app prerequisites a user has to
+   *  satisfy. An app that came from the binding is in `workload`, not here. */
+  pinnedApps?: string[]
+  /** The workload this fault will be (or was) injected into. */
+  workload?: WorkloadBinding
+}
+
+/** The application a scenario or fault is bound to (ADR-0014). Content names the
+ *  binding rather than an app, so the same content runs against any of them. */
+export interface WorkloadBinding {
+  app: string
+  namespace: string
+  service: string
+  port: string
+  metric: string
 }
 
 /** The live active-incident record (nil when nothing is injected). */
@@ -558,3 +588,41 @@ export interface LeaderboardEntry {
   avgMttrSeconds: number
   runs: number
 }
+
+// ── Comparisons (ADR-0014 §6) ───────────────────────────────────────────────
+
+/** One metric's definition, sent with the data so the client never hardcodes
+ *  which way is better for a given key. */
+export interface ComparisonMetric {
+  key: string
+  label: string
+  unit: string
+  lowerBetter: boolean
+  /** True when neither direction is better (e.g. replica count). */
+  neutral: boolean
+  /** Multiplier from the raw Prometheus value into `unit`. */
+  scale: number
+  digits: number
+}
+
+/** One workload's numbers. A metric with no series is absent from `values`
+ *  rather than zero — "used none" and "not measurable here" differ. */
+export interface ComparisonMeasurement {
+  app: string
+  values: Record<string, number>
+}
+
+export interface Comparison {
+  id: string
+  scenario: string
+  apps: string[]
+  profile: string
+  rps: number
+  /** Load time excluded from the measurement, so runtime warm-up is not compared. */
+  warmupSeconds: number
+  windowSeconds: number
+  startedAt: string
+  metrics: ComparisonMetric[]
+  measurements: ComparisonMeasurement[]
+}
+

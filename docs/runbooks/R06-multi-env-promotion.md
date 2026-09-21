@@ -28,14 +28,14 @@ the muscle memory you build (`kubectl set image`, `kubectl rollout status`,
 # 0. Set up: deploys all three namespaces at the v1.0.0 baseline.
 #    Stage 0 builds go-api:v1.0.0 and loads it into the cluster automatically.
 labctl scenario up env-promotion
-sudo labctl hosts add                      # go-api-dev/staging/prod.<domain>
+labctl hosts add                           # go-api-dev/staging/prod.<domain>, read from the Ingress
 
 # 1. Baseline — all three serve the SAME version.
 for e in dev staging prod; do echo -n "$e: "; curl -s go-api-$e.<domain>/version; echo; done
 
 # 2. Make a visible code change, then build a NEW version.
 #    Edit `releaseNote` in apps/go-api/main.go (e.g. "add request logging").
-bash scenarios/env-promotion/scripts/build-image.sh v1.1.0
+bash scenarios/env-promotion/scripts/build-image.sh v1.1.0 --app go-api --namespace go-api
 
 # 3. Deploy to DEV only — a real rollout — and record the declared tag.
 kubectl -n env-dev set image deployment/go-api go-api=go-api:v1.1.0

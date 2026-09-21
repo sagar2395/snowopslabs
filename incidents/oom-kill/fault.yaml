@@ -1,14 +1,15 @@
 name: oom-kill
+verified: true
 displayName: "OOMKilled: memory limit too low"
-description: "echo-server pods keep restarting and the service is flapping. Restart counts climb; the kernel is killing the container the moment it allocates memory."
+description: "The pager says {{.WorkloadName}} is being killed and restarted over and over. It came up clean and served fine for a minute, then the restart count started climbing and the service began flapping. Nothing was deployed."
 category: resources
 severity: high
 target:
-  namespace: echo-server
-  workload: echo-server
+  namespace: "{{.WorkloadNamespace}}"
+  workload: "{{.WorkloadName}}"
 prerequisites:
   apps:
-    - echo-server
+    - "{{.WorkloadName}}"
 detection:
   name: rollout-healthy
   type: script
@@ -26,14 +27,14 @@ references:
     url: "https://github.com/kubernetes/kube-state-metrics/blob/main/docs/metrics/workload/pod-metrics.md"
 
 snippets:
-  - label: "Raise echo-server's memory limit (strategic-merge patch)"
-    description: "Bumps the limit above the working set so the kernel stops killing it. Apply with: kubectl -n echo-server patch deployment echo-server --patch-file <this>"
+  - label: "Raise {{.WorkloadName}}'s memory limit (strategic-merge patch)"
+    description: "Bumps the limit above the working set so the kernel stops killing it. Apply with: kubectl -n {{.WorkloadNamespace}} patch deployment {{.WorkloadName}} --patch-file <this>"
     yaml: |
       spec:
         template:
           spec:
             containers:
-              - name: echo-server
+              - name: "{{.WorkloadName}}"
                 resources:
                   requests:
                     memory: "32Mi"
@@ -41,5 +42,5 @@ snippets:
                     memory: "128Mi"
   - label: "Watch the restart count settle after the fix"
     yaml: |
-      # kubectl -n echo-server get pods -w \
+      # kubectl -n {{.WorkloadNamespace}} get pods -w \
       #   -o custom-columns=NAME:.metadata.name,RESTARTS:.status.containerStatuses[0].restartCount,STATE:.status.phase

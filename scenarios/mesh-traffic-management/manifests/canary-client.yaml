@@ -1,0 +1,81 @@
+# A meshed load client for the canary Service.
+#
+# It has to live inside the mesh and inside the workload namespace: an unmeshed
+# client has no sidecar, so its requests carry no mTLS identity and STRICT mode
+# rejects them — which is precisely what the mTLS check proves separately. That
+# is also why the shared `labctl traffic` generator is not used here; it runs
+# unmeshed in its own namespace and would be refused the moment the learner
+# applies the PeerAuthentication.
+#
+# A Deployment, not a Job: without native sidecars a Job's istio-proxy keeps
+# running after the workload exits and the Job never completes.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{.WorkloadName}}-canary-client"
+  namespace: "{{.WorkloadNamespace}}"
+data:
+  canary.js: |
+    import http from 'k6/http';
+    import { sleep } from 'k6';
+
+    const TARGET = __ENV.TARGET;
+
+    // One request in twenty carries the canary header, standing in for the testers
+    // who opt into a release early. The fault-injection route matches on it, so
+    // this is the traffic that shows the injected delay.
+    export default function () {
+      if (__ITER % 20 === 0) {
+        http.get(`${TARGET}/version`, { headers: { 'x-canary': 'always' } });
+      } else {
+        http.get(`${TARGET}/version`);
+      }
+      sleep(0.2);
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "{{.WorkloadName}}-canary-client"
+  namespace: "{{.WorkloadNamespace}}"
+  labels:
+    app: "{{.WorkloadName}}-canary-client"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: "{{.WorkloadName}}-canary-client"
+  template:
+    metadata:
+      labels:
+        app: "{{.WorkloadName}}-canary-client"
+    spec:
+      containers:
+        - name: k6
+          image: grafana/k6:0.50.0
+          args:
+            - run
+            - --vus
+            - "2"
+            - --duration
+            - 24h
+            - --no-summary
+            - /scripts/canary.js
+          env:
+            - name: TARGET
+              value: "http://{{.WorkloadName}}-canary.{{.WorkloadNamespace}}.svc.cluster.local"
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 192Mi
+      volumes:
+        - name: scripts
+          configMap:
+            name: "{{.WorkloadName}}-canary-client"

@@ -11,12 +11,35 @@ import (
 	"github.com/sagar2395/snowopslabs/pkg/scenario"
 )
 
+// identityResolve stands in for an engine's resolver where the test's content
+// carries no template variables.
+func identityResolve(in string) string { return in }
+
+// A reference names the bound workload in its label, URL and note, so all three
+// are resolved — a note reading "{{.WorkloadName}}" is an authoring bug on show.
+func TestRenderReferencesResolvesEveryField(t *testing.T) {
+	var buf bytes.Buffer
+	upper := func(in string) string { return strings.ReplaceAll(in, "{{.WorkloadName}}", "go-api") }
+	renderReferences(&buf, []scenario.Reference{
+		{Label: "{{.WorkloadName}} spec", URL: "https://x.test/{{.WorkloadName}}", Note: "about {{.WorkloadName}}"},
+	}, upper)
+	got := buf.String()
+	if strings.Contains(got, "{{") {
+		t.Errorf("unresolved template in output: %q", got)
+	}
+	for _, want := range []string{"go-api spec", "https://x.test/go-api", "about go-api"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output %q missing %q", got, want)
+		}
+	}
+}
+
 func TestRenderReferences(t *testing.T) {
 	var buf bytes.Buffer
 	renderReferences(&buf, []scenario.Reference{
 		{Label: "KEDA — spec", URL: "https://keda.sh/docs/", Note: "the fields"},
 		{Label: "no note", URL: "https://example.test"},
-	})
+	}, identityResolve)
 	got := buf.String()
 	want := "\nReferences:\n" +
 		"  - KEDA — spec\n    https://keda.sh/docs/\n    the fields\n" +
@@ -28,7 +51,7 @@ func TestRenderReferences(t *testing.T) {
 
 func TestRenderReferences_EmptyWritesNothing(t *testing.T) {
 	var buf bytes.Buffer
-	renderReferences(&buf, nil)
+	renderReferences(&buf, nil, identityResolve)
 	if buf.Len() != 0 {
 		t.Fatalf("expected no output for empty refs, got %q", buf.String())
 	}
@@ -36,48 +59,50 @@ func TestRenderReferences_EmptyWritesNothing(t *testing.T) {
 
 func TestRenderSnippets_InlineAndPathWithTemplate(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "so.yaml"), []byte("ns: {{.MonitoringNamespace}}\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "so.yaml"), []byte("# banner\n# more\nns: {{.MonitoringNamespace}}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	upper := func(s string) string { return strings.ReplaceAll(s, "{{.MonitoringNamespace}}", "monitoring") }
+	resolve := func(s string) string { return strings.ReplaceAll(s, "{{.MonitoringNamespace}}", "monitoring") }
 
 	var buf bytes.Buffer
 	renderSnippets(&buf, []scenario.Snippet{
 		{Label: "inline", Description: "a note", YAML: "kind: ConfigMap"},
 		{Label: "from file", Path: "so.yaml"},
-		{Label: "helm values", YAML: "resources: {}", Apply: "helm upgrade -f -"},
-	}, dir, upper)
+		{Label: "yours", YAML: "kind: Secret", Exercise: true},
+		{Label: "yours too", YAML: "resources: {}", Apply: "helm upgrade -f -", Exercise: true},
+	}, dir, resolve)
 	got := buf.String()
 
-	if !strings.Contains(got, "Snippets:") {
-		t.Errorf("missing snippets header: %q", got)
+	tests := []struct {
+		name string
+		want string
+		gone bool
+	}{
+		{name: "header", want: "Snippets:"},
+		{name: "label and description", want: "# inline — a note"},
+		{name: "inline body indented", want: "    kind: ConfigMap"},
+		{name: "path body resolved", want: "    ns: monitoring"},
+		{name: "banner trimmed", want: "# banner", gone: true},
+		{name: "exercise defaults to kubectl apply", want: "# you apply this: kubectl apply -f -"},
+		{name: "exercise uses its own command", want: "# you apply this: helm upgrade -f -"},
+		{name: "no unresolved template", want: "{{.MonitoringNamespace}}", gone: true},
 	}
-	if !strings.Contains(got, "# inline — a note") {
-		t.Errorf("inline label/description missing: %q", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if strings.Contains(got, tt.want) == tt.gone {
+				t.Errorf("output contains %q = %v, want %v:\n%s", tt.want, !tt.gone, !tt.gone, got)
+			}
+		})
 	}
-	// A snippet with no Apply hint defaults to the kubectl-apply instruction.
-	if !strings.Contains(got, "# apply with: kubectl apply -f -") {
-		t.Errorf("default apply hint missing: %q", got)
-	}
-	// A snippet with an explicit Apply hint uses it instead of the default.
-	if !strings.Contains(got, "# apply with: helm upgrade -f -") {
-		t.Errorf("custom apply hint missing: %q", got)
-	}
-	if !strings.Contains(got, "    kind: ConfigMap") {
-		t.Errorf("inline body not indented: %q", got)
-	}
-	// The path snippet's template must be resolved before display.
-	if !strings.Contains(got, "    ns: monitoring") {
-		t.Errorf("path snippet not template-resolved: %q", got)
-	}
-	if strings.Contains(got, "{{.MonitoringNamespace}}") {
-		t.Errorf("unresolved template leaked into output: %q", got)
+	// A reference snippet is installed by the scenario, so it carries no apply hint.
+	if strings.Count(got, "# you apply this:") != 2 {
+		t.Errorf("apply hints should appear only on the two exercises:\n%s", got)
 	}
 }
 
 func TestRenderSnippets_MissingFileReportedInline(t *testing.T) {
 	var buf bytes.Buffer
-	renderSnippets(&buf, []scenario.Snippet{{Label: "gone", Path: "nope.yaml"}}, t.TempDir(), nil)
+	renderSnippets(&buf, []scenario.Snippet{{Label: "gone", Path: "nope.yaml"}}, t.TempDir(), identityResolve)
 	if !strings.Contains(buf.String(), "unavailable:") {
 		t.Fatalf("expected an inline unavailable notice, got %q", buf.String())
 	}

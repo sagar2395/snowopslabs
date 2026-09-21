@@ -22,5 +22,10 @@ bin/labctl scenario up observability-sre
 bin/labctl scenario verify observability-sre --watch --timeout 5m
 ```
 
-**Completion check:** `GET http://prometheus.${DOMAIN_SUFFIX:-k3d.local}/-/ready`
-returns HTTP 200.
+**Completion check:** the scenario's own alerting rules are installed
+(`kubectl -n monitoring get prometheusrule scenario-observability-sre-alerts`).
+
+Note what is *not* checked: whether Prometheus answers. Prometheus is part of
+the platform and is already running before you start this module, so probing it
+would pass before you did anything. A module has to be graded on what its work
+produced.
