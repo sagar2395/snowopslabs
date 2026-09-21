@@ -728,7 +728,7 @@ func (e *Engine) installHelm(s *Scenario, comp *Component, exec CommandExecutor)
 	// Add the helm repo if one is given. Errors are ignored: if the repo is
 	// really unreachable, `helm upgrade --install` fails with a clear error.
 	if repo != "" {
-		repoName := strings.Split(chart, "/")[0]
+		repoName, _, _ := strings.Cut(chart, "/")
 		_, _ = exec.RunCommandStreamed("Helm repo add "+repoName, "helm", "repo", "add", repoName, repo, "--force-update")
 		_, _ = exec.RunCommandStreamed("Helm repo update", "helm", "repo", "update")
 	}
