@@ -44,9 +44,9 @@ its in-cluster root (/), which is access-logged. Point anywhere else with
 			return err
 		}
 		for k, v := range trafficOpts.Env() {
-			exec.SetEnv(k, v)
+			scriptExec.SetEnv(k, v)
 		}
-		_, err := exec.RunScriptStreamed("Start traffic: "+trafficOpts.Profile,
+		_, err := scriptExec.RunScriptStreamed("Start traffic: "+trafficOpts.Profile,
 			filepath.Join(traffic.ScriptDir, "start.sh"))
 		return err
 	},
@@ -56,7 +56,7 @@ var trafficStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop the traffic generator and clean up",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, err := exec.RunScriptStreamed("Stop traffic",
+		_, err := scriptExec.RunScriptStreamed("Stop traffic",
 			filepath.Join(traffic.ScriptDir, "stop.sh"))
 		return err
 	},
@@ -66,7 +66,7 @@ var trafficStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show traffic generator status and recent k6 output",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		_, err := exec.RunScriptStreamed("Traffic status",
+		_, err := scriptExec.RunScriptStreamed("Traffic status",
 			filepath.Join(traffic.ScriptDir, "status.sh"))
 		return err
 	},

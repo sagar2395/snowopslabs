@@ -153,8 +153,8 @@ func NewResolver(roots ...string) (*Resolver, error) {
 		// A root that does not exist yet is not an error — a content path may
 		// be configured before it is populated — but one that does exist gets
 		// its symlinks collapsed so containment checks compare like with like.
-		if real, err := filepath.EvalSymlinks(abs); err == nil {
-			abs = real
+		if resolvedAbs, err := filepath.EvalSymlinks(abs); err == nil {
+			abs = resolvedAbs
 		}
 		resolved = append(resolved, abs)
 	}
@@ -186,25 +186,25 @@ func (r *Resolver) Resolve(script string) (string, error) {
 		// EvalSymlinks both proves existence and collapses any symlink that
 		// might point out of the root. Checking the cleaned path alone would
 		// miss a symlink planted inside the tree.
-		real, err := filepath.EvalSymlinks(candidate)
+		target, err := filepath.EvalSymlinks(candidate)
 		if err != nil {
 			continue
 		}
-		if !r.contains(real) {
+		if !r.contains(target) {
 			if firstOutside == nil {
 				firstOutside = fmt.Errorf("%w: %s resolves to %s, which is outside %s",
-					ErrOutsideRoot, script, real, strings.Join(r.Roots, ", "))
+					ErrOutsideRoot, script, target, strings.Join(r.Roots, ", "))
 			}
 			continue
 		}
-		info, err := os.Stat(real)
+		info, err := os.Stat(target)
 		if err != nil {
 			continue
 		}
 		if info.IsDir() {
 			return "", fmt.Errorf("%w: %s is a directory", ErrScriptNotFound, script)
 		}
-		return real, nil
+		return target, nil
 	}
 
 	if firstOutside != nil {

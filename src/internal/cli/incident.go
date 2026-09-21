@@ -78,7 +78,7 @@ a reproducible pick across a team.`,
 			name = args[0]
 		}
 		if (name == "") == !injectRandom {
-			return fmt.Errorf("pass exactly one of a fault name or --random")
+			return errors.New("pass exactly one of a fault name or --random")
 		}
 		if injectRandom {
 			f, err := incEng.PickRandom(injectSeed, injectCategory)
@@ -113,7 +113,7 @@ a reproducible pick across a team.`,
 			return err
 		}
 		target := incsvc.Target(incEng.ResolvedTarget(f))
-		if err := runIncidentOp(cmd, "inject", name, target, func(ctx context.Context, svc *incsvc.Service) (string, error) {
+		if err := runIncidentOp(cmd, "inject", name, func(ctx context.Context, svc *incsvc.Service) (string, error) {
 			return svc.Inject(ctx, name, target)
 		}); err != nil {
 			return err
@@ -222,7 +222,7 @@ var incidentResolveCmd = &cobra.Command{
 			return err
 		}
 		target := incsvc.Target(incEng.ResolvedTarget(f))
-		if err := runIncidentOp(cmd, "resolve", name, target, func(ctx context.Context, svc *incsvc.Service) (string, error) {
+		if err := runIncidentOp(cmd, "resolve", name, func(ctx context.Context, svc *incsvc.Service) (string, error) {
 			return svc.Resolve(ctx, name, target)
 		}); err != nil {
 			return err
@@ -264,7 +264,7 @@ func chargeHints(n int) {
 	if active, err := eng.Active(); err != nil || active == nil {
 		return
 	}
-	for i := 0; i < n; i++ {
+	for range n {
 		if err := eng.RecordHint(); err != nil {
 			return
 		}

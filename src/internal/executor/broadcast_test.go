@@ -59,7 +59,7 @@ func TestBroadcaster_JobsNewestFirst(t *testing.T) {
 
 func TestBroadcaster_JobHistoryBounded(t *testing.T) {
 	b := NewBroadcaster()
-	for i := 0; i < maxJobHistory+25; i++ {
+	for i := range maxJobHistory + 25 {
 		b.Send(ActionEvent{ID: fmt.Sprintf("action-%d", i), Type: "action_start", Timestamp: time.Now()})
 	}
 	if got := len(b.Jobs()); got != maxJobHistory {

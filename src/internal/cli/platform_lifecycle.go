@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -180,8 +181,7 @@ func platformTeardown(cmd *cobra.Command) error {
 	var removed, failed []string
 	// Reverse order: later installs (e.g. dashboards that depend on monitoring)
 	// come down before what they sit on.
-	for i := len(installed) - 1; i >= 0; i-- {
-		comp := installed[i]
+	for _, comp := range slices.Backward(installed) {
 		category, provider := splitComponent(comp.Ref)
 		fmt.Fprintf(out, "\n── uninstalling %s ──\n", comp.Ref)
 		if uerr := streamOneUninstall(ctx, out, svc, st, category, provider); uerr != nil {

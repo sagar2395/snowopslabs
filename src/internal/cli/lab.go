@@ -28,7 +28,7 @@ ingress only).`,
 
 func labDeps(continueOnError bool) lab.Deps {
 	return lab.Deps{
-		Exec:            exec,
+		Exec:            scriptExec,
 		Registry:        reg,
 		Scenes:          scenes,
 		ContinueOnError: continueOnError,

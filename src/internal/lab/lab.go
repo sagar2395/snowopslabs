@@ -9,10 +9,13 @@ package lab
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -71,7 +74,7 @@ func (st *Store) Load(name string) (*Snapshot, error) {
 	}
 	data, err := os.ReadFile(filepath.Join(st.Dir, name+".yaml"))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, fmt.Errorf("snapshot %q not found", name)
 		}
 		return nil, err
@@ -87,7 +90,7 @@ func (st *Store) Load(name string) (*Snapshot, error) {
 func (st *Store) List() ([]*Snapshot, error) {
 	entries, err := os.ReadDir(st.Dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -113,7 +116,7 @@ func (st *Store) Delete(name string) error {
 		return fmt.Errorf("invalid snapshot name %q", name)
 	}
 	if err := os.Remove(filepath.Join(st.Dir, name+".yaml")); err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("snapshot %q not found", name)
 		}
 		return err
@@ -233,11 +236,11 @@ func ResetPlan(installedPlatform, deployedApps, activeScenarios []string) []Acti
 		plan = append(plan, Action{Kind: "app-destroy", Target: a})
 	}
 	sorted := sortPlatform(installedPlatform)
-	for i := len(sorted) - 1; i >= 0; i-- {
-		if categoryPriority(sorted[i]) == 0 { // keep ingress
+	for _, ref := range slices.Backward(sorted) {
+		if categoryPriority(ref) == 0 { // keep ingress
 			continue
 		}
-		plan = append(plan, Action{Kind: "platform-uninstall", Target: sorted[i]})
+		plan = append(plan, Action{Kind: "platform-uninstall", Target: ref})
 	}
 	return plan
 }

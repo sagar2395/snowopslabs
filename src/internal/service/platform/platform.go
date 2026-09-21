@@ -15,6 +15,7 @@ package platform
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -72,10 +73,10 @@ func WithEnv(env map[string]string) Option {
 // New builds a platform Service over the given engine and store.
 func New(engine *run.Engine, st *store.Store, opts ...Option) (*Service, error) {
 	if engine == nil {
-		return nil, fmt.Errorf("platform: a run engine is required")
+		return nil, errors.New("platform: a run engine is required")
 	}
 	if st == nil {
-		return nil, fmt.Errorf("platform: a store is required")
+		return nil, errors.New("platform: a store is required")
 	}
 	s := &Service{engine: engine, store: st}
 	for _, opt := range opts {
@@ -123,7 +124,7 @@ func validate(category, provider string) error {
 	if !segment.MatchString(provider) {
 		return fmt.Errorf("platform: invalid provider %q", provider)
 	}
-	for _, seg := range strings.Split(category, "/") {
+	for seg := range strings.SplitSeq(category, "/") {
 		if seg == "" || !segment.MatchString(seg) {
 			return fmt.Errorf("platform: invalid category %q", category)
 		}

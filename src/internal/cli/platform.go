@@ -108,7 +108,7 @@ func platformUpRun(cmd *cobra.Command, args []string) error {
 	// Install ingress
 	if cfg.IngressProvider != "" {
 		fmt.Printf("Installing ingress (%s)...\n", cfg.IngressProvider)
-		if err := reg.Install("ingress", cfg.IngressProvider, exec); err != nil {
+		if err := reg.Install("ingress", cfg.IngressProvider, scriptExec); err != nil {
 			return fmt.Errorf("ingress install failed: %w", err)
 		}
 	}
@@ -116,14 +116,14 @@ func platformUpRun(cmd *cobra.Command, args []string) error {
 	// Install monitoring (metrics)
 	if cfg.MetricsProvider != "" {
 		fmt.Printf("Installing metrics (%s)...\n", cfg.MetricsProvider)
-		if err := reg.Install("monitoring/metrics", cfg.MetricsProvider, exec); err != nil {
+		if err := reg.Install("monitoring/metrics", cfg.MetricsProvider, scriptExec); err != nil {
 			fmt.Printf("Warning: metrics install: %v\n", err)
 		}
 	}
 
 	// Install grafana (visualization)
 	fmt.Println("Installing grafana...")
-	if err := reg.Install("monitoring", "grafana", exec); err != nil {
+	if err := reg.Install("monitoring", "grafana", scriptExec); err != nil {
 		fmt.Printf("Warning: grafana install: %v\n", err)
 	}
 
@@ -147,16 +147,16 @@ func platformDownRun(cmd *cobra.Command, args []string) error {
 
 	// Uninstall in reverse order
 	fmt.Println("Uninstalling grafana...")
-	_ = reg.Uninstall("monitoring", "grafana", exec)
+	_ = reg.Uninstall("monitoring", "grafana", scriptExec)
 
 	if cfg.MetricsProvider != "" {
 		fmt.Printf("Uninstalling metrics (%s)...\n", cfg.MetricsProvider)
-		_ = reg.Uninstall("monitoring/metrics", cfg.MetricsProvider, exec)
+		_ = reg.Uninstall("monitoring/metrics", cfg.MetricsProvider, scriptExec)
 	}
 
 	if cfg.IngressProvider != "" {
 		fmt.Printf("Uninstalling ingress (%s)...\n", cfg.IngressProvider)
-		_ = reg.Uninstall("ingress", cfg.IngressProvider, exec)
+		_ = reg.Uninstall("ingress", cfg.IngressProvider, scriptExec)
 	}
 
 	fmt.Println("\nPlatform uninstalled.")
@@ -215,7 +215,7 @@ var platformStatusCmd = &cobra.Command{
 			for _, p := range providers {
 				if p.HasScript("status.sh") {
 					fmt.Printf("--- %s/%s ---\n", cat, p.Name)
-					_ = reg.Status(cat, p.Name, exec)
+					_ = reg.Status(cat, p.Name, scriptExec)
 					fmt.Println()
 				}
 			}
@@ -227,7 +227,7 @@ var platformStatusCmd = &cobra.Command{
 			for _, p := range providers {
 				if p.HasScript("status.sh") {
 					fmt.Printf("--- %s/%s ---\n", cat, p.Name)
-					_ = reg.Status(cat, p.Name, exec)
+					_ = reg.Status(cat, p.Name, scriptExec)
 					fmt.Println()
 				}
 			}

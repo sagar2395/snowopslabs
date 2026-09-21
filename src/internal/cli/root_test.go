@@ -92,7 +92,7 @@ func isVersionVar(gen *ast.GenDecl) bool {
 // doctor is the obvious one: a command whose job is diagnosing a broken
 // environment is useless if a broken environment stops it from starting.
 func TestPersistentPreRunSkipsEnvironmentDependentCommands(t *testing.T) {
-	path := filepath.Join("root.go")
+	path := "root.go"
 	src, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("reading %s: %v", path, err)

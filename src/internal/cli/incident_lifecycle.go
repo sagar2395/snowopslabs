@@ -35,9 +35,9 @@ var incidentEngineFactory = func(ctx context.Context) (*incsvc.Service, *store.S
 }
 
 // runIncidentOp submits an inject/resolve for a fault through the durable engine
-// and streams it, exiting non-zero if the run fails. target carries the fault's
-// workload to the scripts as TARGET_*.
-func runIncidentOp(cmd *cobra.Command, verb, name string, target incsvc.Target, submit func(context.Context, *incsvc.Service) (string, error)) error {
+// and streams it, exiting non-zero if the run fails. submit carries the fault's
+// target workload, which reaches the scripts as TARGET_*.
+func runIncidentOp(cmd *cobra.Command, verb, name string, submit func(context.Context, *incsvc.Service) (string, error)) error {
 	ctx := cmd.Context()
 	svc, st, eng, cleanup, err := incidentEngineFactory(ctx)
 	if err != nil {

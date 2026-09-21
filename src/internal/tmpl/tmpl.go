@@ -96,7 +96,7 @@ func (c Context) Vars() map[string]string {
 
 // FieldNames lists Context's exported fields, i.e. every legal variable name.
 func FieldNames() []string {
-	t := reflect.TypeOf(Context{})
+	t := reflect.TypeFor[Context]()
 	out := make([]string, 0, t.NumField())
 	for i := range t.NumField() {
 		out = append(out, t.Field(i).Name)

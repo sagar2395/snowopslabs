@@ -21,7 +21,9 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -97,7 +99,7 @@ func DefaultUsersPath(projectRoot string) string {
 // hash is Argon2id.
 func HashPassword(password string) (string, error) {
 	if password == "" {
-		return "", fmt.Errorf("password must not be empty")
+		return "", errors.New("password must not be empty")
 	}
 	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
@@ -201,7 +203,7 @@ func LoadStore(path string) (*Store, error) {
 	s := &Store{byName: map[string]User{}}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return s, nil
 		}
 		return nil, err

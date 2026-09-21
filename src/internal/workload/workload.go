@@ -8,6 +8,7 @@
 package workload
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -82,7 +83,7 @@ func (w Workload) URL() string {
 // before anything installs, rather than as a red check half an hour later.
 func (w Workload) Validate() error {
 	if strings.TrimSpace(w.Name) == "" {
-		return fmt.Errorf("workload has no name")
+		return errors.New("workload has no name")
 	}
 	if strings.TrimSpace(w.Namespace) == "" {
 		return fmt.Errorf("workload %q has no namespace", w.Name)

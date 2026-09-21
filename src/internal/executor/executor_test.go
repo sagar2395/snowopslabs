@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -61,7 +62,7 @@ func TestSetEnv_ConcurrentWithBuildEnv(t *testing.T) {
 	e.Stderr = io.Discard
 
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
@@ -149,13 +150,7 @@ func TestBuildEnv(t *testing.T) {
 
 	env := exec.buildEnv()
 
-	found := false
-	for _, e := range env {
-		if e == "CUSTOM_VAR=custom_value" {
-			found = true
-			break
-		}
-	}
+	found := slices.Contains(env, "CUSTOM_VAR=custom_value")
 	if !found {
 		t.Error("expected CUSTOM_VAR=custom_value in build environment")
 	}
@@ -357,7 +352,7 @@ func TestRunScriptStreamedWith_UsesProvidedID(t *testing.T) {
 func TestNextActionID_Unique(t *testing.T) {
 	e := New(t.TempDir())
 	ids := make(map[string]bool)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		id := e.NextActionID()
 		if ids[id] {
 			t.Errorf("duplicate action ID: %q", id)

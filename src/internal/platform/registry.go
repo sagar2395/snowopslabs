@@ -2,7 +2,9 @@
 package platform
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -238,7 +240,7 @@ func (r *Registry) Uninstall(category, name string, exec *executor.Executor) err
 		return err
 	}
 	script := filepath.Join(p.Path, "uninstall.sh")
-	if _, err := os.Stat(script); os.IsNotExist(err) {
+	if _, err := os.Stat(script); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("uninstall.sh not found for %s/%s", category, name)
 	}
 	scriptPath, err := filepath.Rel(r.ProjectRoot, script)
@@ -259,7 +261,7 @@ func (r *Registry) UninstallStreamed(category, name string, exec *executor.Execu
 		return err
 	}
 	script := filepath.Join(p.Path, "uninstall.sh")
-	if _, err := os.Stat(script); os.IsNotExist(err) {
+	if _, err := os.Stat(script); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("uninstall.sh not found for %s/%s", category, name)
 	}
 	scriptPath, err := filepath.Rel(r.ProjectRoot, script)
@@ -280,7 +282,7 @@ func (r *Registry) Status(category, name string, exec *executor.Executor) error 
 		return err
 	}
 	script := filepath.Join(p.Path, "status.sh")
-	if _, err := os.Stat(script); os.IsNotExist(err) {
+	if _, err := os.Stat(script); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("status.sh not found for %s/%s", category, name)
 	}
 	scriptPath, err := filepath.Rel(r.ProjectRoot, script)

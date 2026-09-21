@@ -9,7 +9,9 @@ package results
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -59,7 +61,7 @@ func NewScenarioRecord(name, user string, objectives []string, checks []CheckOut
 		}
 		score = passed * 100 / len(checks)
 	}
-	meta := map[string]interface{}{
+	meta := map[string]any{
 		"checks":       checks,
 		"checksPassed": passed,
 		"checksTotal":  len(checks),
@@ -82,17 +84,17 @@ func NewScenarioRecord(name, user string, objectives []string, checks []CheckOut
 
 // Record is the unified run record.
 type Record struct {
-	Kind      string                 `json:"kind"`           // incident | challenge | module
-	Name      string                 `json:"name"`           // fault name, challenge name, or "<path>/<module>"
-	User      string                 `json:"user,omitempty"` // $USER at run time
-	StartedAt time.Time              `json:"startedAt"`
-	EndedAt   time.Time              `json:"endedAt"`
-	Elapsed   int64                  `json:"elapsedSeconds"` // wall clock seconds
-	Score     int                    `json:"score"`          // 0–100; -1 = not scored
-	Outcome   string                 `json:"outcome"`        // passed | failed | aborted | resolved | auto-resolved
-	HintsUsed int                    `json:"hintsUsed,omitempty"`
-	Workload  string                 `json:"workload,omitempty"` // app the run was bound to (ADR-0014)
-	Meta      map[string]interface{} `json:"meta,omitempty"`     // kind-specific extra fields
+	Kind      string         `json:"kind"`           // incident | challenge | module
+	Name      string         `json:"name"`           // fault name, challenge name, or "<path>/<module>"
+	User      string         `json:"user,omitempty"` // $USER at run time
+	StartedAt time.Time      `json:"startedAt"`
+	EndedAt   time.Time      `json:"endedAt"`
+	Elapsed   int64          `json:"elapsedSeconds"` // wall clock seconds
+	Score     int            `json:"score"`          // 0–100; -1 = not scored
+	Outcome   string         `json:"outcome"`        // passed | failed | aborted | resolved | auto-resolved
+	HintsUsed int            `json:"hintsUsed,omitempty"`
+	Workload  string         `json:"workload,omitempty"` // app the run was bound to (ADR-0014)
+	Meta      map[string]any `json:"meta,omitempty"`     // kind-specific extra fields
 }
 
 // NewComparisonRecord builds a record for one workload's measured window in a
@@ -114,7 +116,7 @@ func NewComparisonRecord(scenario, app string, values map[string]float64, contro
 		Elapsed:   int64(endedAt.Sub(startedAt).Seconds()),
 		Score:     -1,
 		Outcome:   "measured",
-		Meta: map[string]interface{}{
+		Meta: map[string]any{
 			"metrics":  values,
 			"controls": controls,
 		},
@@ -162,13 +164,13 @@ func (s *Store) ByKind(kind string) ([]Record, error) {
 func (s *Store) query(kind string) ([]Record, error) {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
 	var recs []Record
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
 		if line == "" {
 			continue
 		}

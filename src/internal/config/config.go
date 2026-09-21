@@ -2,7 +2,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,7 +118,7 @@ func Load(projectRoot string) (*Config, error) {
 
 	// Validate that the profile directory exists.
 	runtimeDir := filepath.Join(projectRoot, "runtimes", profile)
-	if _, err := os.Stat(runtimeDir); os.IsNotExist(err) {
+	if _, err := os.Stat(runtimeDir); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("runtime profile %q not found in runtimes/; available profiles: %s",
 			profile, availableProfiles(projectRoot))
 	}
@@ -169,12 +171,12 @@ func Load(projectRoot string) (*Config, error) {
 // LoadAppConfig reads app-specific config from apps/<name>/app.env.
 func LoadAppConfig(projectRoot, appName string) (*AppConfig, error) {
 	appDir := filepath.Join(projectRoot, "apps", appName)
-	if _, err := os.Stat(appDir); os.IsNotExist(err) {
+	if _, err := os.Stat(appDir); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("app %q not found in apps/; available apps: %s",
 			appName, availableApps(projectRoot))
 	}
 	appEnv := filepath.Join(appDir, "app.env")
-	if _, err := os.Stat(appEnv); os.IsNotExist(err) {
+	if _, err := os.Stat(appEnv); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("app %q exists but has no app.env", appName)
 	}
 
@@ -248,7 +250,7 @@ func findProjectRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("could not find project root (looked for scenarios/ + runtimes/)")
+			return "", errors.New("could not find project root (looked for scenarios/ + runtimes/)")
 		}
 		dir = parent
 	}
@@ -263,7 +265,7 @@ func mergeEnvFile(dst map[string]string, path string) {
 	if err != nil {
 		return
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue

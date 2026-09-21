@@ -7,7 +7,7 @@ import (
 	"io"
 	"maps"
 	"os"
-	osexec "os/exec"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -138,7 +138,7 @@ func mergeHosts(domainSuffix string, subdomains, discovered []string) []string {
 func managedHosts(content string) map[string]bool {
 	hosts := map[string]bool{}
 	inBlock := false
-	for _, line := range strings.Split(content, "\n") {
+	for line := range strings.SplitSeq(content, "\n") {
 		switch {
 		case line == hostsBegin:
 			inBlock = true
@@ -234,7 +234,7 @@ func reexecWithSudo(extra ...string) error {
 	fmt.Fprintln(os.Stderr, "Root required — re-running with sudo...")
 	args := append([]string{os.Args[0]}, os.Args[1:]...)
 	args = append(args, extra...)
-	c := osexec.Command("sudo", args...) //nolint:gosec,noctx // re-exec of this same CLI under sudo; a context would not manage the replacement process
+	c := exec.Command("sudo", args...) //nolint:gosec,noctx // re-exec of this same CLI under sudo; a context would not manage the replacement process
 	c.Stdin = os.Stdin
 	c.Stdout = os.Stdout
 	c.Stderr = os.Stderr

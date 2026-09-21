@@ -694,9 +694,7 @@ func TestConcurrentWrites(t *testing.T) {
 	errCh := make(chan error, writers)
 
 	for i := range writers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			id := fmt.Sprintf("run-%02d", i)
 			if err := s.CreateRun(ctx, Run{ID: id, Kind: "test"}); err != nil {
 				errCh <- err
@@ -713,7 +711,7 @@ func TestConcurrentWrites(t *testing.T) {
 			if err := s.FinishRun(ctx, id, StatusSucceeded, intPtr(0), "", time.Now(), time.Second); err != nil {
 				errCh <- err
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(errCh)

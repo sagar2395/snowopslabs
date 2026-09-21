@@ -2,6 +2,7 @@
 package executor
 
 import (
+	"slices"
 	"sync"
 	"time"
 )
@@ -155,8 +156,8 @@ func (b *Broadcaster) Jobs() []JobInfo {
 	b.jobsMu.Lock()
 	defer b.jobsMu.Unlock()
 	out := make([]JobInfo, 0, len(b.jobOrder))
-	for i := len(b.jobOrder) - 1; i >= 0; i-- {
-		if j, ok := b.jobs[b.jobOrder[i]]; ok {
+	for _, id := range slices.Backward(b.jobOrder) {
+		if j, ok := b.jobs[id]; ok {
 			out = append(out, *j)
 		}
 	}

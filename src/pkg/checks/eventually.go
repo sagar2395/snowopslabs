@@ -76,10 +76,7 @@ func (r *Runner) Eventually(ctx context.Context, c Check, opts EventuallyOpts) R
 		}
 
 		// Compute the next backoff, capped, before deciding whether to sleep.
-		nextInterval := time.Duration(float64(interval) * opts.Multiplier)
-		if nextInterval > opts.MaxInterval {
-			nextInterval = opts.MaxInterval
-		}
+		nextInterval := min(time.Duration(float64(interval)*opts.Multiplier), opts.MaxInterval)
 
 		select {
 		case <-deadlineCtx.Done():

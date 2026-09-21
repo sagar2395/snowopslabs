@@ -521,7 +521,7 @@ func TestCatalogOrder_Deterministic(t *testing.T) {
 	wantNames := []string{"beta", "zeta", "alpha"}
 
 	engine := NewEngine(root, "k3d.local", "k3d")
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		list := engine.List()
 		if len(list) != len(wantNames) {
 			t.Fatalf("List: got %d scenarios, want %d", len(list), len(wantNames))

@@ -4,6 +4,7 @@ package k8s
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -147,7 +148,7 @@ func GetNamespacePods(ctx context.Context, namespace string) ([]PodInfo, error) 
 			Namespace: namespace,
 			Status:    item.Status.Phase,
 			Ready:     fmt.Sprintf("%d/%d", readyCount, totalCount),
-			Restarts:  fmt.Sprintf("%d", restarts),
+			Restarts:  strconv.Itoa(int(restarts)),
 		})
 	}
 	return pods, nil
@@ -337,8 +338,8 @@ func cleanMetricName(name string) string {
 // most users; this converts the common milli and plain-integer cases and leaves
 // anything else (binary suffixes, unusual units) untouched.
 func humanizeQuantity(q string) string {
-	if strings.HasSuffix(q, "m") {
-		if n, err := strconv.ParseInt(strings.TrimSuffix(q, "m"), 10, 64); err == nil {
+	if before, ok := strings.CutSuffix(q, "m"); ok {
+		if n, err := strconv.ParseInt(before, 10, 64); err == nil {
 			return strconv.FormatFloat(float64(n)/1000, 'f', -1, 64)
 		}
 	}
@@ -428,7 +429,7 @@ func IngressHosts(ctx context.Context) ([]string, error) {
 func uniqueLines(out string) []string {
 	seen := map[string]bool{}
 	lines := []string{}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		line = strings.TrimSpace(line)
 		if line != "" && !seen[line] {
 			seen[line] = true
@@ -446,7 +447,7 @@ func RunKubectl(ctx context.Context, args ...string) (string, error) {
 func kubectl(ctx context.Context, args ...string) (string, error) {
 	path, err := exec.LookPath("kubectl")
 	if err != nil {
-		return "", fmt.Errorf("kubectl not found in PATH")
+		return "", errors.New("kubectl not found in PATH")
 	}
 
 	cmd := exec.CommandContext(ctx, path, args...)

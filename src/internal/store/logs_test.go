@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -240,7 +241,7 @@ func TestReadLogs(t *testing.T) {
 		seedRun(t, s, "r")
 		var lines []LogLine
 		for i := range 10 {
-			lines = append(lines, LogLine{Text: fmt.Sprint(i)})
+			lines = append(lines, LogLine{Text: strconv.Itoa(i)})
 		}
 		if _, err := s.AppendLogs(ctx, "r", lines); err != nil {
 			t.Fatalf("AppendLogs: %v", err)

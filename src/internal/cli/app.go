@@ -22,7 +22,7 @@ var appBuildCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appName := args[0]
 		fmt.Printf("Building %s...\n", appName)
-		return exec.RunScript("src/engine/build.sh", appName)
+		return scriptExec.RunScript("src/engine/build.sh", appName)
 	},
 }
 
@@ -33,7 +33,7 @@ var appDeployCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appName := args[0]
 		fmt.Printf("Deploying %s...\n", appName)
-		if err := exec.RunScript("src/engine/deploy.sh", "deploy", appName); err != nil {
+		if err := scriptExec.RunScript("src/engine/deploy.sh", "deploy", appName); err != nil {
 			return err
 		}
 		warnMissingHosts(cmd.Context(), os.Stderr, cfg.DomainSuffix)
@@ -48,7 +48,7 @@ var appDestroyCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		appName := args[0]
 		fmt.Printf("Destroying %s...\n", appName)
-		return exec.RunScript("src/engine/deploy.sh", "destroy", appName)
+		return scriptExec.RunScript("src/engine/deploy.sh", "destroy", appName)
 	},
 }
 

@@ -15,7 +15,7 @@
   <a href="https://github.com/sagar2395/snowopslabs/actions/workflows/ci.yaml"><img alt="CI" src="https://github.com/sagar2395/snowopslabs/actions/workflows/ci.yaml/badge.svg"></a>
   <a href="https://github.com/sagar2395/snowopslabs/releases"><img alt="Release" src="https://img.shields.io/github/v/release/sagar2395/snowopslabs?color=818cf8&sort=semver"></a>
   <img alt="Platforms: macOS, Linux, WSL2" src="https://img.shields.io/badge/platforms-macOS%20·%20Linux%20·%20WSL2-64748b">
-  <img alt="Go 1.24+" src="https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white">
+  <img alt="Go 1.25+" src="https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white">
   <a href="CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-4ade80.svg"></a>
 </p>
 
@@ -135,7 +135,7 @@ resources the way your platform expects:
   applies — set it in `.wslconfig` on the Windows side if you use a native
   daemon. Full details in [Running on WSL](#running-on-wsl).
 
-> **Building from source?** Contributors additionally need **Go 1.24+** and
+> **Building from source?** Contributors additionally need **Go 1.25+** and
 > **Node 22+**. End users following the Quickstart below do **not** — the
 > released `labctl` binary already has the UI embedded.
 
@@ -184,7 +184,7 @@ Linux, so run the **macOS or Linux** block above exactly as written from inside
 your distro (it resolves to the `linux` archive automatically).
 
 **Alternative: build from source** (contributors, or anyone who wants the latest
-`main`). Needs **Go 1.24+** and **Node 22+**:
+`main`). Needs **Go 1.25+** and **Node 22+**:
 
 ```bash
 make cli-build          # builds bin/labctl (UI embedded); run it as ./bin/labctl

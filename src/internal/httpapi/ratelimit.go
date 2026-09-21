@@ -34,10 +34,10 @@ type limitWindow struct {
 	start time.Time
 }
 
-func newLoginLimiter(max int, window time.Duration) *loginLimiter {
+func newLoginLimiter(limit int, window time.Duration) *loginLimiter {
 	return &loginLimiter{
 		windows:  make(map[string]*limitWindow),
-		max:      max,
+		max:      limit,
 		window:   window,
 		now:      time.Now,
 		gcPeriod: 10 * window,

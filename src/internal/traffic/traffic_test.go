@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -106,13 +107,7 @@ func TestRepoProfilesExist(t *testing.T) {
 		t.Fatalf("Profiles: %v", err)
 	}
 	for _, want := range []string{"steady", "spike", "soak"} {
-		found := false
-		for _, p := range got {
-			if p == want {
-				found = true
-				break
-			}
-		}
+		found := slices.Contains(got, want)
 		if !found {
 			t.Errorf("shipped profile %q missing from %v", want, got)
 		}

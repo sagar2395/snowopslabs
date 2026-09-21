@@ -52,7 +52,7 @@ func ifNoneMatch(header, etag string) bool {
 	if header == "*" {
 		return true
 	}
-	for _, part := range strings.Split(header, ",") {
+	for part := range strings.SplitSeq(header, ",") {
 		if strings.TrimPrefix(strings.TrimSpace(part), "W/") == etag {
 			return true
 		}

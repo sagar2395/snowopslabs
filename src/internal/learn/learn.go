@@ -3,9 +3,12 @@ package learn
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -136,7 +139,7 @@ func New(learnDir, stateDir, resultsDir string) *Engine {
 func (e *Engine) Paths() ([]*Path, error) {
 	entries, err := os.ReadDir(e.learnDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -189,7 +192,7 @@ func (e *Engine) IntroText(p *Path, m Module) (string, error) {
 func (e *Engine) Progress(name string) (*Progress, error) {
 	data, err := os.ReadFile(e.progressFile(name))
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -225,7 +228,7 @@ func (e *Engine) ResetProgress(name string) error {
 	if _, err := e.LoadPath(name); err != nil {
 		return err
 	}
-	if err := os.Remove(e.progressFile(name)); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(e.progressFile(name)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil
@@ -249,10 +252,8 @@ func (e *Engine) MarkCompleteModule(p *Path, prog *Progress, idx int, user strin
 }
 
 func (e *Engine) markComplete(prog *Progress, idx int, recordName, user string) error {
-	for _, c := range prog.CompletedIdxs {
-		if c == idx {
-			return nil
-		}
+	if slices.Contains(prog.CompletedIdxs, idx) {
+		return nil
 	}
 	prog.CompletedIdxs = append(prog.CompletedIdxs, idx)
 	prog.LastUpdatedAt = e.now()

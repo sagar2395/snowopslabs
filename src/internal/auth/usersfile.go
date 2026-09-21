@@ -2,7 +2,9 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,7 +17,7 @@ import (
 func LoadUsersFile(path string) (*UsersFile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return &UsersFile{}, nil
 		}
 		return nil, err

@@ -98,8 +98,8 @@ func description(appDir string) string {
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		if strings.HasPrefix(line, "description:") {
-			return strings.TrimSpace(strings.TrimPrefix(line, "description:"))
+		if after, ok := strings.CutPrefix(line, "description:"); ok {
+			return strings.TrimSpace(after)
 		}
 	}
 	return ""

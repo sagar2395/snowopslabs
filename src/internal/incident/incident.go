@@ -9,6 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -86,7 +88,7 @@ var contractFiles = []string{"fault.yaml", "inject.sh", "resolve.sh", "hints.md"
 // Validate reports all schema problems at once.
 func (f *Fault) Validate() error {
 	var errs []string
-	add := func(format string, args ...interface{}) {
+	add := func(format string, args ...any) {
 		errs = append(errs, fmt.Sprintf(format, args...))
 	}
 
@@ -382,9 +384,7 @@ func (e *Engine) bindToRecorded(a *Active) func() {
 // LoadErrors returns faults that failed to load, keyed by directory name.
 func (e *Engine) LoadErrors() map[string]error {
 	out := make(map[string]error, len(e.loadErrors))
-	for k, v := range e.loadErrors {
-		out[k] = v
-	}
+	maps.Copy(out, e.loadErrors)
 	return out
 }
 
@@ -396,7 +396,7 @@ func (e *Engine) activeFile() string { return filepath.Join(e.stateDir, "active.
 func (e *Engine) Active() (*Active, error) {
 	data, err := os.ReadFile(e.activeFile())
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err

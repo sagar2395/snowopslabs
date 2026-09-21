@@ -409,12 +409,12 @@ func corsMiddleware(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
-		if r.Method == "OPTIONS" {
+		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
-		if (r.Method == "POST" || r.Method == "DELETE") && origin != "" && !originAllowed(r) {
+		if (r.Method == http.MethodPost || r.Method == http.MethodDelete) && origin != "" && !originAllowed(r) {
 			respondError(w, r, http.StatusForbidden, "forbidden_origin", "cross-origin requests are not allowed")
 			return
 		}
@@ -429,7 +429,7 @@ func jsonMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func respondJSON(w http.ResponseWriter, status int, data interface{}) {
+func respondJSON(w http.ResponseWriter, status int, data any) {
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(data)
 }

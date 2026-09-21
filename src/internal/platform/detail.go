@@ -94,12 +94,13 @@ func (p *Provider) InstallCommands() []string {
 	for sc.Scan() {
 		line := sc.Text()
 		trimmed := strings.TrimSpace(line)
-		if joining {
+		switch {
+		case joining:
 			cont.WriteString(" " + trimmed)
-		} else if isInstallVerb(trimmed) {
+		case isInstallVerb(trimmed):
 			cont.Reset()
 			cont.WriteString(trimmed)
-		} else {
+		default:
 			continue
 		}
 		if strings.HasSuffix(trimmed, "\\") {

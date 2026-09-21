@@ -269,8 +269,8 @@ func progressSummary(p *learn.Path, prog *learn.Progress) string {
 func expandVars(s, domainSuffix string) string {
 	return os.Expand(s, func(name string) string {
 		key, def := name, ""
-		if i := strings.Index(name, ":-"); i >= 0 {
-			key, def = name[:i], name[i+2:]
+		if before, after, ok := strings.Cut(name, ":-"); ok {
+			key, def = before, after
 		}
 		v := ""
 		if key == "DOMAIN_SUFFIX" {

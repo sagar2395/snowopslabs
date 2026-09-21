@@ -8,6 +8,7 @@ package checks
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -102,7 +103,7 @@ func (c *Check) setFields() map[string][]string {
 // fields so authors can fix everything in one pass.
 func (c *Check) Validate() error {
 	var errs []string
-	add := func(format string, args ...interface{}) {
+	add := func(format string, args ...any) {
 		errs = append(errs, fmt.Sprintf(format, args...))
 	}
 
@@ -157,13 +158,7 @@ func (c *Check) Validate() error {
 	if validKnownType(c.Type) {
 		var misplaced []string
 		for field, types := range c.setFields() {
-			ok := false
-			for _, t := range types {
-				if t == c.Type {
-					ok = true
-					break
-				}
-			}
+			ok := slices.Contains(types, c.Type)
 			if !ok {
 				misplaced = append(misplaced, field)
 			}

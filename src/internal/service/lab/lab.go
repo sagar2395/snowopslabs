@@ -19,6 +19,7 @@ package lab
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -84,10 +85,10 @@ func WithEnv(env map[string]string) Option {
 // argument passed to the runtime scripts (they read it as argv[1]).
 func New(engine *run.Engine, st *store.Store, clusterName string, opts ...Option) (*Service, error) {
 	if engine == nil {
-		return nil, fmt.Errorf("lab: a run engine is required")
+		return nil, errors.New("lab: a run engine is required")
 	}
 	if st == nil {
-		return nil, fmt.Errorf("lab: a store is required")
+		return nil, errors.New("lab: a store is required")
 	}
 	s := &Service{engine: engine, store: st, cluster: clusterName}
 	for _, opt := range opts {

@@ -27,7 +27,7 @@ func TestBroadcaster_SeqIsMonotonic(t *testing.T) {
 	ch := b.Subscribe()
 	defer b.Unsubscribe(ch)
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		b.Send(ActionEvent{ID: "x", Type: "action_output"})
 	}
 	events := drain(t, ch, 5)
@@ -84,7 +84,7 @@ func TestBroadcaster_ResumeIsGapFreeAndNoDuplicates(t *testing.T) {
 func TestBroadcaster_NonContiguousWhenCursorFellOffRing(t *testing.T) {
 	b := NewBroadcaster()
 	total := eventRingCap + 10
-	for i := 0; i < total; i++ {
+	for range total {
 		b.Send(ActionEvent{ID: "x", Type: "action_output"})
 	}
 

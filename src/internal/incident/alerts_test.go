@@ -215,7 +215,8 @@ func TestRepoFaults_AlertRulesConsistent(t *testing.T) {
 func TestStatus_SinceActivationOpensAtInjection(t *testing.T) {
 	_, root := testEngine(t, "fault-a")
 	yaml := strings.Replace(testFaultYAML, "%s", "fault-a", 1)
-	yaml = yaml[:strings.Index(yaml, "detection:")] + "detection:\n" +
+	before, _, _ := strings.Cut(yaml, "detection:")
+	yaml = before + "detection:\n" +
 		"  name: fired-this-run\n  type: promql\n" +
 		"  query: 'max_over_time(ALERTS[{{.SinceActivation}}:1m])'\n" +
 		"  operator: \">=\"\n  value: \"1\"\n"

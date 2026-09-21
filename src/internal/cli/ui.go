@@ -2,11 +2,12 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"net"
 	"os"
-	osExec "os/exec"
+	"os/exec"
 	"runtime"
 
 	"github.com/spf13/cobra"
@@ -34,7 +35,7 @@ var uiCmd = &cobra.Command{
 			return err
 		}
 		if (uiTLSCert == "") != (uiTLSKey == "") {
-			return fmt.Errorf("--tls-cert and --tls-key must be provided together")
+			return errors.New("--tls-cert and --tls-key must be provided together")
 		}
 
 		addr := net.JoinHostPort(uiBind, uiPort)
@@ -56,11 +57,11 @@ var uiCmd = &cobra.Command{
 		// Try to open browser
 		go openBrowser(url)
 
-		if ln, err := net.Listen("tcp", addr); err != nil {
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
 			return fmt.Errorf("cannot bind %s: %w\nAnother `labctl ui` may already be running — stop it first (e.g. pkill -f 'labctl ui'), or choose another --port", addr, err)
-		} else {
-			_ = ln.Close()
 		}
+		_ = ln.Close()
 
 		// Use embedded UI assets (sub-directory "dist" within the embed.FS)
 		uiFS, _ := fs.Sub(webui.DistFS, "dist")
@@ -75,7 +76,7 @@ var uiCmd = &cobra.Command{
 			fmt.Printf("Metrics enabled at %s/metrics\n", url)
 		}
 
-		server := httpapi.NewServer(cfg, exec, reg, scenes, incEng, svcReg, rtm, uiFS, opts...)
+		server := httpapi.NewServer(cfg, scriptExec, reg, scenes, incEng, svcReg, rtm, uiFS, opts...)
 		// Name the exact bundle being served so a stale process is obvious.
 		fmt.Printf("Serving %s\n", server.UIInfo())
 		if uiTLSCert != "" {
@@ -96,11 +97,11 @@ func openBrowser(url string) {
 		if len(c) == 0 {
 			continue
 		}
-		if err := osExec.Command(c[0], c[1:]...).Start(); err == nil { //nolint:noctx
+		err := exec.Command(c[0], c[1:]...).Start() //nolint:noctx
+		if err == nil {
 			return
-		} else {
-			lastErr = err
 		}
+		lastErr = err
 	}
 	if lastErr != nil {
 		fmt.Printf("Could not open browser (%v). Open %s manually.\n", lastErr, url)

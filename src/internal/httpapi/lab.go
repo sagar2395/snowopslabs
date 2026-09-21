@@ -3,11 +3,9 @@ package httpapi
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/sagar2395/snowopslabs/internal/lab"
 )
 
@@ -39,9 +37,8 @@ func (s *Server) handleLabSnapshots(w http.ResponseWriter, r *http.Request) {
 
 // handleLabSnapshotTake records the current lab state under the given name.
 func (s *Server) handleLabSnapshotTake(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid snapshot name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "snapshot")
+	if !ok {
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -52,7 +49,7 @@ func (s *Server) handleLabSnapshotTake(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"snapshot": snap,
 		"warnings": warnings,
 	})
@@ -60,9 +57,8 @@ func (s *Server) handleLabSnapshotTake(w http.ResponseWriter, r *http.Request) {
 
 // handleLabSnapshotDelete removes a snapshot.
 func (s *Server) handleLabSnapshotDelete(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid snapshot name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "snapshot")
+	if !ok {
 		return
 	}
 	if err := s.labStore().Delete(name); err != nil {
@@ -74,9 +70,8 @@ func (s *Server) handleLabSnapshotDelete(w http.ResponseWriter, r *http.Request)
 
 // handleLabRestore replays a snapshot asynchronously (job pattern).
 func (s *Server) handleLabRestore(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid snapshot name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "snapshot")
+	if !ok {
 		return
 	}
 	snap, err := s.labStore().Load(name)
@@ -92,7 +87,7 @@ func (s *Server) handleLabRestore(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		s.exec.BroadcastEnd(jobID, label, lab.Execute(plan, s.labDeps(false)))
 	}()
-	respondJSON(w, http.StatusAccepted, map[string]interface{}{
+	respondJSON(w, http.StatusAccepted, map[string]any{
 		"jobId": jobID, "status": "accepted", "steps": len(plan),
 	})
 }
@@ -123,7 +118,7 @@ func (s *Server) handleLabReset(w http.ResponseWriter, r *http.Request) {
 		}
 		s.exec.BroadcastEnd(jobID, label, err)
 	}()
-	respondJSON(w, http.StatusAccepted, map[string]interface{}{
+	respondJSON(w, http.StatusAccepted, map[string]any{
 		"jobId": jobID, "status": "accepted", "steps": len(plan),
 	})
 }

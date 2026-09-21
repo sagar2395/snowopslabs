@@ -25,6 +25,13 @@ linters:
     - unconvert
     - misspell
     - gosec
+    - modernize       # prefer the idiom the language floor (go.mod) allows
+    - usestdlibvars   # http.MethodPost, not "POST"
+    - predeclared     # no variables named len, max, real, any…
+    - intrange        # for i := range n
+    - copyloopvar     # loop-variable copies are redundant since Go 1.22
+    - perfsprint      # errors.New / strconv where fmt adds nothing
+    - gocritic        # if-else chains, suspicious calls, lambdas that wrap a func
 
   settings:
     errcheck:
@@ -45,6 +52,15 @@ linters:
         - name: context-as-argument
         - name: error-strings
         - name: error-return
+    modernize:
+      disable:
+        # omitzero would change what the API emits for a zero struct; the
+        # existing omitempty tags on struct fields are inert, not wrong.
+        - omitzero
+    perfsprint:
+      # "a" + b reads worse than Sprintf for mixed messages; keep that choice
+      # with the author.
+      strconcat: false
     gosec:
       # The single source of gosec policy for this repo. `make sec` runs gosec
       # through golangci-lint so it reads these excludes and the per-site

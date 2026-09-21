@@ -82,14 +82,14 @@ func (l *cliLab) TrafficStart(_ context.Context, w workload.Workload, profile st
 		return err
 	}
 	for k, v := range o.Env() {
-		exec.SetEnv(k, v)
+		scriptExec.SetEnv(k, v)
 	}
-	_, err := exec.RunScriptStreamed("Load "+w.Name, filepath.Join(traffic.ScriptDir, "start.sh"))
+	_, err := scriptExec.RunScriptStreamed("Load "+w.Name, filepath.Join(traffic.ScriptDir, "start.sh"))
 	return err
 }
 
 func (l *cliLab) TrafficStop(_ context.Context) error {
-	_, err := exec.RunScriptStreamed("Stop traffic", filepath.Join(traffic.ScriptDir, "stop.sh"))
+	_, err := scriptExec.RunScriptStreamed("Stop traffic", filepath.Join(traffic.ScriptDir, "stop.sh"))
 	return err
 }
 

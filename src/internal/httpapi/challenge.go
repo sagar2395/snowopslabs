@@ -53,7 +53,7 @@ func (s *Server) handleChallengeInfo(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"name":        c.Name,
 		"displayName": c.DisplayName,
 		"description": c.Description,
@@ -72,10 +72,10 @@ func (s *Server) handleChallengeStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if active == nil {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"active": false})
+		respondJSON(w, http.StatusOK, map[string]any{"active": false})
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"active":    true,
 		"challenge": active.ChallengeName,
 		"startedAt": active.StartedAt,

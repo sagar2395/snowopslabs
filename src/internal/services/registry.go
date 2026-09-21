@@ -2,7 +2,9 @@
 package services
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -72,7 +74,7 @@ func (r *Registry) runScript(name, script, label string, exec *executor.Executor
 		return err
 	}
 	fullPath := filepath.Join(s.Path, script)
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+	if _, err := os.Stat(fullPath); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%s not found for service %q", script, name)
 	}
 	rel, err := filepath.Rel(r.ProjectRoot, fullPath)

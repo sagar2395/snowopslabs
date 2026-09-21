@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -322,14 +323,11 @@ func delta(base, v float64, better direction) string {
 func missingMetrics(ms []Measurement) []string {
 	var out []string
 	for _, metric := range Metrics() {
-		any := false
-		for _, m := range ms {
-			if _, ok := m.Values[metric.Key]; ok {
-				any = true
-				break
-			}
-		}
-		if !any {
+		reported := slices.ContainsFunc(ms, func(m Measurement) bool {
+			_, ok := m.Values[metric.Key]
+			return ok
+		})
+		if !reported {
 			out = append(out, metric.Label)
 		}
 	}

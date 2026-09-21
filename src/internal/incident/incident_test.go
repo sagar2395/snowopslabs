@@ -263,7 +263,7 @@ func TestPickRandom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PickRandom: %v", err)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		again, _ := e.PickRandom(42, "")
 		if again.Name != first.Name {
 			t.Fatalf("seeded pick must be deterministic: %q vs %q", again.Name, first.Name)

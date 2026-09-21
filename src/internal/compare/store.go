@@ -4,7 +4,9 @@ package compare
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,7 +79,7 @@ func (s *Store) Append(r *Report) (string, error) {
 // whole history unreadable.
 func (s *Store) List() ([]*Report, []string, error) {
 	f, err := os.Open(s.path)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, nil
 	}
 	if err != nil {

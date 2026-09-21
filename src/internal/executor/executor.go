@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -29,7 +30,7 @@ type Executor struct {
 	Stdout      io.Writer
 	Stderr      io.Writer
 	Broadcast   *Broadcaster
-	actionSeq   int64
+	actionSeq   atomic.Int64
 	envMu       sync.RWMutex
 }
 
@@ -47,13 +48,13 @@ func New(projectRoot string) *Executor {
 // NextActionID allocates and returns the next action ID without running anything.
 // Handlers call this before launching a goroutine to get the ID for the 202 response.
 func (e *Executor) NextActionID() string {
-	return fmt.Sprintf("action-%d", atomic.AddInt64(&e.actionSeq, 1))
+	return fmt.Sprintf("action-%d", e.actionSeq.Add(1))
 }
 
 // RunScript executes a shell script relative to the project root.
 func (e *Executor) RunScript(scriptPath string, args ...string) error {
 	absPath := filepath.Join(e.ProjectRoot, scriptPath)
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+	if _, err := os.Stat(absPath); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("script not found: %s", absPath)
 	}
 
@@ -74,7 +75,7 @@ func (e *Executor) RunScript(scriptPath string, args ...string) error {
 // the 202 HTTP response with the WebSocket stream.
 func (e *Executor) RunScriptStreamed(actionLabel, scriptPath string, args ...string) (string, error) {
 	absPath := filepath.Join(e.ProjectRoot, scriptPath)
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+	if _, err := os.Stat(absPath); errors.Is(err, fs.ErrNotExist) {
 		errMsg := fmt.Sprintf("script not found: %s", absPath)
 		id := e.broadcastError(actionLabel, scriptPath, args, errMsg)
 		return id, fmt.Errorf("%s", errMsg)
@@ -89,7 +90,7 @@ func (e *Executor) RunScriptStreamed(actionLabel, scriptPath string, args ...str
 // 202 response body, so the WebSocket action_start event carries the same ID.
 func (e *Executor) RunScriptStreamedWith(actionID, actionLabel, scriptPath string, args ...string) error {
 	absPath := filepath.Join(e.ProjectRoot, scriptPath)
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
+	if _, err := os.Stat(absPath); errors.Is(err, fs.ErrNotExist) {
 		errMsg := fmt.Sprintf("script not found: %s", absPath)
 		cmdStr := scriptPath + " " + strings.Join(args, " ")
 		e.broadcastErrorWith(actionID, actionLabel, cmdStr, errMsg)

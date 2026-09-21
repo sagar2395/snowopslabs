@@ -15,7 +15,9 @@ package incident
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"time"
@@ -75,10 +77,10 @@ func WithEnv(env map[string]string) Option {
 // New builds an incident Service over the given engine and store.
 func New(engine *run.Engine, st *store.Store, opts ...Option) (*Service, error) {
 	if engine == nil {
-		return nil, fmt.Errorf("incident: a run engine is required")
+		return nil, errors.New("incident: a run engine is required")
 	}
 	if st == nil {
-		return nil, fmt.Errorf("incident: a store is required")
+		return nil, errors.New("incident: a store is required")
 	}
 	s := &Service{engine: engine, store: st}
 	for _, opt := range opts {
@@ -105,12 +107,8 @@ func (s *Service) submit(ctx context.Context, kind, name, script string, target 
 	}
 	// Base env plus the fault's target, without mutating the shared base map.
 	env := make(map[string]string, len(s.env)+2)
-	for k, v := range s.env {
-		env[k] = v
-	}
-	for k, v := range target.env() {
-		env[k] = v
-	}
+	maps.Copy(env, s.env)
+	maps.Copy(env, target.env())
 	spec := run.Spec{
 		Kind:    kind,
 		Target:  name,

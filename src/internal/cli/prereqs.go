@@ -51,10 +51,10 @@ func ensureAppsDeployed(ctx context.Context, apps []string, autoDeploy bool) err
 		}
 		if autoDeploy {
 			fmt.Printf("Prerequisite app %q is not deployed — building and deploying it...\n", app)
-			if err := exec.RunScript("src/engine/build.sh", app); err != nil {
+			if err := scriptExec.RunScript("src/engine/build.sh", app); err != nil {
 				return fmt.Errorf("building prerequisite app %s: %w", app, err)
 			}
-			if err := exec.RunScript("src/engine/deploy.sh", "deploy", app); err != nil {
+			if err := scriptExec.RunScript("src/engine/deploy.sh", "deploy", app); err != nil {
 				return fmt.Errorf("deploying prerequisite app %s: %w", app, err)
 			}
 			continue

@@ -95,7 +95,7 @@ func lintLegend(title, expr, legend string) []string {
 	returned := map[string]bool{}
 	var varying []string
 	for _, m := range groupingClause.FindAllStringSubmatch(expr, -1) {
-		for _, label := range strings.Split(m[1], ",") {
+		for label := range strings.SplitSeq(m[1], ",") {
 			label = strings.TrimSpace(label)
 			if label == "" || label == "le" || returned[label] {
 				continue

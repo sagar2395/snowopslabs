@@ -158,7 +158,7 @@ func TestRepoFaults_InjectTwiceSucceeds(t *testing.T) {
 	e := NewEngine(root, "k3d.local")
 	for _, name := range shippedFaults {
 		f, _ := e.Get(name)
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			if out, _, err := runWithStubKubectl(t, filepath.Join(f.Dir, "inject.sh")); err != nil {
 				t.Fatalf("%s inject run %d: %v\n%s", name, i+1, err, out)
 			}

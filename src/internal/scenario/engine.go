@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -192,14 +194,7 @@ func (e *Engine) Preflight(s *Scenario) error {
 
 	// 1. Runtime compatibility — only checked when the scenario restricts runtimes.
 	if len(s.Runtimes) > 0 && e.Profile != "" {
-		ok := false
-		for _, r := range s.Runtimes {
-			if r == e.Profile {
-				ok = true
-				break
-			}
-		}
-		if !ok {
+		if !slices.Contains(s.Runtimes, e.Profile) {
 			errs = append(errs, fmt.Sprintf(
 				"active profile %q is not in supported runtimes %v", e.Profile, s.Runtimes))
 		}
@@ -583,8 +578,7 @@ func (e *Engine) Down(name string, exec CommandExecutor) error {
 
 	// Uninstall in reverse order (across all stages)
 	all := s.AllComponents()
-	for i := len(all) - 1; i >= 0; i-- {
-		comp := all[i]
+	for i, comp := range slices.Backward(all) {
 		fmt.Fprintf(e.output(), "[%d/%d] Uninstalling %s...\n", len(all)-i, len(all), comp.Name)
 		if err := e.uninstallComponent(s, &comp, exec); err != nil {
 			fmt.Fprintf(e.output(), "  Warning: %v\n", err)
@@ -705,9 +699,7 @@ func (e *Engine) loadInto(dir, source, key string) {
 // validate, keyed by directory name.
 func (e *Engine) LoadErrors() map[string]error {
 	out := make(map[string]error, len(e.loadErrors))
-	for k, v := range e.loadErrors {
-		out[k] = v
-	}
+	maps.Copy(out, e.loadErrors)
 	return out
 }
 
@@ -1204,9 +1196,7 @@ func (e *Engine) ResolveTemplateWithParams(input string, params map[string]strin
 // never shadow a built-in, and live activation values win over display defaults.
 func (e *Engine) resolveTemplateWith(input string, extra map[string]string) string {
 	overlay := make(map[string]string, len(e.resolvedParams)+len(extra))
-	for k, v := range e.resolvedParams {
-		overlay[k] = v
-	}
+	maps.Copy(overlay, e.resolvedParams)
 	for k, v := range extra {
 		if _, taken := overlay[k]; !taken {
 			overlay[k] = v
@@ -1397,7 +1387,7 @@ func (e *Engine) printExploreHints(s *Scenario) {
 
 func indentJSON(s, prefix string) string {
 	var result strings.Builder
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		result.WriteString(prefix)
 		result.WriteString(line)
 		result.WriteString("\n")
@@ -1409,7 +1399,7 @@ func manifestHasExplicitNamespace(manifest string) bool {
 	decoder := yaml.NewDecoder(strings.NewReader(manifest))
 
 	for {
-		var doc map[string]interface{}
+		var doc map[string]any
 		if err := decoder.Decode(&doc); err != nil {
 			break
 		}
@@ -1423,7 +1413,7 @@ func manifestHasExplicitNamespace(manifest string) bool {
 			continue
 		}
 
-		metadata, ok := metadataRaw.(map[string]interface{})
+		metadata, ok := metadataRaw.(map[string]any)
 		if !ok {
 			continue
 		}

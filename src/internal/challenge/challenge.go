@@ -3,7 +3,9 @@ package challenge
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,7 +139,7 @@ func New(challengeDir, stateDir, resultsDir string) *Engine {
 func (e *Engine) Challenges() ([]*Challenge, error) {
 	entries, err := os.ReadDir(e.challengeDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -178,7 +180,7 @@ func (e *Engine) Load(name string) (*Challenge, error) {
 func (e *Engine) Active() (*ActiveRun, error) {
 	data, err := os.ReadFile(e.activeFile())
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -220,7 +222,7 @@ func (e *Engine) RecordHint() error {
 		return err
 	}
 	if run == nil {
-		return fmt.Errorf("no active challenge")
+		return errors.New("no active challenge")
 	}
 	run.HintsUsed++
 	return e.saveActive(run)
@@ -236,7 +238,7 @@ func (e *Engine) Attempt(passed, total int) (*RunRecord, error) {
 		return nil, err
 	}
 	if run == nil {
-		return nil, fmt.Errorf("no active challenge")
+		return nil, errors.New("no active challenge")
 	}
 	c, err := e.Load(run.ChallengeName)
 	if err != nil {
@@ -266,7 +268,7 @@ func (e *Engine) Complete(passed, total int, outcome, user string) (*RunRecord, 
 		return nil, err
 	}
 	if run == nil {
-		return nil, fmt.Errorf("no active challenge")
+		return nil, errors.New("no active challenge")
 	}
 	c, err := e.Load(run.ChallengeName)
 	if err != nil {
@@ -301,7 +303,7 @@ func (e *Engine) Complete(passed, total int, outcome, user string) (*RunRecord, 
 			Score:     rec.Score,
 			Outcome:   rec.Outcome,
 			HintsUsed: rec.HintsUsed,
-			Meta: map[string]interface{}{
+			Meta: map[string]any{
 				"checksPassed": rec.ChecksPassed,
 				"checksTotal":  rec.ChecksTotal,
 			},
@@ -315,13 +317,13 @@ func (e *Engine) Complete(passed, total int, outcome, user string) (*RunRecord, 
 func (e *Engine) History() ([]RunRecord, error) {
 	data, err := os.ReadFile(e.historyFile())
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
 	var recs []RunRecord
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
 		if line == "" {
 			continue
 		}
@@ -356,16 +358,10 @@ func computeScore(c *Challenge, elapsed time.Duration, hintsUsed, passed, total 
 	if par > 0 && elapsed > par {
 		over := elapsed - par
 		overFrac := float64(over) / float64(par)
-		timePenalty = int(overFrac * 20)
-		if timePenalty > 20 {
-			timePenalty = 20
-		}
+		timePenalty = min(int(overFrac*20), 20)
 	}
 
-	score := base - hintDeduction - timePenalty
-	if score < 0 {
-		score = 0
-	}
+	score := max(base-hintDeduction-timePenalty, 0)
 
 	// Scale by check pass rate if not all passed.
 	if passed < total {

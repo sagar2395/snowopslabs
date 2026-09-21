@@ -86,7 +86,7 @@ func (s *Server) handleLearnPath(w http.ResponseWriter, r *http.Request) {
 			Completed:   completed[i],
 		}
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"name":        p.Name,
 		"displayName": p.DisplayName,
 		"description": p.Description,
@@ -99,8 +99,8 @@ func (s *Server) handleLearnPath(w http.ResponseWriter, r *http.Request) {
 // path's progress. start/progress/complete all return this exact shape so the
 // UI can trust the `started`/`nextIdx`/`total` fields no matter which endpoint
 // produced them (the raw learn.Progress carries none of those derived fields).
-func learnProgressPayload(p *learn.Path, prog *learn.Progress) map[string]interface{} {
-	return map[string]interface{}{
+func learnProgressPayload(p *learn.Path, prog *learn.Progress) map[string]any {
+	return map[string]any{
 		"path":      prog.PathName,
 		"started":   true,
 		"completed": prog.CompletedIdxs,
@@ -136,7 +136,7 @@ func (s *Server) handleLearnReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{"path": name, "started": false})
+	respondJSON(w, http.StatusOK, map[string]any{"path": name, "started": false})
 }
 
 func (s *Server) handleLearnProgress(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +148,7 @@ func (s *Server) handleLearnProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if prog == nil {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"path": name, "started": false})
+		respondJSON(w, http.StatusOK, map[string]any{"path": name, "started": false})
 		return
 	}
 	p, err := eng.LoadPath(name)

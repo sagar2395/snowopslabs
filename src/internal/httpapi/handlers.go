@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,6 +28,18 @@ import (
 var validName = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 
 func isValidName(s string) bool { return validName.MatchString(s) }
+
+// pathName returns the {name} route variable, having already answered 400 when
+// it is not a valid identifier — so a handler only needs to return on !ok.
+func pathName(w http.ResponseWriter, r *http.Request, kind string) (string, bool) {
+	name := mux.Vars(r)["name"]
+	if !isValidName(name) {
+		respondError(w, r, http.StatusBadRequest, "invalid_input",
+			fmt.Sprintf("invalid %s name %q: must match ^[a-zA-Z0-9_-]{1,64}$", kind, name))
+		return "", false
+	}
+	return name, true
+}
 
 // StatusResponse represents the overall lab status.
 type StatusResponse struct {
@@ -203,20 +216,12 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 // handleAppDetail returns the "how it's built and deployed" view for one app:
 // overview, stack, and the actual Dockerfile + Helm chart with their repo paths.
 func (s *Server) handleAppDetail(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid app name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "app")
+	if !ok {
 		return
 	}
 	apps, _ := config.ListApps(s.cfg.ProjectRoot)
-	found := false
-	for _, a := range apps {
-		if a == name {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(apps, name) {
 		respondError(w, r, http.StatusNotFound, "not_found", fmt.Sprintf("app %q not found", name))
 		return
 	}
@@ -230,9 +235,8 @@ func (s *Server) handleAppDetail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAppDeploy(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid app name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "app")
+	if !ok {
 		return
 	}
 	jobID := s.exec.NextActionID()
@@ -243,9 +247,8 @@ func (s *Server) handleAppDeploy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAppDestroy(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid app name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "app")
+	if !ok {
 		return
 	}
 	jobID := s.exec.NextActionID()
@@ -256,9 +259,8 @@ func (s *Server) handleAppDestroy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAppBuild(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid app name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "app")
+	if !ok {
 		return
 	}
 	jobID := s.exec.NextActionID()
@@ -273,7 +275,7 @@ func (s *Server) handlePlatformStatus(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	categories := s.registry.Categories()
-	result := make(map[string][]map[string]interface{})
+	result := make(map[string][]map[string]any)
 
 	for _, cat := range categories {
 		providers := s.registry.GetProviders(cat)
@@ -289,7 +291,7 @@ func (s *Server) handlePlatformStatus(w http.ResponseWriter, r *http.Request) {
 			if p.SharesNamespace() {
 				installed = k8s.HelmReleaseExists(ctx, p.Namespace(), p.Name)
 			}
-			entry := map[string]interface{}{
+			entry := map[string]any{
 				"name":      p.Name,
 				"category":  cat,
 				"installed": installed,
@@ -632,9 +634,8 @@ type scenarioResp struct {
 }
 
 func (s *Server) handleScenarioInfo(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid scenario name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "scenario")
+	if !ok {
 		return
 	}
 	sc, err := s.scenes.Get(name)
@@ -661,9 +662,8 @@ func (s *Server) handleScenarioInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleScenarioUp(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid scenario name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "scenario")
+	if !ok {
 		return
 	}
 	// Optional overrides for this activation:
@@ -700,9 +700,8 @@ func (s *Server) handleScenarioUp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleScenarioDown(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid scenario name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "scenario")
+	if !ok {
 		return
 	}
 	jobID := s.exec.NextActionID()
@@ -728,9 +727,8 @@ const scenarioVerifyBudget = 5 * time.Minute
 // handleScenarioVerify runs the scenario's checks synchronously and returns
 // the per-check results. Use the CLI's --watch mode for long convergence.
 func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid scenario name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "scenario")
+	if !ok {
 		return
 	}
 
@@ -785,7 +783,7 @@ func (s *Server) handleScenarioVerify(w http.ResponseWriter, r *http.Request) {
 	// user solved the scenario, with objectives + per-check breakdown.
 	s.recordScenarioVerify(name, results, startedAt)
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"scenario": name,
 		"passed":   checks.AllPass(results),
 		"results":  results,
@@ -805,9 +803,8 @@ func (s *Server) handleListServices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleServiceUp(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid service name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "service")
+	if !ok {
 		return
 	}
 	jobID := s.exec.NextActionID()
@@ -820,9 +817,8 @@ func (s *Server) handleServiceUp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleServiceDown(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid service name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "service")
+	if !ok {
 		return
 	}
 	jobID := s.exec.NextActionID()
@@ -995,7 +991,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	writeJSON := func(v interface{}) error {
+	writeJSON := func(v any) error {
 		_ = conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
 		return conn.WriteJSON(v)
 	}
@@ -1003,19 +999,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		info, _ := k8s.GetClusterInfo(ctx)
 		cancel()
-		return writeJSON(map[string]interface{}{"type": "status", "data": info})
+		return writeJSON(map[string]any{"type": "status", "data": info})
 	}
 
 	// If the client's cursor fell off the replay ring, tell it to resync from
 	// the job history (GET /jobs) rather than silently resuming mid-stream.
 	if !contiguous {
-		if err := writeJSON(map[string]interface{}{"type": "resync"}); err != nil {
+		if err := writeJSON(map[string]any{"type": "resync"}); err != nil {
 			return
 		}
 	}
 	// Replay missed events before going live, each already carrying its Seq.
 	for _, event := range backlog {
-		if err := writeJSON(map[string]interface{}{"type": "action", "data": event}); err != nil {
+		if err := writeJSON(map[string]any{"type": "action", "data": event}); err != nil {
 			return
 		}
 	}
@@ -1040,7 +1036,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		case event := <-actionCh:
-			if err := writeJSON(map[string]interface{}{
+			if err := writeJSON(map[string]any{
 				"type": "action",
 				"data": event,
 			}); err != nil {
@@ -1055,9 +1051,8 @@ func (s *Server) handleListRuntimes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRuntimeActivate(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid runtime name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "runtime")
+	if !ok {
 		return
 	}
 	jobID := s.exec.NextActionID()
@@ -1068,9 +1063,8 @@ func (s *Server) handleRuntimeActivate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRuntimeDeactivate(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid runtime name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "runtime")
+	if !ok {
 		return
 	}
 	jobID := s.exec.NextActionID()

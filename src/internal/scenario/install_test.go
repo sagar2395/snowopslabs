@@ -2,10 +2,11 @@
 package scenario
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -46,10 +47,8 @@ func (r *recordingExec) find(binary, needle string) []string {
 		if c[0] != binary {
 			continue
 		}
-		for _, a := range c[1:] {
-			if a == needle {
-				return c
-			}
+		if slices.Contains(c[1:], needle) {
+			return c
 		}
 	}
 	return nil
@@ -116,7 +115,7 @@ type failingExec struct{ recordingExec }
 
 func (f *failingExec) RunCommandStreamed(label, name string, args ...string) (string, error) {
 	_, _ = f.recordingExec.RunCommandStreamed(label, name, args...)
-	return "", fmt.Errorf("kubectl apply rejected the manifest")
+	return "", errors.New("kubectl apply rejected the manifest")
 }
 
 // installGrafanaDashboard must resolve the namespace template like the other
@@ -241,7 +240,7 @@ func (s *scriptedExec) RunCommandStreamed(label, name string, args ...string) (s
 	}
 	if n := s.failures[sig]; n > 0 {
 		s.failures[sig] = n - 1
-		return s.output[sig], fmt.Errorf("exit status 1")
+		return s.output[sig], errors.New("exit status 1")
 	}
 	return out, nil
 }

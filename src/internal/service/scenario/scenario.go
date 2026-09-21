@@ -14,6 +14,7 @@ package scenario
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -67,7 +68,7 @@ func WithEnv(env map[string]string) Option { return func(s *Service) { s.env = e
 // the activation drives.
 func New(engine *run.Engine, st *store.Store, scenes *scn.Engine, runner toolchain.Runner, projectRoot string, opts ...Option) (*Service, error) {
 	if engine == nil || st == nil || scenes == nil || runner == nil {
-		return nil, fmt.Errorf("scenario: engine, store, scenario engine and runner are all required")
+		return nil, errors.New("scenario: engine, store, scenario engine and runner are all required")
 	}
 	s := &Service{engine: engine, store: st, scenes: scenes, runner: runner, root: projectRoot}
 	for _, opt := range opts {

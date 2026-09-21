@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -31,15 +32,7 @@ var SupportedScenarioAPIVersions = []string{
 // APIVersionSupported reports whether the engine understands the given scenario
 // schema apiVersion. An empty value means "use the default" and is supported.
 func APIVersionSupported(v string) bool {
-	if v == "" {
-		return true
-	}
-	for _, s := range SupportedScenarioAPIVersions {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return v == "" || slices.Contains(SupportedScenarioAPIVersions, v)
 }
 
 var validComponentTypes = map[string]bool{
@@ -251,11 +244,12 @@ func ValidateParameters(params []Parameter) []string {
 		if p.Name != "" {
 			where = fmt.Sprintf("parameter %q", p.Name)
 		}
-		if strings.TrimSpace(p.Name) == "" {
+		switch {
+		case strings.TrimSpace(p.Name) == "":
 			errs = append(errs, fmt.Sprintf("%s: name is required", where))
-		} else if !templateIdent.MatchString(p.Name) {
+		case !templateIdent.MatchString(p.Name):
 			errs = append(errs, fmt.Sprintf("%s: name must be letters, digits or underscore (used as a {{.Name}} template var)", where))
-		} else if names[p.Name] {
+		case names[p.Name]:
 			errs = append(errs, fmt.Sprintf("%s: duplicate parameter name", where))
 		}
 		names[p.Name] = true
@@ -365,7 +359,7 @@ func unsafePath(p string) bool {
 	if filepath.IsAbs(p) {
 		return true
 	}
-	for _, seg := range strings.Split(filepath.ToSlash(p), "/") {
+	for seg := range strings.SplitSeq(filepath.ToSlash(p), "/") {
 		if seg == ".." {
 			return true
 		}
@@ -377,7 +371,7 @@ func unsafePath(p string) bool {
 // offending fields. It accepts all valid v1 scenarios unchanged.
 func (s *Scenario) Validate() error {
 	var errs []string
-	add := func(format string, args ...interface{}) {
+	add := func(format string, args ...any) {
 		errs = append(errs, fmt.Sprintf(format, args...))
 	}
 
@@ -394,11 +388,12 @@ func (s *Scenario) Validate() error {
 
 	stageNames := map[string]bool{}
 	for i, st := range s.Stages {
-		if strings.TrimSpace(st.Name) == "" {
+		switch {
+		case strings.TrimSpace(st.Name) == "":
 			add("stage %d: name is required", i+1)
-		} else if stageNames[st.Name] {
+		case stageNames[st.Name]:
 			add("stage %q: duplicate stage name", st.Name)
-		} else {
+		default:
 			stageNames[st.Name] = true
 		}
 	}

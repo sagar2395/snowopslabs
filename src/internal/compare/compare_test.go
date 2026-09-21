@@ -3,7 +3,7 @@ package compare
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -84,8 +84,8 @@ func TestOptionsValidate(t *testing.T) {
 // still being read and the tail of every comparison is measured at zero rps.
 func TestLoadOutlastsTheMeasuredWindow(t *testing.T) {
 	o := Options{Warmup: time.Minute, Window: 3 * time.Minute}
-	if got, min := o.Load(), o.Warmup+o.Window; got <= min {
-		t.Errorf("Load() = %s, want more than warmup+window (%s)", got, min)
+	if got, floor := o.Load(), o.Warmup+o.Window; got <= floor {
+		t.Errorf("Load() = %s, want more than warmup+window (%s)", got, floor)
 	}
 }
 
@@ -146,7 +146,7 @@ func TestMeasureLeavesUnexportedMetricsAbsent(t *testing.T) {
 func TestMeasureFailsOnAQueryError(t *testing.T) {
 	q := &fakeQuerier{
 		answers: map[string]string{"_count{app=": "10"},
-		errs:    map[string]error{"histogram_quantile(0.99": fmt.Errorf("prometheus returned status 503")},
+		errs:    map[string]error{"histogram_quantile(0.99": errors.New("prometheus returned status 503")},
 	}
 	if _, err := Measure(context.Background(), q, testWorkload("go-api"), 2*time.Minute); err == nil {
 		t.Fatal("want an error when a metric read fails")

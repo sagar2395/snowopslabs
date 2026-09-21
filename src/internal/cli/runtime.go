@@ -17,7 +17,7 @@ var runtimeUpCmd = &cobra.Command{
 	Short: "Create the cluster",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Creating %s cluster '%s'...\n", cfg.Profile, cfg.ClusterName)
-		return exec.RunScript(
+		return scriptExec.RunScript(
 			fmt.Sprintf("runtimes/%s/up.sh", cfg.Profile),
 			cfg.ClusterName,
 		)
@@ -29,7 +29,7 @@ var runtimeDownCmd = &cobra.Command{
 	Short: "Destroy the cluster",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Destroying %s cluster...\n", cfg.Profile)
-		return exec.RunScript(fmt.Sprintf("runtimes/%s/down.sh", cfg.Profile))
+		return scriptExec.RunScript(fmt.Sprintf("runtimes/%s/down.sh", cfg.Profile))
 	},
 }
 
@@ -37,7 +37,7 @@ var runtimeStatusCmd = &cobra.Command{
 	Use:   "status",
 	Short: "Show cluster status",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return exec.RunCommand("kubectl", "cluster-info")
+		return scriptExec.RunCommand("kubectl", "cluster-info")
 	},
 }
 

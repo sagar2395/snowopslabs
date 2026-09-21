@@ -3,6 +3,7 @@ package checks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -118,7 +119,7 @@ func TestRunKubectl_Existence(t *testing.T) {
 func TestRunKubectl_ExecError(t *testing.T) {
 	r := testRunner()
 	r.Exec = func(ctx context.Context, name string, args ...string) (string, error) {
-		return "", fmt.Errorf("kubectl: connection refused")
+		return "", errors.New("kubectl: connection refused")
 	}
 	res := r.Run(context.Background(), Check{
 		Name: "x", Type: "kubectl", Resource: "deploy/x",
@@ -318,7 +319,7 @@ func TestRun_TimeoutRespected(t *testing.T) {
 func TestRun_CarriesAdvisoryMetadata(t *testing.T) {
 	r := testRunner()
 	r.Exec = func(ctx context.Context, name string, args ...string) (string, error) {
-		return "", fmt.Errorf("kubectl: not found")
+		return "", errors.New("kubectl: not found")
 	}
 	res := r.Run(context.Background(), Check{
 		Name: "restore-marker-present", Type: "kubectl", Resource: "configmap/restore-marker",

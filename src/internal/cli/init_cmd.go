@@ -15,12 +15,12 @@ var initCmd = &cobra.Command{
 	Short: "Initialize the lab (setup tools + create cluster + install platform)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Println("=== Setting up tools ===")
-		if err := exec.RunScript("bootstrap/setup-tools.sh", cfg.Profile); err != nil {
+		if err := scriptExec.RunScript("bootstrap/setup-tools.sh", cfg.Profile); err != nil {
 			return fmt.Errorf("setup-tools failed: %w", err)
 		}
 
 		fmt.Println("\n=== Creating runtime ===")
-		if err := exec.RunScript(
+		if err := scriptExec.RunScript(
 			fmt.Sprintf("runtimes/%s/up.sh", cfg.Profile),
 			cfg.ClusterName,
 		); err != nil {
@@ -72,14 +72,14 @@ var teardownCmd = &cobra.Command{
 		apps, _ := config.ListApps(cfg.ProjectRoot)
 		for _, app := range apps {
 			fmt.Printf("Destroying %s...\n", app)
-			_ = exec.RunScript("src/engine/deploy.sh", "destroy", app)
+			_ = scriptExec.RunScript("src/engine/deploy.sh", "destroy", app)
 		}
 
 		fmt.Println("\n=== Removing platform ===")
 		_ = platformDownRun(cmd, args)
 
 		fmt.Println("\n=== Destroying runtime ===")
-		return exec.RunScript(fmt.Sprintf("runtimes/%s/down.sh", cfg.Profile))
+		return scriptExec.RunScript(fmt.Sprintf("runtimes/%s/down.sh", cfg.Profile))
 	},
 }
 
@@ -101,7 +101,7 @@ var setupToolsCmd = &cobra.Command{
 active PROFILE. This is the same step 'labctl init' runs first; use it on its own
 to prepare a machine without creating a cluster. Equivalent to 'make setup-tools'.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return exec.RunScript("bootstrap/setup-tools.sh", cfg.Profile)
+		return scriptExec.RunScript("bootstrap/setup-tools.sh", cfg.Profile)
 	},
 }
 

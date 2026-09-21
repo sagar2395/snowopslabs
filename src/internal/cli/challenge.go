@@ -3,6 +3,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -120,12 +121,12 @@ func challengeStartCmd() *cobra.Command {
 			}
 
 			// Run the setup action.
-			if err := runChallengeSetup(cmd.Context(), c, exec); err != nil {
+			if err := runChallengeSetup(cmd.Context(), c, scriptExec); err != nil {
 				// A setup that fails partway still changed the cluster, and no
 				// run has been recorded yet — so `challenge abort` refuses and
 				// the learner is left with a half-injected fault and nothing to
 				// undo it. Clean up here, where the failure is known about.
-				if cleanupErr := runChallengeCleanup(cmd.Context(), c, exec); cleanupErr != nil {
+				if cleanupErr := runChallengeCleanup(cmd.Context(), c, scriptExec); cleanupErr != nil {
 					fmt.Fprintf(cmd.OutOrStdout(), "Warning: could not undo the partial setup: %v\n", cleanupErr)
 				}
 				return fmt.Errorf("setup failed: %w", err)
@@ -215,7 +216,7 @@ func challengeHintCmd() *cobra.Command {
 				return err
 			}
 			if active == nil {
-				return fmt.Errorf("no active challenge — start one with `labctl challenge start <name>`")
+				return errors.New("no active challenge — start one with `labctl challenge start <name>`")
 			}
 			c, err := eng.Load(active.ChallengeName)
 			if err != nil {
@@ -252,7 +253,7 @@ func challengeSubmitCmd() *cobra.Command {
 				return err
 			}
 			if active == nil {
-				return fmt.Errorf("no active challenge")
+				return errors.New("no active challenge")
 			}
 			c, err := eng.Load(active.ChallengeName)
 			if err != nil {
@@ -303,7 +304,7 @@ func challengeSubmitCmd() *cobra.Command {
 			// active after a passing run: its alert rule stays armed, its
 			// bookkeeping stays on the workload, and the NEXT challenge refuses
 			// to start with "an incident is already active".
-			if err := runChallengeCleanup(cmd.Context(), c, exec); err != nil {
+			if err := runChallengeCleanup(cmd.Context(), c, scriptExec); err != nil {
 				fmt.Fprintf(out, "Warning: cleanup failed: %v\n", err)
 			}
 			return nil
@@ -331,7 +332,7 @@ func challengeAbortCmd() *cobra.Command {
 			}
 
 			// Undo the setup action.
-			if err := runChallengeCleanup(cmd.Context(), c, exec); err != nil {
+			if err := runChallengeCleanup(cmd.Context(), c, scriptExec); err != nil {
 				fmt.Fprintf(cmd.OutOrStdout(), "Warning: cleanup failed: %v\n", err)
 			}
 

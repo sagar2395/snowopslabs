@@ -3,7 +3,7 @@ package workload
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -42,7 +42,7 @@ func AllCapabilities() []Capability {
 	for c := range capabilityDoc {
 		out = append(out, c)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	slices.Sort(out)
 	return out
 }
 
@@ -132,7 +132,7 @@ func ParseContract(vals map[string]string) (Contract, error) {
 	raw := strings.TrimSpace(vals[KeyCapabilities])
 	if raw != "" {
 		seen := make(map[Capability]bool)
-		for _, part := range strings.Split(raw, ",") {
+		for part := range strings.SplitSeq(raw, ",") {
 			if strings.TrimSpace(part) == "" {
 				continue
 			}
@@ -146,7 +146,7 @@ func ParseContract(vals map[string]string) (Contract, error) {
 			seen[parsed] = true
 			c.Capabilities = append(c.Capabilities, parsed)
 		}
-		sort.Slice(c.Capabilities, func(i, j int) bool { return c.Capabilities[i] < c.Capabilities[j] })
+		slices.Sort(c.Capabilities)
 	}
 	if err := c.Validate(); err != nil {
 		return Contract{}, err
@@ -187,12 +187,7 @@ func (c Contract) Validate() error {
 
 // Has reports whether the app claims a capability.
 func (c Contract) Has(want Capability) bool {
-	for _, got := range c.Capabilities {
-		if got == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Capabilities, want)
 }
 
 // Missing returns the required capabilities this contract does not claim, in the

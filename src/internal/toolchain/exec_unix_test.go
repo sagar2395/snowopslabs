@@ -407,8 +407,7 @@ wait
 		e := &Exec{GracePeriod: 5 * time.Second}
 		script := writeScript(t, "sleep 0.1\n")
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		start := time.Now()
 		if _, err := e.Run(ctx, Command{Path: script}); err != nil {

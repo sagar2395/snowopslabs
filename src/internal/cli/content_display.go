@@ -70,7 +70,7 @@ func renderSnippets(w io.Writer, snips []scenario.Snippet, dir string, resolve r
 			fmt.Fprintf(w, "    (unavailable: %v)\n", err)
 			continue
 		}
-		for _, line := range strings.Split(strings.TrimRight(sn.YAML, "\n"), "\n") {
+		for line := range strings.SplitSeq(strings.TrimRight(sn.YAML, "\n"), "\n") {
 			fmt.Fprintf(w, "    %s\n", line)
 		}
 	}

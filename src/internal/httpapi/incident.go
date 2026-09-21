@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/sagar2395/snowopslabs/internal/incident"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 )
@@ -67,7 +66,7 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 		out = append(out, faultResp{Fault: f, PinnedApps: s.incidents.PinnedApps(f.Name), Workload: workloadResp(bound)})
 	}
 
-	writeJSONCached(w, r, http.StatusOK, map[string]interface{}{
+	writeJSONCached(w, r, http.StatusOK, map[string]any{
 		"faults":   out,
 		"active":   active,
 		"workload": workloadResp(bound),
@@ -75,9 +74,8 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIncidentInject(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid fault name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "fault")
+	if !ok {
 		return
 	}
 	s.injectAndRespond(w, r, name)
@@ -125,7 +123,7 @@ func (s *Server) injectAndRespond(w http.ResponseWriter, r *http.Request, name s
 		return
 	}
 
-	resp := map[string]interface{}{"status": "injected", "silent": silent}
+	resp := map[string]any{"status": "injected", "silent": silent}
 	if !silent {
 		resp["fault"] = f
 	}
@@ -144,7 +142,7 @@ func (s *Server) handleIncidentStatus(w http.ResponseWriter, r *http.Request) {
 
 	res, err := incidents.Status(ctx, s.incidentRunner(), actingUser(r))
 	if errors.Is(err, incident.ErrNoActive) {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"active": nil})
+		respondJSON(w, http.StatusOK, map[string]any{"active": nil})
 		return
 	}
 	if err != nil {
@@ -154,10 +152,10 @@ func (s *Server) handleIncidentStatus(w http.ResponseWriter, r *http.Request) {
 
 	// In silent mode, don't leak the fault's identity until it's resolved.
 	if res.Active.Silent && !res.Resolved {
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"active":   map[string]interface{}{"fault": "(hidden)", "injectedAt": res.Active.InjectedAt, "silent": true},
+		respondJSON(w, http.StatusOK, map[string]any{
+			"active":   map[string]any{"fault": "(hidden)", "injectedAt": res.Active.InjectedAt, "silent": true},
 			"resolved": false,
-			"check":    map[string]interface{}{"pass": false},
+			"check":    map[string]any{"pass": false},
 		})
 		return
 	}
@@ -217,7 +215,7 @@ func (s *Server) handleIncidentResolve(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusInternalServerError, "resolve_failed", err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{"status": "resolved", "fault": f.Name})
+	respondJSON(w, http.StatusOK, map[string]any{"status": "resolved", "fault": f.Name})
 }
 
 // bindToActiveIncident returns an engine bound to the workload the active fault

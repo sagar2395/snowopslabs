@@ -27,7 +27,7 @@ func ParseHints(dir string) ([]string, error) {
 	}
 	parts := hintHeading.Split(string(data), -1)
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("hints.md has no '## Hint N' sections")
+		return nil, errors.New("hints.md has no '## Hint N' sections")
 	}
 	var hints []string
 	for _, p := range parts[1:] { // parts[0] is the preamble before the first hint
@@ -36,7 +36,7 @@ func ParseHints(dir string) ([]string, error) {
 		}
 	}
 	if len(hints) == 0 {
-		return nil, fmt.Errorf("hints.md has no hint content")
+		return nil, errors.New("hints.md has no hint content")
 	}
 	return hints, nil
 }

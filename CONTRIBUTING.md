@@ -46,7 +46,7 @@ before implementation. This keeps architectural direction coherent.
 
 Unlike end users (who download a released `labctl` binary — see the
 [README Quickstart](README.md#quickstart)), contributors **build `labctl` from
-source** so they can test their changes. You need **Go 1.24+** and **Node 22+**.
+source** so they can test their changes. You need **Go 1.25+** and **Node 22+**.
 The steps are identical on macOS, Linux, and Windows/WSL2 — on Windows run them
 inside your WSL2 distro, never native PowerShell.
 
@@ -114,6 +114,11 @@ is written for AI agents, but it is the fastest orientation for a human too.
    and `make docs-check` gates the links and the pages the website publishes.
 8. **Comments say why, briefly.** Three lines is a lot. No task, ticket or wave
    numbers in code — that history belongs in git and in ADRs.
+
+Changing Go code? [docs/GO-CONVENTIONS.md](docs/GO-CONVENTIONS.md) covers the
+everyday choices: which layer owns the code, how to handle contexts and errors,
+the handler and command patterns, and the lint set. It ends with a pre-PR
+checklist.
 
 ## Pull-request workflow
 

@@ -46,10 +46,7 @@ func paginate[T any](items []T, r *http.Request) (pageResponse[T], error) {
 		offset = len(items)
 	}
 
-	end := offset + limit
-	if end > len(items) {
-		end = len(items)
-	}
+	end := min(offset+limit, len(items))
 
 	page := pageResponse[T]{Items: items[offset:end]}
 	if page.Items == nil {
