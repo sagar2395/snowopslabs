@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -11,10 +12,9 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/executor"
 )
 
-// parseAfterCursor extracts a resume cursor from a stream request. WebSocket
-// clients pass it as ?after=<seq>; SSE clients additionally get the standard
-// Last-Event-ID header for free on reconnect, which takes precedence. A missing
-// or unparseable value means "from the start of the ring" (0).
+// parseAfterCursor returns the event sequence a stream should resume after:
+// the Last-Event-ID header (sent by EventSource on reconnect) if present,
+// otherwise ?after=<seq>. A missing or invalid value gives 0.
 func parseAfterCursor(r *http.Request) int64 {
 	if v := r.Header.Get("Last-Event-ID"); v != "" {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
@@ -29,16 +29,14 @@ func parseAfterCursor(r *http.Request) int64 {
 	return 0
 }
 
-// sseKeepalivePeriod bounds how long the SSE stream sits idle before emitting a
-// comment line, keeping intermediaries from timing the connection out.
+// sseKeepalivePeriod is how often an idle SSE stream sends a comment line, so
+// proxies do not close the connection.
 const sseKeepalivePeriod = 25 * time.Second
 
-// handleStreamSSE streams ActionEvents as Server-Sent Events — the fallback for
-// environments where WebSockets are blocked. It shares the broadcaster's
-// cursor semantics with the WebSocket path: ?after=<seq> (or a Last-Event-ID
-// header on reconnect) replays missed events from the ring, then live events
-// follow, each written with an SSE id: line so the browser's EventSource
-// resumes from the right place automatically.
+// handleStreamSSE streams ActionEvents as Server-Sent Events, for clients that
+// cannot use WebSockets. It replays events after the client's cursor, then
+// streams new ones. Each event carries an id: line so EventSource resumes from
+// the right place after reconnecting.
 func (s *Server) handleStreamSSE(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -56,7 +54,8 @@ func (s *Server) handleStreamSSE(w http.ResponseWriter, r *http.Request) {
 	backlog, ch, contiguous := s.exec.Broadcast.SubscribeFrom(after)
 	defer s.exec.Broadcast.Unsubscribe(ch)
 
-	// A cursor that fell off the ring: tell the client to resync from /jobs.
+	// Events after the cursor were dropped; tell the client to resync from
+	// /jobs.
 	if !contiguous {
 		fmt.Fprint(w, "event: resync\ndata: {}\n\n")
 	}

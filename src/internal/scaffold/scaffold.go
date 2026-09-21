@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package scaffold generates valid, lints-clean, verify-ready starter content so
-// a first contribution is a few minutes' work. It is the single source of truth
-// for `labctl scenario new`; the committed sdk/scenario-template/ dir mirrors
-// this output for humans who prefer to copy by hand.
+// Package scaffold generates starter content for `labctl scenario new`: a
+// scenario that passes validation and has a passing check. The committed
+// sdk/scenario-template/ directory is a copy of the same output.
 package scaffold
 
 import (
@@ -20,7 +19,7 @@ var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 type vars struct {
 	Name     string // scenario name
-	BareName string // same as Name; kept distinct for template clarity
+	BareName string // same as Name; the template uses both
 	Title    string // human display name
 }
 

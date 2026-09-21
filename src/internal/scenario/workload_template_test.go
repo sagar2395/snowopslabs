@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package scenario
 
 import (
@@ -36,8 +37,7 @@ func TestResolveTemplateWorkloadVars(t *testing.T) {
 	}
 }
 
-// Rebinding the engine to another app must move every workload reference with
-// it — that is the whole point of the binding.
+// Rebinding the engine to another app must change every workload reference.
 func TestResolveTemplateFollowsRebinding(t *testing.T) {
 	e := &Engine{DomainSuffix: "k3d.local", Workload: workload.Default("go-api")}
 	const in = "{{.WorkloadName}} in {{.WorkloadNamespace}} at {{.WorkloadService}}"

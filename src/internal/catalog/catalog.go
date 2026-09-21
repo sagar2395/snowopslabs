@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package catalog is SnowOps Labs's unified content model. It discovers, decodes,
-// validates, cross-references and indexes every declarative content item
-// (scenarios, incidents, learning paths, challenges) from one or more content
-// roots, and resolves the typed templates content authors use.
+// Package catalog loads every content item (scenarios, incidents, learning
+// paths, challenges) from one or more content roots, validates it, checks the
+// references between items, and indexes the result. It backs `labctl
+// validate`.
 //
-// It is the authority behind `labctl validate`. It reuses the public
-// content data types (pkg/scenario, and the incident/learn/challenge types) and
-// their per-item Validate methods, so validation never drifts from what the
-// runtime engines accept, and layers cross-reference integrity and typed
-// template resolution on top. Loaders here never execute content — that is the
-// run engine's job (golden rule 7).
+// It uses the same types and Validate methods as the engines that run the
+// content, so validation accepts exactly what they accept. It never executes
+// content.
 package catalog
 
 import (
@@ -28,6 +25,7 @@ import (
 // directory each kind lives under (scenarios/, incidents/, learn/, challenges/).
 type Kind string
 
+// Content kinds.
 const (
 	KindScenario  Kind = "scenario"
 	KindIncident  Kind = "incident"
@@ -38,9 +36,9 @@ const (
 // AllKinds lists every content kind in a stable order.
 var AllKinds = []Kind{KindScenario, KindIncident, KindPath, KindChallenge}
 
-// Catalog is an immutable, validated snapshot of all content across the loaded
-// roots. Build one with Load; never mutate it in place — hot reload swaps a
-// whole new Catalog atomically (see Store).
+// Catalog is a read-only, validated snapshot of all content across the loaded
+// roots. Build one with Load and never modify it; Store replaces it whole on
+// reload.
 type Catalog struct {
 	// Roots are the content roots this snapshot was built from, in precedence
 	// order (later roots override earlier ones on a name collision, so an
@@ -58,9 +56,9 @@ type Catalog struct {
 	// so cross-reference problems can report the exact line of a bad reference.
 	nodes map[string]*yaml.Node
 
-	// problems is every validation and cross-reference error found while
-	// building this snapshot. A Catalog with problems is still returned so
-	// callers can report all of them at once; IsValid reports emptiness.
+	// problems holds every validation and cross-reference error found while
+	// loading. A Catalog with problems is still usable, so callers can report
+	// all of them at once.
 	problems []Problem
 }
 

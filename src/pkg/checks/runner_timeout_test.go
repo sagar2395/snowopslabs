@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package checks
 
 import (
@@ -8,9 +9,8 @@ import (
 	"time"
 )
 
-// A check killed by its own deadline must not read as a verdict about the
-// cluster: "signal: killed" is what the learner saw before, and it named
-// neither the timeout nor the way to raise it.
+// A check that times out must say so, and name the timeout that applied,
+// instead of reporting "signal: killed".
 func TestRun_TimeoutErrorExplainsItself(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -20,8 +20,7 @@ func TestRun_TimeoutErrorExplainsItself(t *testing.T) {
 	}{
 		{"default timeout", 0, 0, "timed out after 1s"},
 		{"per-check timeout", 2, 0, "timed out after 2s"},
-		// The caller's budget, not the check's, ended it: naming the check's
-		// 90s would send the author to raise a field that changes nothing.
+		// Here the caller's deadline, not the check's 90s, is the limit.
 		{"caller budget ran out first", 90, 50 * time.Millisecond, "overall time limit"},
 	}
 	for _, tt := range tests {

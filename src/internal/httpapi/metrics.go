@@ -22,9 +22,8 @@ import (
 // scenario names exist.
 func (s *Server) metricsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The websocket stream is hijacked and long-lived; measuring it would
-		// pollute the latency histogram and complicate the hijack path, so it
-		// passes through untouched.
+		// The WebSocket stream is long-lived and would distort the latency
+		// histogram, so it is not measured.
 		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 			next.ServeHTTP(w, r)
 			return
@@ -44,10 +43,9 @@ func (s *Server) metricsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// statusRecorder captures the response status code while forwarding everything
-// else. It preserves the http.Hijacker and http.Flusher capabilities of the
-// underlying writer so streaming responses and websocket upgrades keep working
-// even though the websocket path bypasses this recorder.
+// statusRecorder records the response status code and passes everything else
+// through, including http.Hijacker and http.Flusher, so streaming responses
+// keep working.
 type statusRecorder struct {
 	http.ResponseWriter
 	status  int

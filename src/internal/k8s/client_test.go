@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package k8s
 
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"testing"
 )
 
@@ -66,7 +68,7 @@ func parsePodListJSON(raw, namespace string) ([]PodInfo, error) {
 			Namespace: namespace,
 			Status:    item.Status.Phase,
 			Ready:     fmt.Sprintf("%d/%d", readyCount, totalCount),
-			Restarts:  fmt.Sprintf("%d", restarts),
+			Restarts:  strconv.Itoa(int(restarts)),
 		})
 	}
 	return pods, nil

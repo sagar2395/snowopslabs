@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package store is SnowOps Labs's durable state: runs, their logs and steps, and
-// the audit trail.
+// Package store persists labctl's durable state in SQLite: runs, their logs
+// and steps, the installed-component inventory, and the audit trail.
 //
-// v1 kept run state in an in-memory map capped at 100 entries and results in
-// loose JSON files, so history vanished on restart and concurrent writes raced.
-// v2 uses SQLite through modernc.org/sqlite — a pure-Go driver, because cgo
-// would break cross-compilation and the cross-platform golden rule. See
-// docs/adr/0002-sqlite-persistence.md.
+// It uses modernc.org/sqlite, a pure-Go driver, because the project builds
+// without cgo (ADR-0002).
 package store
 
 import (
@@ -30,9 +27,8 @@ import (
 //go:embed migrations/*.sql
 var migrationFS embed.FS
 
-// ErrSchemaTooNew is returned when the database was written by a newer build.
-// Reading it on a best-effort basis risks silent corruption, so opening fails
-// loudly and tells the user their options.
+// ErrSchemaTooNew is returned when the database was migrated by a newer
+// labctl. Open refuses it rather than risk misreading an unknown schema.
 var ErrSchemaTooNew = errors.New("database schema is newer than this build understands")
 
 // DefaultPath returns the database location: $SNOWOPS_HOME/snowops.db,
@@ -67,9 +63,8 @@ func WithClock(now func() time.Time) Option {
 // Open opens (creating if needed) the database at path and applies every
 // pending migration. The parent directory is created if missing.
 //
-// Concurrency settings matter here: WAL lets readers proceed during a write,
-// and a busy timeout turns momentary contention into a short wait rather than
-// an immediate SQLITE_BUSY error surfacing as a failed user command.
+// The database runs in WAL mode so reads proceed during a write, with a busy
+// timeout so brief contention waits instead of failing with SQLITE_BUSY.
 func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	if path == "" {
 		return nil, errors.New("store: database path is required")
@@ -90,8 +85,8 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 		return nil, fmt.Errorf("opening %s: %w", path, err)
 	}
 
-	// SQLite serialises writes. A single connection avoids lock churn and makes
-	// the write path deterministic; readers are fast enough at this scale.
+	// SQLite serialises writes anyway; one connection avoids lock contention
+	// between our own connections.
 	db.SetMaxOpenConns(1)
 	db.SetConnMaxLifetime(0)
 
@@ -123,8 +118,8 @@ func (s *Store) Close() error {
 // Path returns the database file location.
 func (s *Store) Path() string { return s.path }
 
-// DB exposes the handle for repositories in this package. It is deliberately
-// not part of any wider contract: callers outside store use the repositories.
+// DB exposes the raw handle. Code outside this package should use the Store
+// methods; tests use DB to set up states the methods cannot reach.
 func (s *Store) DB() *sql.DB { return s.db }
 
 // SchemaVersion returns the highest applied migration version (0 when empty).
@@ -139,9 +134,8 @@ type migration struct {
 	sql     string
 }
 
-// loadMigrations reads and orders the embedded migrations. A file whose name
-// does not start with a number is a packaging mistake and fails loudly rather
-// than being silently skipped.
+// loadMigrations reads the embedded migrations and sorts them by version. A
+// file whose name does not start with a number is an error, not skipped.
 func loadMigrations() ([]migration, error) {
 	entries, err := fs.ReadDir(migrationFS, "migrations")
 	if err != nil {
@@ -196,8 +190,7 @@ func currentVersion(ctx context.Context, db *sql.DB) (int, error) {
 }
 
 // migrate applies every migration newer than the recorded version, each in its
-// own transaction so a failure leaves the database at a known version rather
-// than half-migrated.
+// own transaction, so a failure leaves the database at a known version.
 func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -223,8 +216,7 @@ func (s *Store) migrate(ctx context.Context) error {
 		latest = migrations[len(migrations)-1].version
 	}
 
-	// Refuse a database from the future. Best-effort reads against an unknown
-	// schema are how data gets silently corrupted.
+	// The database was migrated by a newer labctl; see ErrSchemaTooNew.
 	if applied > latest {
 		return fmt.Errorf("%w: %s is at schema %d, this build knows %d — "+
 			"upgrade labctl, or point SNOWOPS_HOME at a different directory",
@@ -263,9 +255,8 @@ func (s *Store) applyMigration(ctx context.Context, m migration) error {
 	return nil
 }
 
-// tx runs fn inside a transaction, rolling back on error or panic. Every
-// multi-statement write in this package goes through it, so a partially
-// written run record cannot exist.
+// tx runs fn inside a transaction, rolling back on error or panic. Use it for
+// every write that spans more than one statement.
 func (s *Store) tx(ctx context.Context, fn func(*sql.Tx) error) error {
 	t, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -284,8 +275,8 @@ func (s *Store) tx(ctx context.Context, fn func(*sql.Tx) error) error {
 	return t.Commit()
 }
 
-// micro converts a time to the storage representation. The zero time stores as
-// NULL so "never started" is distinguishable from "started at the epoch".
+// micro converts a time to Unix microseconds for storage. The zero time is
+// stored as NULL, so "never started" differs from "started at the epoch".
 func micro(t time.Time) sql.NullInt64 {
 	if t.IsZero() {
 		return sql.NullInt64{}

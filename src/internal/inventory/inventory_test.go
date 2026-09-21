@@ -145,7 +145,7 @@ func TestRecorder_UnrecordedInstallRecordsNothing(t *testing.T) {
 }
 
 func waitFor(cond func() bool) bool {
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		if cond() {
 			return true
 		}

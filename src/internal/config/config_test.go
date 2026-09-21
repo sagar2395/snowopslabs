@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package config
 
 import (
@@ -8,10 +9,8 @@ import (
 	"testing"
 )
 
-// findProjectRoot must detect a make-free checkout — the release binary dropped
-// next to a git clone that has no Makefile. It keys on scenarios/ + runtimes/,
-// user-facing content that stays at the repo root after the Go source moved
-// under src/.
+// findProjectRoot must find a checkout that has no Makefile, by looking for
+// scenarios/ and runtimes/.
 func TestFindProjectRoot_NoMakefile(t *testing.T) {
 	root := t.TempDir()
 	for _, d := range []string{"scenarios", "runtimes"} {
@@ -37,9 +36,8 @@ func TestFindProjectRoot_NoMakefile(t *testing.T) {
 	}
 }
 
-// After the src/ restructure the Go module lives under src/, while the
-// user-facing content (scenarios/, runtimes/) stays at the repo root. Running
-// labctl or `go test` from inside src/ must still walk up to the content root.
+// The Go module lives under src/ while the content (scenarios/, runtimes/) is
+// at the repo root. Starting from inside src/ must still find the repo root.
 func TestFindProjectRoot_FromSrc(t *testing.T) {
 	root := t.TempDir()
 	for _, d := range []string{"scenarios", "runtimes"} {
@@ -290,9 +288,8 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 }
 
-// TestLoad_Isolation guards against the global-env-pollution regression: Load
-// must not stash file values in the process environment, so loading a second,
-// independent project returns that project's values rather than the first's.
+// TestLoad_Isolation checks that Load does not write file values into the
+// process environment, so loading a second project returns its own values.
 func TestLoad_Isolation(t *testing.T) {
 	clearConfigEnv(t)
 
@@ -371,7 +368,7 @@ func TestLoad_ScriptEnv(t *testing.T) {
 	}
 }
 
-// TestParseEnvValue covers quoting and inline-comment handling (finding #4).
+// TestParseEnvValue covers quoting and inline-comment handling.
 func TestParseEnvValue(t *testing.T) {
 	tests := []struct {
 		name string
@@ -399,8 +396,8 @@ func TestParseEnvValue(t *testing.T) {
 	}
 }
 
-// TestMergeEnvFile_QuotedValueReachesConfig is the end-to-end proof of #4: a
-// quoted runtime.env value must land in the Config without its quotes.
+// TestMergeEnvFile_QuotedValueReachesConfig checks that a quoted runtime.env
+// value reaches the Config without its quotes.
 func TestMergeEnvFile_QuotedValueReachesConfig(t *testing.T) {
 	clearConfigEnv(t)
 

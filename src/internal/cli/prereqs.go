@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -29,19 +30,15 @@ func appExists(app string) bool {
 	return err == nil
 }
 
-// ensureAppsDeployed makes sure each required app is actually running in the
-// cluster before an operation that depends on it (a scenario or challenge).
-//
-// People don't always follow the happy path — they'll start a scenario before
-// deploying its app. Rather than fail deep inside with a cryptic error, we check
-// up front and either (autoDeploy) build+deploy the missing apps, or return one
-// clear error naming the exact commands to run.
+// ensureAppsDeployed checks that each app in apps is running before a
+// scenario or challenge uses it. Missing apps are built and deployed when
+// autoDeploy is true; otherwise it returns one error naming the commands to
+// run.
 func ensureAppsDeployed(ctx context.Context, apps []string, autoDeploy bool) error {
 	var missing, unknown []string
 	for _, app := range apps {
 		if !appExists(app) {
-			// Not one of our apps (e.g. a synthetic namespace a fault creates).
-			// We can't build/deploy it; surface it so the user knows.
+			// Not a repo app, so it cannot be deployed from here; report it.
 			unknown = append(unknown, app)
 			continue
 		}
@@ -51,10 +48,10 @@ func ensureAppsDeployed(ctx context.Context, apps []string, autoDeploy bool) err
 		}
 		if autoDeploy {
 			fmt.Printf("Prerequisite app %q is not deployed — building and deploying it...\n", app)
-			if err := exec.RunScript("src/engine/build.sh", app); err != nil {
+			if err := scriptExec.RunScript("src/engine/build.sh", app); err != nil {
 				return fmt.Errorf("building prerequisite app %s: %w", app, err)
 			}
-			if err := exec.RunScript("src/engine/deploy.sh", "deploy", app); err != nil {
+			if err := scriptExec.RunScript("src/engine/deploy.sh", "deploy", app); err != nil {
 				return fmt.Errorf("deploying prerequisite app %s: %w", app, err)
 			}
 			continue
@@ -81,16 +78,10 @@ func ensureAppsDeployed(ctx context.Context, apps []string, autoDeploy bool) err
 	return errors.New(strings.TrimRight(b.String(), "\n"))
 }
 
-// warnMissingPlatformPrereqs prints a non-fatal heads-up for each declared
-// platform prerequisite (e.g. "cost/opencost", "monitoring/metrics", "ingress")
-// that does not appear to be installed, naming the exact command to install it.
-//
-// Unlike app prerequisites, platform components are never auto-installed by
-// `scenario up`, and a missing one (say OpenCost for a cost scenario) otherwise
-// only surfaces as a cryptic check failure much later. This is intentionally a
-// warning, not a hard error: detection is best-effort (namespace existence), so
-// we must never wrongly block a correctly-provisioned cluster. Writes to w so
-// callers/tests can capture it; a nil or empty prereq list is a no-op.
+// warnMissingPlatformPrereqs writes a warning to w for each platform
+// prerequisite (such as "cost/opencost" or "ingress") that does not appear to
+// be installed, with the command to install it. It only warns, because it
+// judges by namespace existence, which is not always right.
 func warnMissingPlatformPrereqs(ctx context.Context, w io.Writer, prereqs []string) {
 	if len(prereqs) == 0 {
 		return
@@ -101,7 +92,7 @@ func warnMissingPlatformPrereqs(ctx context.Context, w io.Writer, prereqs []stri
 	for _, pre := range prereqs {
 		namespaces := prereqNamespaces(reg, pre)
 		if len(namespaces) == 0 {
-			// Can't resolve this prereq to a namespace — don't guess, don't warn.
+			// Unknown to the registry; skip it rather than guess.
 			continue
 		}
 		present := false
@@ -134,8 +125,7 @@ func warnMissingPlatformPrereqs(ctx context.Context, w io.Writer, prereqs []stri
 //   - a bare category with providers (e.g. "ingress") → each provider's namespace
 //     (any one present counts, since ingress providers are mutually exclusive).
 //
-// Returns nil when the prereq cannot be resolved against the registry, so the
-// caller can skip it rather than emit a misleading warning.
+// It returns nil when the registry does not know the prereq.
 func prereqNamespaces(reg *platform.Registry, pre string) []string {
 	if provs := reg.GetProviders(pre); len(provs) > 0 {
 		return providerNamespaces(provs)

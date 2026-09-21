@@ -24,6 +24,13 @@ Effort is in engineering days and is an estimate, not a commitment.
 | [B10](#b10--chaos-network-faults-never-reach-the-traffic-generator) | Chaos network faults never reach the traffic generator | content, traffic | 1–2 |
 | [B11](#b11--secrets-management-only-works-for-the-app-the-platform-was-installed-for) | secrets-management only works for the app the platform was installed for | platform, content | 1 |
 | [B12](#b12--every-k3d-node-promises-the-whole-machines-memory) | Every k3d node promises the whole machine's memory | runtime | 1 |
+| [B13](#b13--scenarioengineget-writes-to-a-shared-cached-scenario) | `scenario.Engine.Get` writes to a shared, cached scenario | engine | 0.5 |
+| [B14](#b14--ctrl-c-orphans-running-scripts) | Ctrl-C orphans running scripts | CLI, run engine | 1 |
+| [B15](#b15--two-submits-can-take-the-same-lock) | Two submits can take the same lock | run engine, store | 0.5–1 |
+| [B16](#b16--web-ui-actions-bypass-the-run-engine) | Web UI actions bypass the run engine | API | 4–6 |
+| [B17](#b17--api-request-bodies-are-unbounded) | API request bodies are unbounded | API | 0.25 |
+| [B18](#b18--internalcli-runs-on-package-level-state) | `internal/cli` runs on package-level state | CLI | 3–4 |
+| [B19](#b19--smaller-go-clean-ups) | Smaller Go clean-ups | Go | 1–2 |
 
 ---
 
@@ -331,3 +338,168 @@ memory requests approach the VM's memory, and document a memory budget per
 scenario so learners know how many they can run at once.
 
 **Start at.** `runtimes/k3d/up.sh` (`create_cluster`), `src/internal/cli/doctor.go`.
+
+---
+
+## B13 — `scenario.Engine.Get` writes to a shared, cached scenario
+
+**Problem.** `Get` returns the `*Scenario` held in the engine's cache, but only
+after setting `s.Active` on it. Any two goroutines that call `Get` at the same
+time, or one that calls `Get` while a run reads the scenario, race on that
+field. `go test -race ./internal/service/scenario/` reports it on `main` in
+`TestActivate_ConflictsPerScenario`, which fails most runs. The same race is
+live in `labctl ui`, because its handlers call `Get` concurrently.
+
+**Proposed approach.** Stop writing to the cached value. Either return a
+shallow copy with `Active` filled in, or drop the field and have callers ask
+`IsActive(name)`. Take the copy approach first: it keeps every caller the same.
+
+**Start at.** `src/internal/scenario/engine.go` (`Get`, `isActive`).
+
+---
+
+## B14 — Ctrl-C orphans running scripts
+
+**Problem.** `labctl` never installs a signal handler, so `cmd.Context()` is
+`context.Background()` and Ctrl-C kills the process with Go's default action.
+Scripts started through `internal/toolchain` run in their own process group
+(`Setpgid`), so the terminal's SIGINT doesn't reach them. They keep running
+with no parent, and their run stays `running` until the next engine start
+reconciles it. That breaks the promise in
+[ADR-0003](adr/0003-durable-run-engine.md). The same gap has two smaller
+effects:
+
+- `labctl ui` exits without calling `Shutdown` on the HTTP server.
+- `scenario verify --watch` sleeps with `time.Sleep`, which no context can
+  interrupt.
+
+**Proposed approach.** In `cli.Execute`, run the root command under
+`signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)` via
+`rootCmd.ExecuteContext`. Everything already reads `cmd.Context()`, so
+cancellation then flows through to `run.Engine` and each process group gets its
+graceful SIGTERM. Give `labctl ui` an `http.Server.Shutdown` on the same
+context, and replace the sleep with a `select` on `ctx.Done()` and a
+`time.After`.
+
+**Start at.** `src/internal/cli/root.go` (`Execute`), `src/internal/cli/ui.go`,
+`src/internal/cli/scenario.go` (verify `--watch`).
+
+---
+
+## B15 — Two submits can take the same lock
+
+**Problem.** `run.(*Engine).Submit` checks `ActiveRunForLock` and then calls
+`CreateRun` as two separate statements. The index on `runs.lock_key` isn't
+unique, so two submits that land between those two calls both succeed. That
+can happen with two UI requests, or with the CLI in one terminal and the UI in
+another. Two runs then hold one lock, which is exactly what
+[ADR-0004](adr/0004-lock-and-reject-concurrency.md) exists to prevent.
+
+**Proposed approach.** Make the check and the insert one atomic statement, so it
+also holds across processes: `INSERT … SELECT … WHERE NOT EXISTS (SELECT 1 FROM
+runs WHERE lock_key = ? AND status IN ('queued','running'))`. Then report zero
+rows affected as the `*LockConflictError`. A partial unique index on
+`lock_key WHERE status IN (…) AND lock_key != ''` is the alternative. It needs
+a migration.
+
+**Start at.** `src/internal/run/engine.go` (`Submit`),
+`src/internal/store/runs.go` (`CreateRun`, `ActiveRunForLock`).
+
+---
+
+## B16 — Web UI actions bypass the run engine
+
+**Problem.** The `/api/v2` handlers for app deploy, destroy and build, platform
+install and uninstall, scenario up and down, services, runtimes, lab restore
+and reset, and traffic start their work in a detached `go func()` through
+`internal/executor`. That executor calls `exec.Command` with no context, takes
+no lock, and keeps its job history in memory. None of that work can be
+cancelled, none of it is refused on a conflict, and none of it survives a
+restart. The CLI's `lab`, `platform` and `incident` commands, meanwhile, go
+through `internal/service` and the run engine. The two interfaces therefore
+behave differently for the same operation, against both the
+[architecture](architecture/ARCHITECTURE.md#1-the-shape-of-the-system) and the
+"everything that shells out goes through `internal/run`" invariant.
+
+**Proposed approach.** Move one route family at a time onto the service that
+already exists: platform first (its service is complete), then scenario, lab,
+app and traffic. Each handler submits a `run.Spec` and returns `202` with the
+run ID, and the UI streams it from `/api/v2/runs/{id}`. Delete
+`internal/executor` once no handler uses it.
+
+**Start at.** `src/internal/httpapi/handlers.go` (every `go func()`),
+`src/internal/httpapi/lab.go`, `src/internal/httpapi/traffic.go`,
+`src/internal/service/`.
+
+---
+
+## B17 — API request bodies are unbounded
+
+**Problem.** No handler or middleware limits the request body size.
+`json.NewDecoder(r.Body)` reads whatever arrives. With auth on and
+`--bind 0.0.0.0`, an authenticated client can make the server buffer an
+arbitrarily large body.
+
+**Proposed approach.** Add `http.MaxBytesReader` in the middleware chain that
+already wraps every route. 1 MiB is far more than any request body the API
+takes. Return `413` through `respondError`.
+
+**Start at.** `src/internal/httpapi/middleware.go`, `src/internal/httpapi/server.go`.
+
+---
+
+## B18 — `internal/cli` runs on package-level state
+
+**Problem.** The CLI's configuration, executor and engines (`cfg`,
+`scriptExec`, `reg`, `scenes`, `incEng`, `svcReg`, `rtm`) are package
+variables that `PersistentPreRunE` assigns and `bindWorkload` reassigns. Most
+commands are also package variables, registered in `init()`, with their flags
+bound to more package variables. The newer `learn`, `challenge`, `lab`,
+`runs`, `validate` and `doctor` trees are built by constructors instead. As a result:
+
+- Tests share state and can't run in parallel.
+- Command wiring depends on file init order.
+- A reader can't tell from a function's signature what it depends on.
+
+**Proposed approach.** Introduce an `app` struct holding what
+`PersistentPreRunE` builds, and give each command a constructor that takes it
+(`func scenarioCmd(a *app) *cobra.Command`). Convert one command group per PR,
+starting with the smallest (`runtime`, `service`, `check`).
+[Go conventions §6](GO-CONVENTIONS.md#6-cli-commands) already requires the
+constructor form for new commands.
+
+**Start at.** `src/internal/cli/root.go`.
+
+---
+
+## B19 — Smaller Go clean-ups
+
+Each is small, safe and independent:
+
+- `scenario.NewEngine` takes `monitoringNamespace ...string` to fake an
+  optional parameter. The one production caller passes three arguments and then
+  sets the field anyway. Drop the variadic and set the field.
+- `runDoctor` and `dockerResourceWarning` accept a `nil` context and replace it
+  with `Background`, only because their tests pass `nil`. Pass `t.Context()` in
+  the tests and delete the nil checks.
+- `labctl ui` launches the browser before checking that the port is free. It
+  also probes the port with `net.Listen`, closes it and then listens again,
+  which is racy. Build the listener once and hand it to `http.Server.Serve`,
+  and open the browser only after that succeeds.
+- `fs.Sub(webui.DistFS, "dist")` discards its error in `ui.go`.
+- Seven JSON struct fields carry `omitempty` on a struct type, where it has no
+  effect. Decide per field whether the API should omit the zero value
+  (`omitzero`) or always send it (drop the tag). `omitzero` changes the
+  response, so check the UI first.
+- `pkg/checks` and `pkg/extension` shell out with `exec.CommandContext`
+  directly. That's allowed, because `pkg/` can't import `internal/run`, but
+  `pkg/checks.NewRunner` builds an `http.Client` with no `Timeout`. Only the
+  per-check context bounds a request. Set a client timeout as a second guard.
+- The largest files mix several concerns and are the hardest to review:
+  `internal/scenario/engine.go` (1,450 lines), `internal/httpapi/handlers.go`
+  (1,070), `internal/incident/incident.go` (750). Split them by concern
+  (install, state, templates; one handler file per resource), moving code
+  without changing it.
+
+**Start at.** The file named in each bullet.
+

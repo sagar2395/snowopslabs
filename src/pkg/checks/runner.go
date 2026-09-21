@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package checks
 
 import (
@@ -18,9 +19,7 @@ import (
 	"time"
 )
 
-// ExecFunc runs an external command and returns its stdout. Tests inject a
-// stub; the default implementation shells out (golden rule 2: the CLI
-// orchestrates, external tools do the work).
+// ExecFunc runs an external command and returns its stdout. Tests replace it.
 type ExecFunc func(ctx context.Context, name string, args ...string) (string, error)
 
 // Runner executes checks. The zero value is not usable; construct with
@@ -63,8 +62,8 @@ func (r *Runner) defaultExec(ctx context.Context, name string, args ...string) (
 	return stdout.String(), nil
 }
 
-// RunAll executes every check in order and returns one result per check.
-// A failing check does not stop the run — operators want the full picture.
+// RunAll runs every check in order and returns one result per check. A
+// failing check does not stop the others.
 func (r *Runner) RunAll(ctx context.Context, cs []Check) []Result {
 	results := make([]Result, 0, len(cs))
 	for _, c := range cs {
@@ -104,11 +103,9 @@ func (r *Runner) Run(ctx context.Context, c Check) Result {
 		}
 	}
 
-	// A check killed by its own deadline surfaces the child process's raw death
-	// ("kubectl: signal: killed"), which reads as a verdict about the cluster
-	// when it is nothing of the sort. Say what actually happened and which
-	// field moves the deadline. When the caller's deadline fired first, raising
-	// timeoutSeconds would change nothing, so blame the right clock.
+	// A timed-out check otherwise reports "signal: killed". Say it timed out,
+	// and whether the check's own timeoutSeconds or the caller's deadline was
+	// the limit.
 	if res.Error != "" && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		if errors.Is(parent.Err(), context.DeadlineExceeded) {
 			res.Error = "the verify run's overall time limit ran out before this check " +
@@ -124,8 +121,6 @@ func (r *Runner) Run(ctx context.Context, c Check) Result {
 	if res.Attempts == 0 {
 		res.Attempts = 1
 	}
-	// Advisory metadata travels with the result so the CLI, API and UI can all
-	// render the right next step without re-reading the scenario definition.
 	res.Remediation = c.Remediation
 	res.Pending = c.Pending
 	res.Explanation = res.explain()
@@ -174,7 +169,7 @@ func (r *Runner) runKubectl(ctx context.Context, c Check) Result {
 		args = append(args, "--namespace", c.Namespace)
 	}
 	if c.JSONPath == "" {
-		// Existence check: at least one matching resource.
+		// With no jsonpath, pass if at least one resource matches.
 		args = append(args, "-o", "name")
 		res.Want = fmt.Sprintf("%s exists", c.Resource)
 		out, err := r.Exec(ctx, "kubectl", args...)
@@ -210,19 +205,13 @@ func (r *Runner) runKubectl(ctx context.Context, c Check) Result {
 	return res
 }
 
-// ErrNoSamples reports that a query was answered but matched no series. It is
-// a legitimate outcome, not a failure: a workload that has never returned a 5xx
-// has no 5xx series at all.
+// ErrNoSamples reports that a query matched no series. Callers may treat it as
+// a valid answer: an app that never returned a 5xx has no 5xx series.
 var ErrNoSamples = errors.New("no samples")
 
 // QueryScalar runs an instant PromQL query and returns the first sample's value
-// as Prometheus rendered it. Callers that need a number parse it themselves —
-// the string is kept so a check reports exactly what Prometheus said.
-//
-// It is exported because a check is not the only thing that reads a number out
-// of Prometheus: the comparison harness measures a workload with the same
-// queries a check would use, and a second HTTP client would be a second place
-// for the endpoint, decoding and no-samples handling to drift.
+// as the string Prometheus returned. It returns ErrNoSamples when nothing
+// matched. The comparison harness uses it too.
 func (r *Runner) QueryScalar(ctx context.Context, query string) (string, error) {
 	if r.PrometheusURL == "" {
 		return "", errors.New("no Prometheus URL configured (set PROMETHEUS_URL)")
@@ -246,7 +235,7 @@ func (r *Runner) QueryScalar(ctx context.Context, query string) (string, error) 
 		Status string `json:"status"`
 		Data   struct {
 			Result []struct {
-				Value []interface{} `json:"value"`
+				Value []any `json:"value"`
 			} `json:"result"`
 		} `json:"data"`
 	}
@@ -332,10 +321,8 @@ func compare(got, op, want string) (bool, error) {
 		}
 		return got != want, nil
 	case "<", "<=", ">", ">=":
-		// kubectl jsonpath returns "" for an absent numeric status field — e.g.
-		// .status.readyReplicas is unset (not 0) until at least one replica is
-		// ready. Treat an empty left operand as 0 so the check fails cleanly
-		// ("0 >= 1" is false) instead of erroring with "needs numeric operands".
+		// kubectl returns "" for an unset field such as .status.readyReplicas
+		// before any replica is ready, so treat "" as 0.
 		if got == "" && werr == nil {
 			gf, numeric = 0, true
 		}
@@ -358,8 +345,8 @@ func compare(got, op, want string) (bool, error) {
 }
 
 func firstLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
+	if before, _, ok := strings.Cut(s, "\n"); ok {
+		return before
 	}
 	return s
 }

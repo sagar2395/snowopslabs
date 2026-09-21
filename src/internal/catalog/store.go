@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package catalog
 
 import "sync/atomic"
 
-// Store holds the current Catalog snapshot behind an atomic pointer so readers
-// never see a half-built catalog. Reload builds a fresh snapshot from the same
-// roots and swaps it in one store; a reader calling Current before, during or
-// after a Reload always gets a complete, internally consistent snapshot. Store
-// is safe for concurrent use.
+// Store holds the current Catalog behind an atomic pointer. Reload builds a new
+// snapshot and swaps it in, so Current always returns a complete snapshot, even
+// during a reload. Store is safe for concurrent use.
 type Store struct {
 	roots []string
 	cur   atomic.Pointer[Catalog]

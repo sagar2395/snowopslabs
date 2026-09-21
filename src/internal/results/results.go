@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-// Package results provides a unified, append-only store for all scored runs
-// (incidents, challenge submissions, learn module completions).  Records are
-// written as newline-delimited JSON in .labctl/history/results.jsonl.
-//
-// Schema is intentionally flat so future team / leaderboard features
-// can query the file without a migration.
+
+// Package results stores the outcome of every scored run (incidents,
+// challenges, learning modules, scenario verifications, comparisons) as one
+// JSON record per line in .labctl/history/results.jsonl. The leaderboard is
+// built from these records.
 package results
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,27 +24,22 @@ const (
 	KindChallenge = "challenge"
 	KindModule    = "module"   // a learn path module completion
 	KindScenario  = "scenario" // a scenario verification
-	// KindComparison is one workload's measured run in a `labctl compare`. One
-	// record per (scenario, workload) pair: the comparison itself is the set of
-	// records that share a scenario and a run id, so a later run against a third
-	// app extends the comparison instead of invalidating it.
+	// KindComparison is one workload's results from a `labctl compare`. The
+	// records that share a scenario and run ID make up one comparison.
 	KindComparison = "comparison"
 )
 
-// CheckOutcome is one check's result as recorded in a scenario verification. It
-// is a compact, display-ready shape (not the full checks.Result) so the results
-// view can show which checks passed without depending on the checks package.
+// CheckOutcome is one check's result in a scenario verification record: a
+// short summary of checks.Result, so this package does not depend on checks.
 type CheckOutcome struct {
 	Name   string `json:"name"`
 	Pass   bool   `json:"pass"`
 	Detail string `json:"detail,omitempty"`
 }
 
-// NewScenarioRecord builds a results Record for a scenario verification. It
-// captures the scenario's objectives and each check's pass/fail so the results
-// view can show what was being verified and how far the user got — the "did I
-// actually solve it?" feedback. Score is the percentage of checks that
-// passed; Outcome is passed only when every check passed.
+// NewScenarioRecord builds a Record for a scenario verification, including the
+// scenario's objectives and each check's result. Score is the percentage of
+// checks that passed; Outcome is "passed" only when all of them did.
 func NewScenarioRecord(name, user string, objectives []string, checks []CheckOutcome, startedAt, endedAt time.Time) Record {
 	passed := 0
 	for _, c := range checks {
@@ -59,7 +55,7 @@ func NewScenarioRecord(name, user string, objectives []string, checks []CheckOut
 		}
 		score = passed * 100 / len(checks)
 	}
-	meta := map[string]interface{}{
+	meta := map[string]any{
 		"checks":       checks,
 		"checksPassed": passed,
 		"checksTotal":  len(checks),
@@ -82,27 +78,23 @@ func NewScenarioRecord(name, user string, objectives []string, checks []CheckOut
 
 // Record is the unified run record.
 type Record struct {
-	Kind      string                 `json:"kind"`           // incident | challenge | module
-	Name      string                 `json:"name"`           // fault name, challenge name, or "<path>/<module>"
-	User      string                 `json:"user,omitempty"` // $USER at run time
-	StartedAt time.Time              `json:"startedAt"`
-	EndedAt   time.Time              `json:"endedAt"`
-	Elapsed   int64                  `json:"elapsedSeconds"` // wall clock seconds
-	Score     int                    `json:"score"`          // 0–100; -1 = not scored
-	Outcome   string                 `json:"outcome"`        // passed | failed | aborted | resolved | auto-resolved
-	HintsUsed int                    `json:"hintsUsed,omitempty"`
-	Workload  string                 `json:"workload,omitempty"` // app the run was bound to (ADR-0014)
-	Meta      map[string]interface{} `json:"meta,omitempty"`     // kind-specific extra fields
+	Kind      string         `json:"kind"`           // incident | challenge | module
+	Name      string         `json:"name"`           // fault name, challenge name, or "<path>/<module>"
+	User      string         `json:"user,omitempty"` // $USER at run time
+	StartedAt time.Time      `json:"startedAt"`
+	EndedAt   time.Time      `json:"endedAt"`
+	Elapsed   int64          `json:"elapsedSeconds"` // wall clock seconds
+	Score     int            `json:"score"`          // 0–100; -1 = not scored
+	Outcome   string         `json:"outcome"`        // passed | failed | aborted | resolved | auto-resolved
+	HintsUsed int            `json:"hintsUsed,omitempty"`
+	Workload  string         `json:"workload,omitempty"` // app the run was bound to (ADR-0014)
+	Meta      map[string]any `json:"meta,omitempty"`     // kind-specific extra fields
 }
 
-// NewComparisonRecord builds a record for one workload's measured window in a
-// comparison. It is not scored: a comparison reports numbers and the scenario's
-// checks remain the only thing that decides pass/fail, so Score is -1 and the
-// outcome is "measured".
-//
-// The fair-run controls are recorded alongside the values because a measurement
-// only means something next to the load that produced it — two records with
-// different warmups are not comparable however similar their numbers look.
+// NewComparisonRecord builds a Record for one workload in a comparison. It is
+// not scored: Score is -1 and Outcome is "measured". The comparison's
+// conditions (controls) are stored with the values, since results measured
+// under different conditions cannot be compared.
 func NewComparisonRecord(scenario, app string, values map[string]float64, controls map[string]string, startedAt, endedAt time.Time) Record {
 	return Record{
 		Kind:      KindComparison,
@@ -114,7 +106,7 @@ func NewComparisonRecord(scenario, app string, values map[string]float64, contro
 		Elapsed:   int64(endedAt.Sub(startedAt).Seconds()),
 		Score:     -1,
 		Outcome:   "measured",
-		Meta: map[string]interface{}{
+		Meta: map[string]any{
 			"metrics":  values,
 			"controls": controls,
 		},
@@ -162,13 +154,13 @@ func (s *Store) ByKind(kind string) ([]Record, error) {
 func (s *Store) query(kind string) ([]Record, error) {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
 	var recs []Record
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
 		if line == "" {
 			continue
 		}
@@ -207,7 +199,7 @@ func (s *Store) Progress() (map[string][]Record, error) {
 	return byPath, nil
 }
 
-// currentUser returns the OS username for the record, falling back to "unknown".
+// CurrentUser returns the OS username ($USER, then $USERNAME), or "unknown".
 func CurrentUser() string {
 	if u := os.Getenv("USER"); u != "" {
 		return u
@@ -218,9 +210,8 @@ func CurrentUser() string {
 	return "unknown"
 }
 
-// UserOr returns user when it is non-empty, otherwise the OS username from
-// CurrentUser(). Callers pass the authenticated API user when known
-// and "" otherwise, so auth-off / CLI behaviour stays byte-identical.
+// UserOr returns user if it is non-empty, otherwise CurrentUser(). Callers
+// pass the authenticated API user, or "" when there is none.
 func UserOr(user string) string {
 	if user != "" {
 		return user

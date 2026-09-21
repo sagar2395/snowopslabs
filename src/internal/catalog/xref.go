@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package catalog
 
 import (
@@ -64,11 +65,8 @@ func (c *Catalog) crossReference() {
 	c.checkDashboards()
 }
 
-// checkSnippetPaths verifies that every snippet with a `path` points at a file
-// that actually exists inside the item's directory. A dangling path is caught
-// here, at load, naming the file and the offending reference — so an author
-// learns their manifest is missing from `labctl validate`, not when a learner
-// tries to apply it (M2).
+// checkSnippetPaths reports every snippet whose `path` does not point at a
+// file inside the item's directory.
 func (c *Catalog) checkSnippetPaths() {
 	for _, s := range c.scenarios {
 		key := sourceKey(KindScenario, s.Name)
@@ -85,8 +83,7 @@ func (c *Catalog) checkItemSnippetPaths(kind Kind, name, file string, node *yaml
 		if sn.Path == "" {
 			continue // inline yaml, or already reported malformed by Validate
 		}
-		// Validate already rejected unsafe (absolute / "..") paths; only the
-		// existence check needs the directory, which the loader supplies.
+		// Validate has already rejected absolute and ".." paths.
 		abs := filepath.Join(dir, filepath.FromSlash(sn.Path))
 		if info, err := os.Stat(abs); err != nil || info.IsDir() {
 			c.problems = append(c.problems, Problem{
@@ -117,10 +114,8 @@ func (c *Catalog) refProblem(kind Kind, name, file string, node *yaml.Node, ref,
 	})
 }
 
-// validateTemplates resolves every templated content field against the typed
-// template context. A reference to an unknown key (a typo) or a malformed
-// template is reported with the file and line, so it fails at validation rather
-// than producing a broken URL or namespace at run time.
+// validateTemplates checks every templated field against the template context
+// and reports unknown variables and malformed templates with file and line.
 func (c *Catalog) validateTemplates(_ string) {
 	for _, s := range c.scenarios {
 		key := sourceKey(KindScenario, s.Name)
@@ -175,8 +170,7 @@ func scenarioTemplated(s *scenario.Scenario) []string {
 func incidentTemplated(f *incident.Fault) []string {
 	d := f.Detection
 	out := []string{d.URL, d.Resource, d.Namespace, d.Query, d.Value, d.BodyContains, f.Description}
-	// The target is templatable so a fault can follow the workload binding; a
-	// typo there must fail validation, not silently point scripts at nothing.
+	// The target may be templated so a fault can follow the workload binding.
 	out = append(out, f.Target.Namespace, f.Target.Workload)
 	out = append(out, snippetTemplated(f.Snippets)...)
 	for _, r := range f.References {
@@ -185,9 +179,7 @@ func incidentTemplated(f *incident.Fault) []string {
 	return nonEmpty(out)
 }
 
-// snippetTemplated returns the inline-yaml body of every snippet, so a malformed
-// template ({{.Typo}}) in an applyable manifest is caught at validation instead
-// of producing a manifest that won't apply.
+// snippetTemplated returns the inline YAML body of every snippet.
 func snippetTemplated(snips []scenario.Snippet) []string {
 	out := make([]string, 0, len(snips))
 	for _, s := range snips {

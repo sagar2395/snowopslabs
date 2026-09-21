@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -21,9 +22,8 @@ func testBindServer(t *testing.T) *Server {
 	}
 }
 
-// The engines the server holds must come back unchanged: an activation that
-// rebound them would be seen by every concurrent request, and every reader would
-// then describe content against an app it is not running on.
+// An activation for another app must leave the server's shared engines bound
+// as they were.
 func TestWithWorkloadLeavesTheSharedEnginesAlone(t *testing.T) {
 	s := testBindServer(t)
 	scenes, incidents, release, err := s.withWorkload("")
@@ -42,9 +42,8 @@ func TestWithWorkloadLeavesTheSharedEnginesAlone(t *testing.T) {
 	}
 }
 
-// A read path must never wait on the binding lock. Injection holds it for
-// minutes, and a list endpoint that waited on it hung the whole UI for the
-// length of the injection it was displaying.
+// A read handler must not wait on the binding lock, which an injection can hold
+// for minutes.
 func TestReadsDoNotWaitOnAnInFlightBinding(t *testing.T) {
 	s := testBindServer(t)
 	_, _, release, err := s.withWorkload("")
@@ -65,9 +64,8 @@ func TestReadsDoNotWaitOnAnInFlightBinding(t *testing.T) {
 	}
 }
 
-// An explicit app that has no app.env is a usage error, not a silent fall back:
-// injecting into the wrong workload succeeds and breaks something the user did
-// not name.
+// An explicitly named app with no app.env is an error, rather than falling
+// back to the default app and breaking something the user did not name.
 func TestWithWorkloadRejectsAnUnknownApp(t *testing.T) {
 	s := testBindServer(t)
 	_, _, release, err := s.withWorkload("no-such-app")

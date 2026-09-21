@@ -8,9 +8,7 @@ import (
 )
 
 // Enabled reports whether the Prometheus /metrics endpoint should be served.
-// It is OFF by default and turned on with LABCTL_METRICS=true, mirroring the
-// LABCTL_AUTH gate. Keeping it opt-in means the default local experience
-// exposes no scrape surface at all.
+// It is off unless LABCTL_METRICS=true.
 func Enabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("LABCTL_METRICS")), "true")
 }

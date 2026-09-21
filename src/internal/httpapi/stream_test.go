@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +54,7 @@ func TestStreamSSE_ReplaysFromCursor(t *testing.T) {
 
 	// Seed four events into the ring before anyone connects.
 	for i := 1; i <= 4; i++ {
-		exec.Broadcast.Send(executor.ActionEvent{ID: fmt.Sprintf("%d", i), Type: "action_output", Output: "line"})
+		exec.Broadcast.Send(executor.ActionEvent{ID: strconv.Itoa(i), Type: "action_output", Output: "line"})
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -118,7 +119,7 @@ func TestStreamSSE_ResyncWhenCursorTooOld(t *testing.T) {
 	defer ts.Close()
 
 	// Overfill the ring so cursor 0 can no longer be honoured contiguously.
-	for i := 0; i < 1050; i++ {
+	for range 1050 {
 		exec.Broadcast.Send(executor.ActionEvent{ID: "x", Type: "action_output"})
 	}
 

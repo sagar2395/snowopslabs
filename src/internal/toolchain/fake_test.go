@@ -11,9 +11,8 @@ import (
 	"time"
 )
 
-// The Fake underpins every hermetic test above this package, so its own
-// contract needs to hold: faithful recording, scripted responses, and
-// cancellation semantics that match Exec.
+// Tests across the codebase rely on Fake recording calls faithfully, applying
+// scripted responses, and handling cancellation the way Exec does.
 
 func TestFakeRun(t *testing.T) {
 	ctx := context.Background()

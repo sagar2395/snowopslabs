@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package runtime discovers the cluster runtimes under runtimes/ (k3d, kind,
+// incluster), reports which one kubectl is using, and runs their up and down
+// scripts.
 package runtime
 
 import (
@@ -7,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -35,11 +40,9 @@ type Manager struct {
 // NewManager scans the runtimes/ directory for available runtimes.
 func NewManager(projectRoot, clusterName string) *Manager {
 	m := &Manager{
-		ProjectRoot: projectRoot,
-		ClusterName: clusterName,
-		getCurrentCtx: func(ctx context.Context) (string, error) {
-			return k8s.GetCurrentContext(ctx)
-		},
+		ProjectRoot:   projectRoot,
+		ClusterName:   clusterName,
+		getCurrentCtx: k8s.GetCurrentContext,
 		contextExists: func(ctx context.Context, name string) (bool, error) {
 			out, err := k8s.RunKubectl(ctx, "config", "get-contexts", name, "--no-headers")
 			return err == nil && strings.TrimSpace(out) != "", nil
@@ -146,12 +149,7 @@ func (m *Manager) scan() {
 }
 
 func (m *Manager) exists(name string) bool {
-	for _, r := range m.runtimes {
-		if r == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.runtimes, name)
 }
 
 // expectedContext returns the kubectl context name expected for a runtime.
@@ -187,8 +185,8 @@ func readEnvKey(path, key string) string {
 		if strings.HasPrefix(line, "#") || line == "" {
 			continue
 		}
-		if strings.HasPrefix(line, prefix) {
-			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		if after, ok := strings.CutPrefix(line, prefix); ok {
+			return strings.TrimSpace(after)
 		}
 	}
 	return ""

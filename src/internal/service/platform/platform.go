@@ -1,20 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package platform moves platform-component lifecycle — install a provider,
-// uninstall it, probe its status — onto the durable run engine (internal/run),
-// the parallel sibling of internal/service/lab. It follows the same
-// shape: a thin, domain-specific façade over the engine that owns the run Kind,
-// the exclusive LockKey, and how a (category, provider) pair maps to a script;
-// it never executes anything itself.
+// Package platform installs, uninstalls and probes platform components as runs
+// on the run engine, following the same pattern as internal/service/lab.
 //
-// The difference from lab is granularity. There is one lab, but many platform
-// components, so the exclusive lock — and the store-derived state — is per
-// component ("platform:<category>/<provider>"). Two different components install
-// concurrently; the same component cannot install and uninstall at once.
+// Unlike the lab, there are many components, so the lock and the state are per
+// component ("platform:<category>/<provider>"). Two different components can
+// install at once; one component cannot install and uninstall at once.
 package platform
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -25,21 +21,19 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
-// Run kinds. They match internal/run's DefaultTimeouts, so install gets the long
-// budget and status a short one.
+// Run kinds. Each has an entry in run.DefaultTimeouts.
 const (
 	KindInstall   = "platform.install"
 	KindUninstall = "platform.uninstall"
 	KindStatus    = "platform.status"
 )
 
-// segment guards each path segment that becomes part of a script location
-// (platform/<category>/<provider>/…). The resolver would reject an escaping path
-// anyway; validating here turns a typo into a clear "invalid component".
+// segment restricts each category and provider segment, which become part of a
+// script path (platform/<category>/<provider>/).
 var segment = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,40}$`)
 
-// Component is the canonical "category/provider" identity of one component. It
-// is the run Target and the basis of the lock key.
+// Component returns a component's "category/provider" name, used as the run
+// target and in the lock key.
 func Component(category, provider string) string {
 	if category == "" {
 		return provider
@@ -47,13 +41,14 @@ func Component(category, provider string) string {
 	return category + "/" + provider
 }
 
-// LockKey serialises the install/uninstall of one component. Namespaced so it
-// can never collide with lab's "lab" key or another service's.
+// LockKey returns the lock key for one component. The "platform:" prefix keeps
+// it distinct from other services' keys.
 func LockKey(category, provider string) string {
 	return "platform:" + Component(category, provider)
 }
 
-// Service is the durable platform-lifecycle façade.
+// Service submits component operations to the run engine and reports
+// component state from the store.
 type Service struct {
 	engine *run.Engine
 	store  *store.Store
@@ -63,8 +58,8 @@ type Service struct {
 // Option configures a Service.
 type Option func(*Service)
 
-// WithEnv layers configuration onto the component scripts' environment (the same
-// values the executor path sets: DOMAIN_SUFFIX, MONITORING_NAMESPACE, …).
+// WithEnv sets the environment for component scripts, such as DOMAIN_SUFFIX
+// and MONITORING_NAMESPACE.
 func WithEnv(env map[string]string) Option {
 	return func(s *Service) { s.env = env }
 }
@@ -72,10 +67,10 @@ func WithEnv(env map[string]string) Option {
 // New builds a platform Service over the given engine and store.
 func New(engine *run.Engine, st *store.Store, opts ...Option) (*Service, error) {
 	if engine == nil {
-		return nil, fmt.Errorf("platform: a run engine is required")
+		return nil, errors.New("platform: a run engine is required")
 	}
 	if st == nil {
-		return nil, fmt.Errorf("platform: a store is required")
+		return nil, errors.New("platform: a store is required")
 	}
 	s := &Service{engine: engine, store: st}
 	for _, opt := range opts {
@@ -84,8 +79,9 @@ func New(engine *run.Engine, st *store.Store, opts ...Option) (*Service, error) 
 	return s, nil
 }
 
-// Install submits a provider install and returns the run ID. It does not wait.
-// A concurrent op on the same component is refused with *run.LockConflictError.
+// Install submits a provider install and returns the run ID without waiting.
+// An operation already in flight on the same component causes a
+// *run.LockConflictError.
 func (s *Service) Install(ctx context.Context, category, provider string) (string, error) {
 	return s.submit(ctx, KindInstall, category, provider, "install.sh", LockKey(category, provider))
 }
@@ -95,9 +91,9 @@ func (s *Service) Uninstall(ctx context.Context, category, provider string) (str
 	return s.submit(ctx, KindUninstall, category, provider, "uninstall.sh", LockKey(category, provider))
 }
 
-// Probe submits a status.sh run for a component and returns the run ID — the
-// --live check. It takes no lock, so a probe never conflicts with anything and
-// two probes may overlap harmlessly. The caller streams it like any run.
+// Probe submits the component's status.sh and returns the run ID. It is the
+// live check behind --live. It takes no lock, so it never conflicts with other
+// runs.
 func (s *Service) Probe(ctx context.Context, category, provider string) (string, error) {
 	return s.submit(ctx, KindStatus, category, provider, "status.sh", "")
 }
@@ -116,14 +112,13 @@ func (s *Service) submit(ctx context.Context, kind, category, provider, script, 
 	return s.engine.Submit(ctx, spec)
 }
 
-// validate rejects a category/provider whose segments could not name a real
-// on-disk component. category may be nested (monitoring/metrics); every segment
-// and the provider must be a safe path token.
+// validate rejects a category or provider that is not a safe path. category
+// may be nested (monitoring/metrics); each of its segments is checked.
 func validate(category, provider string) error {
 	if !segment.MatchString(provider) {
 		return fmt.Errorf("platform: invalid provider %q", provider)
 	}
-	for _, seg := range strings.Split(category, "/") {
+	for seg := range strings.SplitSeq(category, "/") {
 		if seg == "" || !segment.MatchString(seg) {
 			return fmt.Errorf("platform: invalid category %q", category)
 		}
@@ -139,6 +134,7 @@ func (s *Service) Cancel(ctx context.Context, runID string) error {
 // State is a component's lifecycle state as understood from its run history.
 type State string
 
+// Component states.
 const (
 	StateUnknown    State = "unknown"    // no install/uninstall recorded for this component
 	StateInstalled  State = "installed"  // last completed op was a successful install
@@ -148,7 +144,7 @@ const (
 	StateError      State = "error"      // the last completed op failed
 )
 
-// Status is a point-in-time answer about one component, derived from the store.
+// Status describes one component at one moment, as read from the store.
 type Status struct {
 	Component string    `json:"component"`
 	State     State     `json:"state"`
@@ -156,10 +152,10 @@ type Status struct {
 	Since     time.Time `json:"since,omitempty"`
 }
 
-// Status derives a component's state from the store — no cluster round-trip, so
-// it is fast and works when the cluster is unreachable. An in-flight op wins
-// (mid-transition); otherwise the most recent completed install/uninstall
-// decides. Status (probe) runs take no lock, so they never confuse this.
+// Status reads a component's state from the store, so it is fast and works
+// when the cluster is unreachable. A queued or running install or uninstall
+// takes precedence; otherwise the most recent finished one decides. Probe runs
+// are ignored.
 func (s *Service) Status(ctx context.Context, category, provider string) (Status, error) {
 	if err := validate(category, provider); err != nil {
 		return Status{}, err

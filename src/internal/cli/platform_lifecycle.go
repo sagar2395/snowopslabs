@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
 	"context"
 	"fmt"
 	"io"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -29,17 +31,13 @@ not in the inventory and are left untouched.`,
 	},
 }
 
-// Single-target `labctl platform up|down` and the default `platform status`
-// run through the durable engine: a per-component install/uninstall is
-// a recorded, cancellable run under an exclusive `platform:<category>/<provider>`
-// lock, and status is answered from the store. Bulk `up`/`down` (no target) and
-// `status --live` stay on the legacy executor path; wholesale orchestration and
-// live cluster probing across every discovered provider is not part of this
-// slice.
+// `labctl platform up|down <target>` installs or uninstalls one component as a
+// run on the run engine, under the lock `platform:<category>/<provider>`, and
+// `platform status` reads component state from the store. `platform up|down`
+// with no target, and `platform status --live`, use scriptExec instead.
 
-// platformEngineFactory builds a platform service over the shared run-engine
-// bootstrap. Overridable in tests. cleanup shuts the engine down (no-op if never
-// started) and closes the store; always defer it.
+// platformEngineFactory builds a platform service on a new run engine. Tests
+// replace it. Always defer cleanup.
 var platformEngineFactory = func(ctx context.Context) (*platsvc.Service, *store.Store, *run.Engine, func(), error) {
 	eng, st, cleanup, err := newRunEngine(ctx)
 	if err != nil {
@@ -53,8 +51,8 @@ var platformEngineFactory = func(ctx context.Context) (*platsvc.Service, *store.
 	return svc, st, eng, cleanup, nil
 }
 
-// runPlatformComponentOp routes a single-target install/uninstall through the
-// durable run engine, streaming the recorded run and exiting non-zero on failure.
+// runPlatformComponentOp installs or uninstalls one component through the run
+// engine and streams the run, returning an error if it fails.
 func runPlatformComponentOp(cmd *cobra.Command, verb, category, provider string, submit func(context.Context, *platsvc.Service) (string, error)) error {
 	ctx := cmd.Context()
 	svc, st, eng, cleanup, err := platformEngineFactory(ctx)
@@ -68,9 +66,9 @@ func runPlatformComponentOp(cmd *cobra.Command, verb, category, provider string,
 	})
 }
 
-// platformStatusFromStore prints each component's state derived from the run
-// history — fast, no cluster round-trip. With a target it shows that one
-// component; without, every component labctl has installed or uninstalled.
+// platformStatusFromStore prints component state from the run history,
+// without contacting the cluster: one component with a target, otherwise every
+// component labctl has installed or uninstalled.
 func platformStatusFromStore(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 	svc, st, _, cleanup, err := platformEngineFactory(ctx)
@@ -112,9 +110,8 @@ func platformStatusFromStore(cmd *cobra.Command, args []string) error {
 	return w.Flush()
 }
 
-// platformComponentsWithHistory returns the distinct components that have an
-// install or uninstall run recorded, so `platform status` shows what labctl has
-// actually touched rather than every provider on disk.
+// platformComponentsWithHistory returns each component that has an install or
+// uninstall run recorded.
 func platformComponentsWithHistory(ctx context.Context, st *store.Store) ([][2]string, error) {
 	seen := map[string]bool{}
 	var out [][2]string
@@ -148,10 +145,9 @@ func splitComponent(target string) (category, provider string) {
 	return target[:i], target[i+1:]
 }
 
-// platformTeardown uninstalls exactly the components the inventory records as
-// installed, and reports what it could not remove instead of exiting 0 silently
-// Each uninstall is a recorded run; a failure is collected and the
-// teardown carries on, so one stuck component does not strand the rest.
+// platformTeardown uninstalls every component the inventory records as
+// installed, each as its own run. It carries on after a failure, then prints
+// the components it could not remove and returns an error.
 func platformTeardown(cmd *cobra.Command) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
@@ -178,10 +174,9 @@ func platformTeardown(cmd *cobra.Command) error {
 	}
 
 	var removed, failed []string
-	// Reverse order: later installs (e.g. dashboards that depend on monitoring)
-	// come down before what they sit on.
-	for i := len(installed) - 1; i >= 0; i-- {
-		comp := installed[i]
+	// Reverse install order, so components come down before what they depend
+	// on.
+	for _, comp := range slices.Backward(installed) {
 		category, provider := splitComponent(comp.Ref)
 		fmt.Fprintf(out, "\n── uninstalling %s ──\n", comp.Ref)
 		if uerr := streamOneUninstall(ctx, out, svc, st, category, provider); uerr != nil {
@@ -203,9 +198,8 @@ func platformTeardown(cmd *cobra.Command) error {
 	return nil
 }
 
-// streamOneUninstall submits one uninstall and streams it, returning an error if
-// the run did not succeed. The teardown owns the (already-started) engine for the
-// whole batch, so this streams without starting it again.
+// streamOneUninstall submits one uninstall and streams it, returning an error
+// if it did not succeed. The engine must already be started.
 func streamOneUninstall(ctx context.Context, out io.Writer, svc *platsvc.Service, st *store.Store, category, provider string) error {
 	return streamSubmittedRun(ctx, out, st, "uninstall "+platsvc.Component(category, provider), func() (string, error) {
 		return svc.Uninstall(ctx, category, provider)

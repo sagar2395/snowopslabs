@@ -21,9 +21,9 @@ const (
 	ComponentRemoved ComponentStatus = "removed"
 )
 
-// Component is one row of the installed-component inventory: the
-// lasting effect of an install/uninstall operation, as opposed to the operation
-// itself (a run). Teardown reads this to remove exactly what was installed.
+// Component is one row of the installed-component inventory: something an
+// install run left on the cluster. Teardown reads the inventory to remove
+// exactly what labctl installed.
 type Component struct {
 	ID          string // stable identity, e.g. "platform:ingress/traefik"
 	Kind        string // platform | scenario
@@ -41,10 +41,9 @@ type Component struct {
 // ErrComponentNotFound is returned when no inventory row matches an id.
 var ErrComponentNotFound = errors.New("component not found")
 
-// RecordComponentInstalled upserts a component as installed. Installing the same
-// component again (idempotent re-install, or a re-install after a removal) keeps
-// one row and refreshes its install run and timestamp — the inventory tracks
-// what is here now, not every time it was touched.
+// RecordComponentInstalled inserts or updates a component as installed.
+// Installing it again, including after a removal, keeps a single row and
+// refreshes its install run and time.
 func (s *Store) RecordComponentInstalled(ctx context.Context, c Component) error {
 	if c.ID == "" || c.Kind == "" {
 		return errors.New("store: component id and kind are required")
@@ -76,9 +75,8 @@ func (s *Store) RecordComponentInstalled(ctx context.Context, c Component) error
 	return nil
 }
 
-// MarkComponentRemoved flags a component removed, keeping the row as history. It
-// is a no-op error (ErrComponentNotFound) if the component was never recorded,
-// so a teardown of something installed outside labctl is reported, not hidden.
+// MarkComponentRemoved marks a component removed and keeps the row. It returns
+// ErrComponentNotFound if the component was never recorded.
 func (s *Store) MarkComponentRemoved(ctx context.Context, id, removeRun string, at time.Time) error {
 	if at.IsZero() {
 		at = s.now()

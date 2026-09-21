@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package run is SnowOps Labs's durable run engine: the layer that turns "shell
-// out to a script" into an operation you can cancel, time-bound, serialise and
-// read back tomorrow.
+// Package run is the durable run engine. It turns "run this script" into an
+// operation that can be cancelled, bounded by a timeout, serialised against
+// conflicting work, and read back later.
 //
-// Everything that mutates cluster state goes through here. The engine owns four
-// guarantees, each of which v1 lacked:
+// Everything that changes cluster state should go through here. The engine
+// guarantees that:
 //
 //   - Cancellation reaches the whole process tree (ADR-0003).
 //   - Conflicting operations are refused, not raced (ADR-0004).
@@ -60,8 +60,8 @@ type Spec struct {
 	Func RunFunc
 	// Args are passed to the script as argv. Never a shell string.
 	Args []string
-	// Env is layered over the process environment. Scripts read
-	// ${VAR:-default} from here — golden rule 3.
+	// Env is layered over the process environment. Scripts read their
+	// settings as ${VAR:-default}, so this is how configuration reaches them.
 	Env map[string]string
 	// Dir is the working directory; empty means the engine's default.
 	Dir string
@@ -125,7 +125,8 @@ const defaultQueueSize = 256
 // defaultWorkers is how many non-conflicting runs execute at once.
 const defaultWorkers = 4
 
-// Engine executes runs.
+// Engine queues, executes and records runs. Build it with New, call Start,
+// then Submit work; call Shutdown before exiting.
 type Engine struct {
 	store    *store.Store
 	runner   toolchain.Runner
@@ -148,10 +149,9 @@ type Engine struct {
 	// still in the queue works.
 	pending map[string]struct{}
 
-	// specs holds a submitted Spec between Submit and execution. The durable
-	// fields (argv, script, timeout) are in the store; this carries the
-	// in-process extras a worker needs — env and working directory — which are
-	// deliberately not persisted, since env can hold cluster credentials.
+	// specs holds each submitted Spec until a worker picks it up. The store
+	// keeps the durable fields (argv, script, timeout); env, working directory
+	// and Func live only here, because env can hold cluster credentials.
 	specs sync.Map // map[string]Spec
 
 	subs *subscribers
@@ -270,10 +270,9 @@ func New(st *store.Store, runner toolchain.Runner, resolver *toolchain.Resolver,
 
 // Start reconciles interrupted runs and launches the worker pool.
 //
-// Reconciliation matters: runs left non-terminal by a previous process have no
-// process behind them any more. Leaving them "running" would hold their lock
-// keys forever and lie to the user, so they are marked cancelled with an
-// explanation.
+// A run left queued or running by an earlier labctl process has nothing
+// executing it any more. Left alone it would hold its lock key forever, so
+// Start marks it cancelled and says why in its transcript.
 func (e *Engine) Start(ctx context.Context) error {
 	e.mu.Lock()
 	if e.started {
@@ -306,8 +305,8 @@ func (e *Engine) Start(ctx context.Context) error {
 }
 
 // Shutdown stops accepting work, cancels everything in flight, and waits for
-// the workers to finish. Without this, killing the server leaves orphaned helm
-// processes behind — exactly what ADR-0003 exists to prevent.
+// the workers to finish or ctx to expire. Skipping it leaves helm and kubectl
+// processes running with no parent (ADR-0003).
 func (e *Engine) Shutdown(ctx context.Context) error {
 	e.mu.Lock()
 	if !e.started {
@@ -338,17 +337,15 @@ func (e *Engine) Shutdown(ctx context.Context) error {
 		e.subs.closeAll()
 		return nil
 	case <-ctx.Done():
-		// Report it rather than pretending we shut down cleanly.
 		return fmt.Errorf("run: shutdown timed out with runs still finishing: %w", ctx.Err())
 	}
 }
 
-// Submit accepts work and returns the new run's ID. The run is queued, not yet
-// executing — callers stream its progress rather than waiting here (ADR-0006).
+// Submit queues work and returns the new run's ID without waiting for it to
+// execute; callers follow progress with Subscribe and the store (ADR-0006).
 //
-// A conflicting lock key is refused immediately with *LockConflictError. A user
-// who fires `platform up` twice wants to be told, not to silently wait five
-// minutes for a duplicate install.
+// If another active run holds spec.LockKey, Submit returns a
+// *LockConflictError immediately instead of queueing behind it.
 func (e *Engine) Submit(ctx context.Context, spec Spec) (string, error) {
 	if spec.Kind == "" {
 		return "", errors.New("run: spec.Kind is required")
@@ -364,10 +361,8 @@ func (e *Engine) Submit(ctx context.Context, spec Spec) (string, error) {
 		return "", ErrNotRunning
 	}
 
-	// Resolve the script before creating any record. A typo in a scenario
-	// should be an immediate, clear error — not a queued run that fails later
-	// and leaves a confusing entry in the history. (An in-process Func has
-	// nothing to resolve.)
+	// Resolve the script before recording anything, so a bad path fails here
+	// instead of leaving a failed run in the history.
 	if spec.Script != "" {
 		if _, err := e.resolver.Resolve(spec.Script); err != nil {
 			return "", err
@@ -489,9 +484,9 @@ func (e *Engine) Cancel(ctx context.Context, id string) error {
 	return fmt.Errorf("%w: %s is not tracked by this engine", ErrNotCancellable, id)
 }
 
-// newRunID returns a sortable, collision-resistant identifier. Time-prefixed so
-// IDs sort chronologically in logs, with random bytes so two submissions in the
-// same millisecond cannot collide.
+// newRunID returns an ID of the form run_<unix-millis>_<random hex>. The time
+// prefix makes IDs sort chronologically; the random suffix keeps two runs
+// submitted in the same millisecond apart.
 func newRunID() (string, error) {
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {

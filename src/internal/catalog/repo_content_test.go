@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package catalog
 
 import (
@@ -14,15 +15,13 @@ func repoRoot(t *testing.T) string {
 	if !ok {
 		t.Fatal("cannot determine test file path")
 	}
-	// src/internal/catalog/repo_content_test.go -> ../../.. is the content root
-	// (the Go source lives under src/, the content stays at the repo root).
+	// This file is in src/internal/catalog; the repo root is three levels up.
 	return filepath.Clean(filepath.Join(filepath.Dir(thisFile), "..", "..", ".."))
 }
 
-// TestRepoContentValidates is the guard behind "every file under scenarios/,
-// incidents/, learn/ and challenges/ passes validation". If an author adds or
-// edits content that breaks the model, this fails with the exact file, line and
-// reference — the same output `labctl validate` prints.
+// TestRepoContentValidates checks that all content under scenarios/,
+// incidents/, learn/ and challenges/ passes validation, reporting failures as
+// `labctl validate` does.
 func TestRepoContentValidates(t *testing.T) {
 	c, err := Load(repoRoot(t))
 	if err != nil {
@@ -41,19 +40,16 @@ func TestRepoContentValidates(t *testing.T) {
 	}
 }
 
-// TestVerifiedContentSet locks the curated verified set: the scenarios
-// and incidents confirmed end-to-end are marked verified, and the ones that
-// aren't (the disruptive drills; the less-exercised incidents) are explicitly
-// unverified. If someone flips a flag, this fails so the change is deliberate.
+// TestVerifiedContentSet pins which scenarios and incidents are marked
+// verified, so changing a verified flag requires updating this test too.
 func TestVerifiedContentSet(t *testing.T) {
 	c, err := Load(repoRoot(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Empty, and meant to stay that way: every scenario has now been walked
-	// on a live cluster, tamper-tested and scored. A new one belongs here only
-	// while it is being written.
+	// Every scenario has been reviewed on a live cluster. A new scenario is
+	// listed here until its review passes.
 	unverifiedScenarios := map[string]bool{}
 	verifiedScenarios := 0
 	for _, s := range c.Scenarios() {
@@ -70,8 +66,8 @@ func TestVerifiedContentSet(t *testing.T) {
 		t.Errorf("verified scenarios = %d, want 13 (the confirmed set)", verifiedScenarios)
 	}
 
-	// Empty: every shipped fault has now been through incident-review end to
-	// end on a live cluster. A new fault lands here until its review passes.
+	// Every fault has been reviewed on a live cluster. A new fault is listed
+	// here until its review passes.
 	unverifiedIncidents := map[string]bool{}
 	verifiedIncidents := 0
 	for _, f := range c.Incidents() {

@@ -87,7 +87,7 @@ func TestFinishHook_FiresOnFailure(t *testing.T) {
 }
 
 func waitUntil(cond func() bool) bool {
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		if cond() {
 			return true
 		}

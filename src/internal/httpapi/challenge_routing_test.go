@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -7,11 +8,9 @@ import (
 	"testing"
 )
 
-// The literal challenge routes must be registered before the "/{name}" wildcard.
-// gorilla/mux matches in registration order, so if "/challenges/{name}" comes
-// first it swallows "/challenges/status" and "/challenges/history" (name=
-// "status"/"history"), the info lookup fails, and the tab 404s. This exercises
-// the real router (not the handlers directly) so the ordering is actually tested.
+// gorilla/mux matches routes in registration order, so "/challenges/status"
+// and "/challenges/history" must be registered before "/challenges/{name}".
+// The test goes through the real router so the order is what gets tested.
 func TestChallengeRoutes_LiteralsNotShadowedByWildcard(t *testing.T) {
 	s := newChallengeServer(t)
 	s.setupRoutes()

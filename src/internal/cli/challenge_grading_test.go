@@ -10,10 +10,9 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/incident"
 )
 
-// A detection check's script is relative to the fault's own directory and its
-// URL carries template variables. Grading from the project root with the raw
-// check scores every submission zero, which is how three shipped challenges
-// became uncompletable.
+// A detection check's script is relative to the fault's directory and its URL
+// contains template variables, so grading must use that directory and the
+// expanded check.
 func TestResolveGradingChecks(t *testing.T) {
 	root := t.TempDir()
 	faultDir := filepath.Join(root, "incidents", "fault-a")

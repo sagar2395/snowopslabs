@@ -1,9 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package challenge loads timed challenges from challenges/<name>/, tracks the
+// active run, and scores a submission from its checks, the hints used and the
+// time taken against par.
 package challenge
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,7 +112,7 @@ type RunRecord struct {
 	ChallengeName string        `json:"challenge"`
 	StartedAt     time.Time     `json:"startedAt"`
 	FinishedAt    time.Time     `json:"finishedAt"`
-	Elapsed       time.Duration `json:"elapsedSeconds"` // stored as nanoseconds but labelled
+	Elapsed       time.Duration `json:"elapsedSeconds"` // JSON value is nanoseconds, despite the key
 	HintsUsed     int           `json:"hintsUsed"`
 	ChecksPassed  int           `json:"checksPassed"`
 	ChecksTotal   int           `json:"checksTotal"`
@@ -122,8 +128,8 @@ type Engine struct {
 	now          func() time.Time
 }
 
-// New creates a Engine.  resultsDir is the directory containing results.jsonl
-// (typically .labctl/history); pass empty string to disable unified store writes.
+// New creates an Engine. resultsDir is the directory holding results.jsonl
+// (usually .labctl/history); pass "" to skip writing results records.
 func New(challengeDir, stateDir, resultsDir string) *Engine {
 	return &Engine{
 		challengeDir: challengeDir,
@@ -137,7 +143,7 @@ func New(challengeDir, stateDir, resultsDir string) *Engine {
 func (e *Engine) Challenges() ([]*Challenge, error) {
 	entries, err := os.ReadDir(e.challengeDir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -178,7 +184,7 @@ func (e *Engine) Load(name string) (*Challenge, error) {
 func (e *Engine) Active() (*ActiveRun, error) {
 	data, err := os.ReadFile(e.activeFile())
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
@@ -190,8 +196,8 @@ func (e *Engine) Active() (*ActiveRun, error) {
 	return &run, nil
 }
 
-// Start begins a challenge run.  The caller is responsible for running the
-// setup action (scenario up / incident inject) before calling Start.
+// Start begins a challenge run. The caller must run the setup action
+// (scenario up or incident inject) first.
 func (e *Engine) Start(name string, force bool) (*ActiveRun, error) {
 	if _, err := e.Load(name); err != nil {
 		return nil, err
@@ -220,23 +226,22 @@ func (e *Engine) RecordHint() error {
 		return err
 	}
 	if run == nil {
-		return fmt.Errorf("no active challenge")
+		return errors.New("no active challenge")
 	}
 	run.HintsUsed++
 	return e.saveActive(run)
 }
 
-// Attempt grades the active run WITHOUT recording or ending it, so a learner can
-// see which checks are still failing, fix them, and submit again. The clock keeps
-// running, so retrying is not free — the elapsed-time deduction is the pressure,
-// not a one-shot submit.
+// Attempt scores the active run without recording or ending it, so a learner
+// can fix the failing checks and submit again. The clock keeps running, so
+// each retry costs time.
 func (e *Engine) Attempt(passed, total int) (*RunRecord, error) {
 	run, err := e.Active()
 	if err != nil {
 		return nil, err
 	}
 	if run == nil {
-		return nil, fmt.Errorf("no active challenge")
+		return nil, errors.New("no active challenge")
 	}
 	c, err := e.Load(run.ChallengeName)
 	if err != nil {
@@ -256,17 +261,16 @@ func (e *Engine) Attempt(passed, total int) (*RunRecord, error) {
 	}, nil
 }
 
-// Complete records the result and clears active state.
-// passed/total are the check results. outcome is "passed", "failed", or "aborted".
-// user attributes the unified result record to the authenticated API user;
-// pass "" from the CLI to fall back to the OS username.
+// Complete records the result and clears the active run. passed and total are
+// the check counts; outcome is "passed", "failed" or "aborted". user is the
+// authenticated API user, or "" to use the OS username.
 func (e *Engine) Complete(passed, total int, outcome, user string) (*RunRecord, error) {
 	run, err := e.Active()
 	if err != nil {
 		return nil, err
 	}
 	if run == nil {
-		return nil, fmt.Errorf("no active challenge")
+		return nil, errors.New("no active challenge")
 	}
 	c, err := e.Load(run.ChallengeName)
 	if err != nil {
@@ -289,7 +293,7 @@ func (e *Engine) Complete(passed, total int, outcome, user string) (*RunRecord, 
 	if err := e.appendHistory(rec); err != nil {
 		return rec, err
 	}
-	// Also write to the unified results store (best effort).
+	// Best effort: a failed results write does not fail the run.
 	if e.resultsDir != "" {
 		r := results.Record{
 			Kind:      results.KindChallenge,
@@ -301,7 +305,7 @@ func (e *Engine) Complete(passed, total int, outcome, user string) (*RunRecord, 
 			Score:     rec.Score,
 			Outcome:   rec.Outcome,
 			HintsUsed: rec.HintsUsed,
-			Meta: map[string]interface{}{
+			Meta: map[string]any{
 				"checksPassed": rec.ChecksPassed,
 				"checksTotal":  rec.ChecksTotal,
 			},
@@ -315,13 +319,13 @@ func (e *Engine) Complete(passed, total int, outcome, user string) (*RunRecord, 
 func (e *Engine) History() ([]RunRecord, error) {
 	data, err := os.ReadFile(e.historyFile())
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, err
 	}
 	var recs []RunRecord
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
 		if line == "" {
 			continue
 		}
@@ -333,9 +337,9 @@ func (e *Engine) History() ([]RunRecord, error) {
 	return recs, nil
 }
 
-// computeScore calculates the score for a challenge run.
-// Formula: base=100, subtract hint penalties, subtract time over-par.
-// If not all checks pass, score is proportional to checks passed.
+// computeScore returns a run's score out of 100: 100 minus the hint penalty
+// and the time-over-par penalty (at most 20), never below 0, then scaled by the
+// share of checks that passed.
 func computeScore(c *Challenge, elapsed time.Duration, hintsUsed, passed, total int) int {
 	if total == 0 {
 		return 0
@@ -356,16 +360,10 @@ func computeScore(c *Challenge, elapsed time.Duration, hintsUsed, passed, total 
 	if par > 0 && elapsed > par {
 		over := elapsed - par
 		overFrac := float64(over) / float64(par)
-		timePenalty = int(overFrac * 20)
-		if timePenalty > 20 {
-			timePenalty = 20
-		}
+		timePenalty = min(int(overFrac*20), 20)
 	}
 
-	score := base - hintDeduction - timePenalty
-	if score < 0 {
-		score = 0
-	}
+	score := max(base-hintDeduction-timePenalty, 0)
 
 	// Scale by check pass rate if not all passed.
 	if passed < total {

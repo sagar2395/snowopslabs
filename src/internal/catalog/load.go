@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package catalog
 
 import (
@@ -24,11 +25,10 @@ var kindLayout = map[Kind]struct{ dir, file string }{
 	KindChallenge: {"challenges", "challenge.yaml"},
 }
 
-// Load builds a validated snapshot from the given content roots, in precedence
-// order (later roots override earlier ones on a name collision). Every content
-// defect is collected into the returned Catalog's problems rather than aborting,
-// so a single pass reports them all; the returned error is non-nil only on a
-// failure to read a root that was expected to exist.
+// Load builds a validated snapshot from the given content roots. When two roots
+// define an item with the same name, the later root wins. Content errors are
+// collected in the Catalog's Problems rather than stopping the load; the
+// returned error is only for a root that cannot be read.
 func Load(roots ...string) (*Catalog, error) {
 	c := newCatalog(roots)
 	for _, root := range roots {
@@ -54,8 +54,8 @@ func (c *Catalog) loadKind(root string, kind Kind) {
 	dir := filepath.Join(root, layout.dir)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		// A missing kind directory is not an error: not every root ships every
-		// kind (an external root may hold only scenarios, for instance).
+		// Not every root has every kind; an external root may hold only
+		// scenarios.
 		return
 	}
 	for _, entry := range entries {
@@ -106,8 +106,7 @@ func (c *Catalog) loadScenario(dirName, file string, doc *yaml.Node) {
 	if err := s.Validate(); err != nil {
 		c.problems = append(c.problems, Problem{Kind: KindScenario, Name: nameOr(s.Name, dirName), File: file, Message: err.Error()})
 	}
-	// The capability vocabulary is closed, so a typo here would otherwise mean
-	// "never satisfied" and only surface as a puzzling preflight failure.
+	// Reject unknown capabilities now; a misspelt one could never be met.
 	for _, name := range s.Prerequisites.Capabilities {
 		if _, err := workload.ParseCapability(name); err != nil {
 			c.problems = append(c.problems, Problem{
@@ -162,8 +161,8 @@ func (c *Catalog) loadChallenge(dirName, file string, doc *yaml.Node) {
 	c.index(KindChallenge, dirName, file, doc, func() { c.challenges[dirName] = &ch })
 }
 
-// checkName enforces that an item's declared name matches its directory — the
-// convention every engine relies on to resolve a reference to a directory.
+// checkName reports an item whose declared name differs from its directory
+// name. Engines find an item by its name, so the two must match.
 func (c *Catalog) checkName(kind Kind, dirName, declared, file string, doc *yaml.Node) {
 	if declared != "" && declared != dirName {
 		c.problems = append(c.problems, Problem{
@@ -173,9 +172,9 @@ func (c *Catalog) checkName(kind Kind, dirName, declared, file string, doc *yaml
 	}
 }
 
-// index records the item's source file and YAML document, then stores it. An
-// across-root name collision overrides silently (that is the external-content
-// override contract); the source and node are updated to the winning file.
+// index stores the item with its source file and YAML document. An item with
+// the same name from a later root replaces the earlier one without a problem
+// being reported, which is how external roots override in-repo content.
 func (c *Catalog) index(kind Kind, name, file string, doc *yaml.Node, store func()) {
 	key := sourceKey(kind, name)
 	c.sources[key] = file

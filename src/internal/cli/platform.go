@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -47,10 +48,9 @@ func providerForCategory(category string) string {
 	}
 }
 
-// resolveProvider picks the provider to act on for a single category. It prefers
-// the configured selection; if none is set it falls back to the registry — using
-// the sole provider when a category has exactly one, or erroring with the choices
-// when it has several (e.g. mesh: istio|linkerd).
+// resolveProvider returns the provider to use for a category: the configured
+// one, or the only one if the category has one. If the category has several
+// and none is configured, it returns an error listing them.
 func resolveProvider(category string) (string, error) {
 	if p := providerForCategory(category); p != "" {
 		return p, nil
@@ -71,10 +71,9 @@ func resolveProvider(category string) (string, error) {
 		category, strings.Join(names, ", "), envVar)
 }
 
-// resolveTarget interprets a platform target argument as either a category
-// (whose provider is selected via env, or is the sole/only one) or an explicit
-// "category/provider" spec (e.g. data/kafka), returning the concrete
-// category + provider to act on.
+// resolveTarget turns a platform argument into a category and provider. The
+// argument is either a category, whose provider is resolved by
+// resolveProvider, or "category/provider" such as data/kafka.
 func resolveTarget(arg string) (category, provider string, err error) {
 	// 1. The whole arg is a category (possibly nested, e.g. monitoring/metrics).
 	if len(reg.GetProviders(arg)) > 0 {
@@ -92,8 +91,7 @@ func resolveTarget(arg string) (category, provider string, err error) {
 }
 
 func platformUpRun(cmd *cobra.Command, args []string) error {
-	// Per-target install: `labctl platform up <category|category/provider>` runs
-	// through the durable engine (recorded, cancellable, followable).
+	// With a target, install that one component through the run engine.
 	if len(args) == 1 {
 		category, provider, err := resolveTarget(args[0])
 		if err != nil {
@@ -105,25 +103,22 @@ func platformUpRun(cmd *cobra.Command, args []string) error {
 			})
 	}
 
-	// Install ingress
 	if cfg.IngressProvider != "" {
 		fmt.Printf("Installing ingress (%s)...\n", cfg.IngressProvider)
-		if err := reg.Install("ingress", cfg.IngressProvider, exec); err != nil {
+		if err := reg.Install("ingress", cfg.IngressProvider, scriptExec); err != nil {
 			return fmt.Errorf("ingress install failed: %w", err)
 		}
 	}
 
-	// Install monitoring (metrics)
 	if cfg.MetricsProvider != "" {
 		fmt.Printf("Installing metrics (%s)...\n", cfg.MetricsProvider)
-		if err := reg.Install("monitoring/metrics", cfg.MetricsProvider, exec); err != nil {
+		if err := reg.Install("monitoring/metrics", cfg.MetricsProvider, scriptExec); err != nil {
 			fmt.Printf("Warning: metrics install: %v\n", err)
 		}
 	}
 
-	// Install grafana (visualization)
 	fmt.Println("Installing grafana...")
-	if err := reg.Install("monitoring", "grafana", exec); err != nil {
+	if err := reg.Install("monitoring", "grafana", scriptExec); err != nil {
 		fmt.Printf("Warning: grafana install: %v\n", err)
 	}
 
@@ -132,8 +127,7 @@ func platformUpRun(cmd *cobra.Command, args []string) error {
 }
 
 func platformDownRun(cmd *cobra.Command, args []string) error {
-	// Per-target uninstall: `labctl platform down <category|category/provider>`
-	// runs through the durable engine.
+	// With a target, uninstall that one component through the run engine.
 	if len(args) == 1 {
 		category, provider, err := resolveTarget(args[0])
 		if err != nil {
@@ -145,18 +139,18 @@ func platformDownRun(cmd *cobra.Command, args []string) error {
 			})
 	}
 
-	// Uninstall in reverse order
+	// Uninstall in reverse install order.
 	fmt.Println("Uninstalling grafana...")
-	_ = reg.Uninstall("monitoring", "grafana", exec)
+	_ = reg.Uninstall("monitoring", "grafana", scriptExec)
 
 	if cfg.MetricsProvider != "" {
 		fmt.Printf("Uninstalling metrics (%s)...\n", cfg.MetricsProvider)
-		_ = reg.Uninstall("monitoring/metrics", cfg.MetricsProvider, exec)
+		_ = reg.Uninstall("monitoring/metrics", cfg.MetricsProvider, scriptExec)
 	}
 
 	if cfg.IngressProvider != "" {
 		fmt.Printf("Uninstalling ingress (%s)...\n", cfg.IngressProvider)
-		_ = reg.Uninstall("ingress", cfg.IngressProvider, exec)
+		_ = reg.Uninstall("ingress", cfg.IngressProvider, scriptExec)
 	}
 
 	fmt.Println("\nPlatform uninstalled.")
@@ -184,8 +178,8 @@ var platformStatusCmd = &cobra.Command{
 	Short: "Show platform component status from the run history; --live probes the cluster",
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Default: fast, store-derived state (what labctl has installed). --live
-		// runs each provider's status.sh against the cluster (legacy path).
+		// By default, report state from the run store. --live runs each
+		// provider's status.sh against the cluster instead.
 		if !platformStatusLive {
 			return platformStatusFromStore(cmd, args)
 		}
@@ -215,7 +209,7 @@ var platformStatusCmd = &cobra.Command{
 			for _, p := range providers {
 				if p.HasScript("status.sh") {
 					fmt.Printf("--- %s/%s ---\n", cat, p.Name)
-					_ = reg.Status(cat, p.Name, exec)
+					_ = reg.Status(cat, p.Name, scriptExec)
 					fmt.Println()
 				}
 			}
@@ -227,7 +221,7 @@ var platformStatusCmd = &cobra.Command{
 			for _, p := range providers {
 				if p.HasScript("status.sh") {
 					fmt.Printf("--- %s/%s ---\n", cat, p.Name)
-					_ = reg.Status(cat, p.Name, exec)
+					_ = reg.Status(cat, p.Name, scriptExec)
 					fmt.Println()
 				}
 			}

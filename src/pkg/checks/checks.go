@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Package checks defines machine-verifiable assertions used by scenario
-// format v2 (and, later, incident detection and challenge grading). A Check
-// is declarative YAML; the Runner executes it and reports a Result. Keeping
-// the type here (not in package scenario) lets scenario depend on checks
-// without an import cycle once other engines reuse the same primitive.
+
+// Package checks defines the declarative checks used by scenarios, incident
+// detection, challenge grading and learning paths. A Check is written in YAML;
+// a Runner executes it and returns a Result.
 package checks
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -54,25 +54,20 @@ type Check struct {
 	// TimeoutSeconds overrides the runner's default per-check timeout.
 	TimeoutSeconds int `yaml:"timeoutSeconds,omitempty" json:"timeoutSeconds,omitempty"`
 
-	// Remediation is a one-line, human-readable hint telling the user how to
-	// make a failing check pass (e.g. "take a backup first: …"). Advisory only:
-	// it never affects pass/fail, but verify surfaces it under the failing check
-	// instead of a generic "pods may still be starting" guess, so troubleshooting
-	// points at the real next step.
+	// Remediation is a one-line hint on how to make the check pass, such as
+	// "take a backup first: ...". Verify prints it under a failing check. It
+	// does not affect the result.
 	Remediation string `yaml:"remediation,omitempty" json:"remediation,omitempty"`
 
-	// Pending marks a check that is expected to be red until the user performs a
-	// drill step (take the backup, restore the marker). When such a check fails,
-	// verify renders it PENDING rather than a hard FAIL and reports it as an
-	// incomplete step, so "you haven't done the drill yet" never reads as "the
-	// scenario is broken". Advisory only: a pending check that fails still keeps
-	// the scenario short of "all checks passed".
+	// Pending marks a check that fails until the learner does a step of the
+	// exercise, such as taking a backup. Verify shows it as PENDING rather than
+	// FAIL. It still counts as not passed.
 	Pending bool `yaml:"pending,omitempty" json:"pending,omitempty"`
 }
 
-// fieldOwners maps each type-specific field to the check types allowed to set
-// it, so authoring mistakes (an http check with a promql query, …) fail
-// validation instead of being silently ignored.
+// fieldOwners maps each type-specific field to the check types that may set
+// it, so a field on the wrong type, such as a query on an http check, fails
+// validation.
 func (c *Check) setFields() map[string][]string {
 	owners := map[string]struct {
 		set   bool
@@ -102,7 +97,7 @@ func (c *Check) setFields() map[string][]string {
 // fields so authors can fix everything in one pass.
 func (c *Check) Validate() error {
 	var errs []string
-	add := func(format string, args ...interface{}) {
+	add := func(format string, args ...any) {
 		errs = append(errs, fmt.Sprintf(format, args...))
 	}
 
@@ -157,13 +152,7 @@ func (c *Check) Validate() error {
 	if validKnownType(c.Type) {
 		var misplaced []string
 		for field, types := range c.setFields() {
-			ok := false
-			for _, t := range types {
-				if t == c.Type {
-					ok = true
-					break
-				}
-			}
+			ok := slices.Contains(types, c.Type)
 			if !ok {
 				misplaced = append(misplaced, field)
 			}
@@ -197,9 +186,8 @@ type Result struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
 	Pass bool   `json:"pass"`
-	// Got and Want carry the observed and expected values so a failing check
-	// reports *why* it failed, not just FAIL. Explanation is a single
-	// human-readable sentence composed from them for direct display.
+	// Got and Want are the observed and expected values. Explanation is a
+	// sentence built from them for display.
 	Got         string `json:"got,omitempty"`
 	Want        string `json:"want,omitempty"`
 	Explanation string `json:"explanation,omitempty"`
@@ -210,17 +198,13 @@ type Result struct {
 	Attempts   int   `json:"attempts,omitempty"`
 	DurationMS int64 `json:"durationMs"`
 
-	// Remediation and Pending are copied from the originating Check so every
-	// consumer (CLI verify, HTTP API, UI) can render the right next step and
-	// distinguish "pending your action" from a genuine regression without
-	// re-reading the scenario definition.
+	// Remediation and Pending are copied from the Check, so callers can show
+	// them without the scenario definition.
 	Remediation string `json:"remediation,omitempty"`
 	Pending     bool   `json:"pending,omitempty"`
 }
 
-// explain composes a single human-readable sentence describing the outcome,
-// so callers (CLI, UI, logs) can surface *why* a check passed or failed
-// without re-deriving it from Got/Want/Error.
+// explain returns a sentence describing why the check passed or failed.
 func (r Result) explain() string {
 	name := r.Name
 	if name == "" {
@@ -248,8 +232,8 @@ func (r Result) explain() string {
 	}
 }
 
-// AllPass reports whether every result passed. An empty slice reports false:
-// "nothing was verified" must never read as success.
+// AllPass reports whether every result passed. An empty slice returns false,
+// because nothing was verified.
 func AllPass(results []Result) bool {
 	if len(results) == 0 {
 		return false

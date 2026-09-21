@@ -1,34 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package workload
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 )
 
-// Capability is something a scenario may require of the app it runs against,
-// beyond the base interface every app must provide. The vocabulary is closed:
-// a scenario's `requires:` and an app's APP_CAPABILITIES are matched by string,
-// so an open vocabulary would let a typo on either side mean "never satisfied"
-// with no error anywhere.
+// Capability is something a scenario may require of its app beyond the base
+// interface every app provides. Only the values declared here are valid, so a
+// misspelt capability in a scenario or an app.env is an error rather than a
+// requirement that can never be met.
 type Capability string
 
 const (
-	// CapPrometheusMetrics: serves MetricsPath in Prometheus exposition format,
-	// including the RequestMetric histogram. Required by most scenarios.
+	// CapPrometheusMetrics means the app serves MetricsPath in Prometheus
+	// format, including the RequestMetric histogram. Most scenarios need it.
 	CapPrometheusMetrics Capability = "prometheus-metrics"
-	// CapOTLPTracing: honours OTEL_EXPORTER_OTLP_ENDPOINT and exports spans.
+	// CapOTLPTracing means the app exports spans to
+	// OTEL_EXPORTER_OTLP_ENDPOINT.
 	CapOTLPTracing Capability = "otlp-tracing"
-	// CapReadinessToggle: readiness can be flipped to failing on demand, so a
-	// scenario can watch probes, endpoints and alerts react without killing it.
+	// CapReadinessToggle means the app's readiness can be made to fail on
+	// request, so a scenario can watch probes and alerts react.
 	CapReadinessToggle Capability = "readiness-toggle"
 )
 
-// capabilityDoc is the closed vocabulary, with the reason each one exists. It is
-// deliberately short: a capability earns its place by being something a scenario
-// in this repository actually needs, never by being something an app might have.
+// capabilityDoc lists every valid capability with its meaning. Add one only
+// when a scenario in this repository needs it.
 var capabilityDoc = map[Capability]string{
 	CapPrometheusMetrics: "serves the metrics path in Prometheus format, including the request-duration histogram",
 	CapOTLPTracing:       "honours OTEL_EXPORTER_OTLP_ENDPOINT and exports spans",
@@ -42,7 +42,7 @@ func AllCapabilities() []Capability {
 	for c := range capabilityDoc {
 		out = append(out, c)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	slices.Sort(out)
 	return out
 }
 
@@ -69,9 +69,9 @@ func joinCaps(caps []Capability) string {
 	return strings.Join(parts, ", ")
 }
 
-// Contract is the runtime interface an app promises, declared in its app.env.
-// It is what makes one scenario runnable against many applications: the scenario
-// names the contract, not the app.
+// Contract is the runtime interface an app declares in its app.env. Scenarios
+// depend on the contract rather than on a specific app, so one scenario can run
+// against many apps.
 type Contract struct {
 	// Port is the port serving HTTP.
 	Port string
@@ -81,12 +81,11 @@ type Contract struct {
 	// MetricsPath serves Prometheus exposition. Meaningful only with
 	// CapPrometheusMetrics.
 	MetricsPath string
-	// RequestMetric is the request-duration histogram's name. Declared rather
-	// than assumed: each language's instrumentation library picks its own, and a
-	// scenario that hardcodes one grades the language instead of the engineer.
+	// RequestMetric is the request-duration histogram's name. Each language's
+	// instrumentation library picks its own, so the app declares it.
 	RequestMetric string
-	// Capabilities are the optional behaviours this app claims. A claim is only
-	// a claim — `labctl app verify` is what checks it against a running pod.
+	// Capabilities are the optional behaviours this app claims. `labctl app
+	// verify` checks the claims against a running pod.
 	Capabilities []Capability
 }
 
@@ -100,21 +99,17 @@ const (
 	KeyCapabilities  = "APP_CAPABILITIES"
 )
 
-// Base-interface defaults. Every app serves probes on a port, so defaulting
-// these keeps a conforming app's declaration short. Capabilities have no
-// default: an app claims one explicitly or does not have it.
+// Defaults for the base interface. Capabilities have no default: an app has
+// only the ones it declares.
 const (
 	DefaultHealthPath  = "/health"
 	DefaultReadyPath   = "/ready"
 	DefaultMetricsPath = "/metrics"
 )
 
-// ParseContract reads a contract from an app.env's key/value pairs. It is pure:
-// the caller does the file IO, so the rules stay testable without a filesystem.
-//
-// Unset base fields take their defaults. An unknown or malformed value is an
-// error, so a typo fails when the app is loaded rather than as a puzzling check
-// failure once a scenario is halfway through activation.
+// ParseContract builds a contract from an app.env's key/value pairs. Unset base
+// fields take their defaults. An unknown or malformed value is an error, so a
+// typo is caught when the app is loaded rather than during a scenario.
 func ParseContract(vals map[string]string) (Contract, error) {
 	get := func(k, def string) string {
 		if v := strings.TrimSpace(vals[k]); v != "" {
@@ -132,7 +127,7 @@ func ParseContract(vals map[string]string) (Contract, error) {
 	raw := strings.TrimSpace(vals[KeyCapabilities])
 	if raw != "" {
 		seen := make(map[Capability]bool)
-		for _, part := range strings.Split(raw, ",") {
+		for part := range strings.SplitSeq(raw, ",") {
 			if strings.TrimSpace(part) == "" {
 				continue
 			}
@@ -146,7 +141,7 @@ func ParseContract(vals map[string]string) (Contract, error) {
 			seen[parsed] = true
 			c.Capabilities = append(c.Capabilities, parsed)
 		}
-		sort.Slice(c.Capabilities, func(i, j int) bool { return c.Capabilities[i] < c.Capabilities[j] })
+		slices.Sort(c.Capabilities)
 	}
 	if err := c.Validate(); err != nil {
 		return Contract{}, err
@@ -187,17 +182,11 @@ func (c Contract) Validate() error {
 
 // Has reports whether the app claims a capability.
 func (c Contract) Has(want Capability) bool {
-	for _, got := range c.Capabilities {
-		if got == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(c.Capabilities, want)
 }
 
-// Missing returns the required capabilities this contract does not claim, in the
-// order they were required, so a preflight message names every gap at once
-// rather than one per re-run.
+// Missing returns the capabilities in required that this contract does not
+// claim, in the order given.
 func (c Contract) Missing(required []Capability) []Capability {
 	var out []Capability
 	for _, r := range required {
@@ -208,9 +197,8 @@ func (c Contract) Missing(required []Capability) []Capability {
 	return out
 }
 
-// Workload binds this contract to a deployed name and namespace, so the port and
-// metric a scenario templates come from the app's own declaration rather than a
-// compiled-in guess.
+// Workload returns a binding for the given deployment name and namespace, with
+// the port and metric taken from this contract.
 func (c Contract) Workload(name, namespace string) Workload {
 	if namespace == "" {
 		namespace = name

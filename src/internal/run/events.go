@@ -20,13 +20,11 @@ const (
 	EventStatus EventType = "status"
 )
 
-// Event is a notification, deliberately not a data carrier.
+// Event tells a subscriber that something changed; it does not carry the data.
 //
-// This is the key design choice behind ADR-0006. Events say "there is new data
-// up to sequence N"; the actual lines are read from the store by cursor. So a
-// consumer that is slow, or briefly disconnected, cannot lose output — it just
-// reads from where it left off. v1 put the data in the channel and dropped it
-// when the channel was full, which is how log lines silently vanished.
+// A log event says "lines are readable up to sequence N", and the subscriber
+// reads them from the store by cursor (ADR-0006). A slow or reconnecting
+// subscriber therefore never loses output: it resumes from its last sequence.
 type Event struct {
 	Type   EventType
 	RunID  string
@@ -48,8 +46,8 @@ func newSubscribers() *subscribers {
 	return &subscribers{chans: make(map[int]chan Event), filter: make(map[int]string)}
 }
 
-// subscribeBuffer is generous because events are tiny and losing one costs a
-// consumer latency (it waits for the next) rather than data.
+// subscribeBuffer is the per-subscriber channel size. A dropped event only
+// delays a subscriber until the next one, since the data is in the store.
 const subscribeBuffer = 256
 
 // Subscribe returns a channel of events and a function to stop listening.
@@ -92,10 +90,9 @@ func (s *subscribers) subscribe(runID string) (<-chan Event, func()) {
 
 // publish delivers an event to interested subscribers.
 //
-// Delivery is non-blocking: a subscriber that is not draining its channel is
-// skipped rather than stalling the run engine. That is safe precisely because
-// events carry no data — a skipped notification costs latency, and the next
-// event (or a direct read from the store) brings the consumer back up to date.
+// Delivery never blocks: a subscriber whose channel is full is skipped so it
+// cannot stall a run. It catches up on the next event, because events carry
+// no data.
 func (s *subscribers) publish(ev Event) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

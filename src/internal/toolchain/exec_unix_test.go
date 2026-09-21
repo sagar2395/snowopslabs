@@ -216,8 +216,8 @@ func TestExecRun(t *testing.T) {
 	})
 }
 
-// TestExecCancellation covers the behaviour ADR-0003 exists for: a cancelled
-// run must die promptly, and must take its children with it.
+// TestExecCancellation checks that a cancelled command stops promptly and
+// takes its child processes with it (ADR-0003).
 func TestExecCancellation(t *testing.T) {
 	t.Run("cancelling terminates the process promptly", func(t *testing.T) {
 		e := NewExec()
@@ -280,8 +280,7 @@ func TestExecCancellation(t *testing.T) {
 		}
 	})
 
-	// This is the test behind R01: v1 left orphaned helm processes behind
-	// because it killed only the direct child.
+	// Killing only the direct child would leave helm's children running.
 	t.Run("kills the whole process group, not just the direct child", func(t *testing.T) {
 		e := NewExec()
 		dir := t.TempDir()
@@ -344,14 +343,10 @@ wait
 	t.Run("SIGKILLs a process that ignores SIGTERM", func(t *testing.T) {
 		// A process that ignores SIGTERM must still die: grace period, then kill.
 		//
-		// The fixture re-invokes the test binary as a helper (TestHelperProcess)
-		// rather than running a shell script. macOS ships bash 3.2, whose
-		// `trap '' TERM` does not reliably establish an ignored disposition —
-		// not for the shell itself, and not for a foreground child across exec —
-		// so a bash-based fixture is genuinely flaky there. A Go helper installs
-		// SIG_IGN with a real sigaction and blocks, which is deterministic on
-		// every platform. It prints a line once the ignore is in place so the
-		// test can cancel only after SIGTERM is guaranteed to be swallowed.
+		// The child is this test binary running TestHelperProcess, not a
+		// shell script: macOS's bash 3.2 does not reliably ignore SIGTERM with
+		// `trap '' TERM`. The helper prints a line once SIGTERM is ignored, and
+		// the test cancels only after reading it.
 		e := &Exec{GracePeriod: 300 * time.Millisecond}
 
 		ready := &closeOnFirstWrite{ch: make(chan struct{})}
@@ -407,8 +402,7 @@ wait
 		e := &Exec{GracePeriod: 5 * time.Second}
 		script := writeScript(t, "sleep 0.1\n")
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		ctx := t.Context()
 
 		start := time.Now()
 		if _, err := e.Run(ctx, Command{Path: script}); err != nil {

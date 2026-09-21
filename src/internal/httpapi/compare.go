@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -15,9 +16,8 @@ func compareStore(s *Server) *compare.Store {
 
 // comparisonView is one recorded comparison, shaped for the UI.
 //
-// The measurement set travels with the numbers rather than being hardcoded in
-// the client: a comparison recorded before a metric existed must still render,
-// and the front end has no business knowing which way is better for each one.
+// It includes each metric's display settings and which direction is better,
+// so the UI does not need its own copy of the metric set.
 type comparisonView struct {
 	ID            string                `json:"id"`
 	Scenario      string                `json:"scenario"`

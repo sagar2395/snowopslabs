@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -159,9 +160,8 @@ func TestAppendLogs(t *testing.T) {
 	})
 }
 
-// TestReadLogs_CursorResume is the property that makes reconnection safe: a
-// client that reconnects with the last sequence it saw gets every line it
-// missed, exactly once. v1 dropped events for slow clients with no way to tell.
+// TestReadLogs_CursorResume checks that a client reconnecting with the last
+// sequence it saw gets every line it missed, exactly once.
 func TestReadLogs_CursorResume(t *testing.T) {
 	ctx := context.Background()
 	s := newStore(t)
@@ -240,7 +240,7 @@ func TestReadLogs(t *testing.T) {
 		seedRun(t, s, "r")
 		var lines []LogLine
 		for i := range 10 {
-			lines = append(lines, LogLine{Text: fmt.Sprint(i)})
+			lines = append(lines, LogLine{Text: strconv.Itoa(i)})
 		}
 		if _, err := s.AppendLogs(ctx, "r", lines); err != nil {
 			t.Fatalf("AppendLogs: %v", err)

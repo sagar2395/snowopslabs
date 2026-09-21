@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package platform
 
 import (
@@ -139,11 +140,9 @@ func TestProviderHasScript(t *testing.T) {
 	}
 }
 
-// A provider whose control plane does not live in a namespace named after it
-// must declare that namespace in _interface.yaml. Inferring it from the
-// directory name made istio (istio-system) and nginx (ingress-nginx)
-// permanently undetectable, so `scenario up` warned that an installed
-// prerequisite was missing on a correctly-provisioned cluster.
+// A provider whose control plane lives in a namespace not named after it, such
+// as istio (istio-system) or nginx (ingress-nginx), declares that namespace in
+// _interface.yaml, and Namespace must return it.
 func TestProviderNamespace_DeclaredWins(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -170,8 +169,7 @@ func TestProviderNamespace_DeclaredWins(t *testing.T) {
 	}
 }
 
-// The declaration has to survive the registry scan, not just the struct field:
-// the real defect was that nothing ever populated it.
+// The registry scan must read the declared namespace into each Provider.
 func TestRegistryScan_PopulatesDeclaredNamespace(t *testing.T) {
 	root := t.TempDir()
 	provDir := filepath.Join(root, "platform", "mesh", "istio")

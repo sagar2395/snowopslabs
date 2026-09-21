@@ -12,10 +12,11 @@ import (
 	"time"
 )
 
-// Status is a run's lifecycle state. The set is closed and enforced by a CHECK
-// constraint, so an unknown value cannot reach the database.
+// Status is a run's lifecycle state. A CHECK constraint in the schema rejects
+// any value not declared here.
 type Status string
 
+// Run states. Succeeded, Failed, Cancelled and TimedOut are terminal.
 const (
 	StatusQueued    Status = "queued"
 	StatusRunning   Status = "running"
@@ -69,9 +70,8 @@ type Run struct {
 	Error     string
 }
 
-// CreateRun inserts a queued run. The caller supplies the ID so it can be
-// returned to an HTTP client before the run starts (ADR-0006: mutations return
-// 202 with a run ID).
+// CreateRun inserts a queued run. The caller supplies the ID so it can hand
+// it back (for example in an HTTP 202) before the run starts.
 func (s *Store) CreateRun(ctx context.Context, r Run) error {
 	if r.ID == "" {
 		return errors.New("store: run ID is required")
@@ -109,9 +109,8 @@ func (s *Store) CreateRun(ctx context.Context, r Run) error {
 	return nil
 }
 
-// StartRun marks a queued run as running. It is a no-op error if the run has
-// already left the queued state, which is what makes a double-start from two
-// workers impossible rather than merely unlikely.
+// StartRun marks a queued run as running. It returns an error, and changes
+// nothing, if the run is no longer queued, so a run can start only once.
 func (s *Store) StartRun(ctx context.Context, id string, at time.Time) error {
 	if at.IsZero() {
 		at = s.now()
@@ -139,15 +138,14 @@ func (s *Store) FinishRun(ctx context.Context, id string, status Status, exitCod
 	if exitCode != nil {
 		code = sql.NullInt64{Int64: int64(*exitCode), Valid: true}
 	}
-	// Microseconds, not milliseconds: a fast script that finishes in under a
-	// millisecond must not be recorded as having taken no time at all.
+	// Stored in microseconds so a sub-millisecond run does not read as zero.
 	var durUs sql.NullInt64
 	if dur > 0 {
 		durUs = sql.NullInt64{Int64: dur.Microseconds(), Valid: true}
 	}
 
-	// Only a non-terminal run may be finished: a cancellation racing with a
-	// natural exit must not overwrite the outcome that already landed.
+	// Only update a run that is not already terminal, so whichever of a
+	// cancel and a normal exit lands first wins.
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE runs
 		   SET status = ?, exit_code = ?, error = ?, ended_at = ?, duration_us = ?
@@ -174,9 +172,8 @@ func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
 type RunFilter struct {
 	Status []Status
 	Kind   string
-	// Before pages backwards: only runs queued strictly before this instant.
-	// Cursor pagination rather than OFFSET, so a run inserted mid-scroll cannot
-	// shift the page boundary and hide a row.
+	// Before returns only runs queued strictly before this instant; pass the
+	// oldest QueuedAt from the previous page to get the next one.
 	Before time.Time
 	Limit  int
 }
@@ -234,9 +231,8 @@ func (s *Store) ListRuns(ctx context.Context, f RunFilter) ([]Run, error) {
 	return out, rows.Err()
 }
 
-// ActiveRunForLock returns the queued-or-running run holding lockKey, if any.
-// This is the check behind the 409 in ADR-0004: a conflicting submission is
-// refused immediately, naming the run that holds the lock.
+// ActiveRunForLock returns the queued or running run that holds lockKey, if
+// any. The run engine uses it to refuse conflicting work (ADR-0004).
 func (s *Store) ActiveRunForLock(ctx context.Context, lockKey string) (Run, bool, error) {
 	if lockKey == "" {
 		return Run{}, false, nil
@@ -254,10 +250,9 @@ func (s *Store) ActiveRunForLock(ctx context.Context, lockKey string) (Run, bool
 	return r, true, nil
 }
 
-// LastRunForLock returns the most recent run (any status) that held lockKey, so
-// a service can derive the current state of one thing — is this component
-// installed? — from its own history without scanning every run of that kind.
-// Unlike ActiveRunForLock it includes terminal runs; that is the point.
+// LastRunForLock returns the most recent run, in any status, that held
+// lockKey. Services use it to answer "what last happened to this thing?",
+// such as whether a component is installed.
 func (s *Store) LastRunForLock(ctx context.Context, lockKey string) (Run, bool, error) {
 	if lockKey == "" {
 		return Run{}, false, nil
@@ -275,10 +270,9 @@ func (s *Store) LastRunForLock(ctx context.Context, lockKey string) (Run, bool, 
 	return r, true, nil
 }
 
-// RecoverOrphanedRuns marks every non-terminal run as cancelled. Their
-// processes died with the previous server, so leaving them "running" would
-// hold locks forever and lie to the user about what is happening. Called once
-// at startup; returns the IDs it reaped.
+// RecoverOrphanedRuns marks every queued or running run as cancelled and
+// returns their IDs. Call it once at startup: those runs belonged to a labctl
+// process that has exited, and would otherwise hold their locks forever.
 func (s *Store) RecoverOrphanedRuns(ctx context.Context, at time.Time) ([]string, error) {
 	if at.IsZero() {
 		at = s.now()
@@ -320,9 +314,8 @@ func (s *Store) RecoverOrphanedRuns(ctx context.Context, at time.Time) ([]string
 	return ids, nil
 }
 
-// PruneRuns deletes terminal runs that ended before cutoff, returning how many
-// went. Logs and steps cascade. Without this, run_logs grows without bound on a
-// long-lived server (noted as a risk in ADR-0002).
+// PruneRuns deletes finished runs that ended before the given time, along with
+// their logs and steps, and returns how many runs it deleted.
 func (s *Store) PruneRuns(ctx context.Context, before time.Time) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `
 		DELETE FROM runs

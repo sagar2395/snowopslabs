@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package services discovers the shared services under src/services/ and runs
+// their install, uninstall and status scripts.
 package services
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -72,7 +77,7 @@ func (r *Registry) runScript(name, script, label string, exec *executor.Executor
 		return err
 	}
 	fullPath := filepath.Join(s.Path, script)
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+	if _, err := os.Stat(fullPath); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("%s not found for service %q", script, name)
 	}
 	rel, err := filepath.Rel(r.ProjectRoot, fullPath)
@@ -84,9 +89,8 @@ func (r *Registry) runScript(name, script, label string, exec *executor.Executor
 }
 
 func (r *Registry) scan() {
-	// Shared services live under src/services/ after the restructure; they are
-	// invoked with the working directory set to the content root, so the
-	// executor is handed a src/-relative path (see runScript).
+	// Services live under src/services/. Their scripts run from the content
+	// root, so runScript passes the executor a path starting with src/.
 	servicesDir := filepath.Join(r.ProjectRoot, "src", "services")
 	entries, err := os.ReadDir(servicesDir)
 	if err != nil {

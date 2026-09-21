@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+
 // Package traffic validates options for the k6 traffic generator and turns
-// them into the environment the services/traffic scripts consume. All the
-// real work happens in those scripts (golden rule 2) — this package only
-// guards inputs and discovers profiles.
+// them into the environment the services/traffic scripts read. The scripts do
+// the work; this package checks inputs and lists the available profiles.
 package traffic
 
 import (
@@ -24,9 +24,8 @@ type Options struct {
 	Method   string // HTTP method for profiles that honor it (write/errors); empty keeps profile default
 }
 
-// ScriptDir is the location of the traffic scripts relative to the project
-// root. The service scripts moved under src/ with the rest of the Go engine;
-// they are still invoked with the working directory set to the content root.
+// ScriptDir is the traffic scripts' directory relative to the project root.
+// The scripts run with the project root as their working directory.
 const ScriptDir = "src/services/traffic"
 
 // Profiles lists the available profile names (sorted) by scanning

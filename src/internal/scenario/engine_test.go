@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package scenario
 
 import (
@@ -141,10 +142,8 @@ func TestResolveTemplate(t *testing.T) {
 		{"{{.DomainSuffix}} and {{.DomainSuffix}}", "k3d.local and k3d.local"},
 		// Whitespace inside the braces is tolerated.
 		{"ns: {{ .MonitoringNamespace }}", "ns: monitoring"},
-		// Foreign templating languages must be left untouched: a manifest can mix
-		// labctl's {{.MonitoringNamespace}} with Prometheus rule annotations and
-		// Grafana legends. Rendering the whole file as one Go template used to
-		// choke on these and leak {{.MonitoringNamespace}} through unrendered.
+		// Other template syntaxes in the same manifest, such as Prometheus
+		// annotations and Grafana legends, must be left unchanged.
 		{
 			`namespace: {{.MonitoringNamespace}} value: {{ $value | humanizePercentage }} pod: {{ $labels.pod }} legend: {{namespace}}`,
 			`namespace: monitoring value: {{ $value | humanizePercentage }} pod: {{ $labels.pod }} legend: {{namespace}}`,
@@ -161,10 +160,8 @@ func TestResolveTemplate(t *testing.T) {
 	}
 }
 
-// componentNamespace must resolve template vars the same way for install and
-// uninstall. uninstallHelm once used the raw comp.Namespace ("{{.MonitoringNamespace}}")
-// and so uninstalled from the wrong namespace, leaking the release while
-// `scenario down` reported success. Both paths now go through componentNamespace.
+// componentNamespace must expand template variables, since install and
+// uninstall both use it to find the namespace.
 func TestComponentNamespace_ResolvesTemplate(t *testing.T) {
 	root := t.TempDir()
 	os.MkdirAll(filepath.Join(root, "scenarios"), 0755)
@@ -216,23 +213,19 @@ func TestIsActive_MarkActive(t *testing.T) {
 
 	engine := NewEngine(root, "k3d.local", "k3d")
 
-	// Initially inactive
 	if engine.isActive("test-scenario") {
 		t.Error("expected scenario to be inactive initially")
 	}
 
-	// Mark active
 	err := engine.markActive("test-scenario", nil)
 	if err != nil {
 		t.Fatalf("markActive: %v", err)
 	}
 
-	// Should now be active
 	if !engine.isActive("test-scenario") {
 		t.Error("expected scenario to be active after markActive")
 	}
 
-	// Mark inactive
 	engine.markInactive("test-scenario")
 	if engine.isActive("test-scenario") {
 		t.Error("expected scenario to be inactive after markInactive")
@@ -502,9 +495,8 @@ func TestUp_NotActive_RunsNormally(t *testing.T) {
 	}
 }
 
-// TestCatalogOrder_Deterministic guards the fix for the UI reshuffling on every
-// refresh: the engine keeps scenarios in a map, so List/Status must impose an
-// explicit order (category, then display name, then name).
+// TestCatalogOrder_Deterministic checks that List and Status order scenarios
+// by category, then display name, then name.
 func TestCatalogOrder_Deterministic(t *testing.T) {
 	root := t.TempDir()
 
@@ -521,7 +513,7 @@ func TestCatalogOrder_Deterministic(t *testing.T) {
 	wantNames := []string{"beta", "zeta", "alpha"}
 
 	engine := NewEngine(root, "k3d.local", "k3d")
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		list := engine.List()
 		if len(list) != len(wantNames) {
 			t.Fatalf("List: got %d scenarios, want %d", len(list), len(wantNames))
@@ -541,10 +533,8 @@ func TestCatalogOrder_Deterministic(t *testing.T) {
 	}
 }
 
-// Activation prints author-written text — the description, the objectives, the
-// stage headings and the labels beside each URL and command. Every one of those
-// is a template, and a label showing raw {{.WorkloadName}} next to a fully
-// expanded URL is how the bug this guards against looked.
+// Everything activation prints from the scenario (description, objectives,
+// stage headings, labels) must have its templates expanded.
 func TestActivationOutputResolvesAuthorText(t *testing.T) {
 	e := &Engine{
 		DomainSuffix: "k3d.local",

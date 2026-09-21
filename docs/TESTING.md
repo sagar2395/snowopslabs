@@ -128,7 +128,7 @@ Every gate fails the build, none are advisory:
 
 | Gate | Tool |
 |---|---|
-| Go lint | `golangci-lint` (errcheck, govet, staticcheck, revive, bodyclose, contextcheck, errorlint) |
+| Go lint | `golangci-lint` with the set in `src/.golangci.yml`: correctness (errcheck, govet, staticcheck, errorlint, bodyclose, noctx, nilerr) and idiom (revive, modernize, usestdlibvars, predeclared, intrange, copyloopvar, perfsprint, gocritic). See [Go conventions §9](GO-CONVENTIONS.md#9-linting) |
 | Go security | `gosec`, run through `golangci-lint` so it reads the one policy in `src/.golangci.yml` |
 | Dependency CVEs | `govulncheck` |
 | Shell lint | `shellcheck` (all files) + `shfmt -d` |

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -9,15 +10,14 @@ import (
 )
 
 const (
-	// defaultPageLimit is applied when the client sends no ?limit. The content
-	// catalog is small, so this comfortably returns most collections in one page
-	// while still exercising the cursor path for clients that opt into it.
+	// defaultPageLimit applies when the client sends no ?limit. It is large
+	// enough to return most collections in one page.
 	defaultPageLimit = 50
 	// maxPageLimit caps a client-supplied ?limit so one request can't ask the
 	// server to marshal an unbounded slice.
 	maxPageLimit = 200
-	// cursorPrefix namespaces our opaque cursor so a stray value from elsewhere
-	// is rejected rather than misread as an offset.
+	// cursorPrefix marks our cursors, so an unrelated value is rejected rather
+	// than read as an offset.
 	cursorPrefix = "off:"
 )
 
@@ -28,11 +28,10 @@ type pageResponse[T any] struct {
 	NextCursor string `json:"nextCursor,omitempty"`
 }
 
-// paginate slices items according to the request's ?limit and ?cursor and
-// returns the v2 page envelope. The cursor is opaque (base64 of an offset), so
-// callers treat it as a token and never construct it themselves. A malformed
-// cursor or limit is a client error, surfaced as a returned error the handler
-// maps to 400.
+// paginate returns the page of items selected by the request's ?limit and
+// ?cursor. The cursor is an opaque token (base64 of an offset) that clients
+// must not build themselves. A malformed cursor or limit returns an error,
+// which handlers answer with 400.
 func paginate[T any](items []T, r *http.Request) (pageResponse[T], error) {
 	limit, err := parseLimit(r.URL.Query().Get("limit"))
 	if err != nil {
@@ -46,10 +45,7 @@ func paginate[T any](items []T, r *http.Request) (pageResponse[T], error) {
 		offset = len(items)
 	}
 
-	end := offset + limit
-	if end > len(items) {
-		end = len(items)
-	}
+	end := min(offset+limit, len(items))
 
 	page := pageResponse[T]{Items: items[offset:end]}
 	if page.Items == nil {

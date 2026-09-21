@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -10,7 +11,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gorilla/mux"
 	"github.com/sagar2395/snowopslabs/internal/incident"
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 )
@@ -32,16 +32,12 @@ func (s *Server) incidentRunner() *checks.Runner {
 	return r
 }
 
-// faultResp is a fault as the UI needs it: the fault itself, plus what the
-// binding resolved to and which app prerequisites are genuinely the user's to
-// satisfy. Both are presentation, so they are added here rather than on the
-// schema type an author writes.
+// faultResp is a fault as the UI needs it: the fault, the workload it is bound
+// to, and the app prerequisites it names literally.
 type faultResp struct {
 	*incident.Fault
-	// PinnedApps are the apps the fault names literally. An entry written as
-	// {{.WorkloadName}} is excluded — it is the binding, not a requirement, and
-	// showing it as "requires go-api" said content that runs against any app did
-	// not.
+	// PinnedApps are the apps the fault names literally; entries written as
+	// {{.WorkloadName}} are left out. See incident.Engine.PinnedApps.
 	PinnedApps []string     `json:"pinnedApps"`
 	Workload   WorkloadResp `json:"workload"`
 }
@@ -53,13 +49,10 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 		return
 	}
-	// Faults are served bound to the workload the lab will inject them into, so
-	// the reader sees a real namespace rather than {{.WorkloadNamespace}}. While
-	// an incident is active that is the app it was injected into, not the ambient
-	// one — otherwise the list describes a fault in a namespace nothing broke.
-	//
-	// Resolved against an explicit binding rather than by rebinding the engine:
-	// this is a polled read, and it must not wait behind an injection.
+	// Show faults for the app they would be injected into: the active
+	// incident's app if there is one, otherwise the current binding. ListBound
+	// does not take the binding lock, so this polled read never waits behind
+	// an injection.
 	bound := s.activeIncidentWorkload()
 	faults := s.incidents.ListBound(bound)
 	out := make([]faultResp, 0, len(faults))
@@ -67,7 +60,7 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 		out = append(out, faultResp{Fault: f, PinnedApps: s.incidents.PinnedApps(f.Name), Workload: workloadResp(bound)})
 	}
 
-	writeJSONCached(w, r, http.StatusOK, map[string]interface{}{
+	writeJSONCached(w, r, http.StatusOK, map[string]any{
 		"faults":   out,
 		"active":   active,
 		"workload": workloadResp(bound),
@@ -75,9 +68,8 @@ func (s *Server) handleListIncidents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIncidentInject(w http.ResponseWriter, r *http.Request) {
-	name := mux.Vars(r)["name"]
-	if !isValidName(name) {
-		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid fault name %q: must match ^[a-zA-Z0-9_-]{1,64}$", name))
+	name, ok := pathName(w, r, "fault")
+	if !ok {
 		return
 	}
 	s.injectAndRespond(w, r, name)
@@ -97,9 +89,8 @@ func (s *Server) injectAndRespond(w http.ResponseWriter, r *http.Request, name s
 	force := r.URL.Query().Get("force") == "true"
 	silent := r.URL.Query().Get("silent") == "true"
 
-	// Which workload to break. Faults name the binding rather than an app
-	// (ADR-0014), so this is what makes one fault usable against every app in the
-	// lab. Inject records it, and status, hints and resolve read it back.
+	// The app to break. Inject records it, and status, hints and resolve read
+	// it back.
 	app := r.URL.Query().Get("app")
 	if app != "" && !isValidName(app) {
 		respondError(w, r, http.StatusBadRequest, "invalid_input", fmt.Sprintf("invalid app name %q", app))
@@ -125,7 +116,7 @@ func (s *Server) injectAndRespond(w http.ResponseWriter, r *http.Request, name s
 		return
 	}
 
-	resp := map[string]interface{}{"status": "injected", "silent": silent}
+	resp := map[string]any{"status": "injected", "silent": silent}
 	if !silent {
 		resp["fault"] = f
 	}
@@ -137,14 +128,14 @@ func (s *Server) handleIncidentStatus(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
 
-	// Detect against the workload the fault was injected into: a check pointed at
-	// the wrong namespace passes, and a passing check clears the incident.
+	// Check the app the fault was injected into; a check aimed at the wrong
+	// namespace would pass and clear the incident.
 	incidents, release := s.bindToActiveIncident()
 	defer release()
 
 	res, err := incidents.Status(ctx, s.incidentRunner(), actingUser(r))
 	if errors.Is(err, incident.ErrNoActive) {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"active": nil})
+		respondJSON(w, http.StatusOK, map[string]any{"active": nil})
 		return
 	}
 	if err != nil {
@@ -154,10 +145,10 @@ func (s *Server) handleIncidentStatus(w http.ResponseWriter, r *http.Request) {
 
 	// In silent mode, don't leak the fault's identity until it's resolved.
 	if res.Active.Silent && !res.Resolved {
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"active":   map[string]interface{}{"fault": "(hidden)", "injectedAt": res.Active.InjectedAt, "silent": true},
+		respondJSON(w, http.StatusOK, map[string]any{
+			"active":   map[string]any{"fault": "(hidden)", "injectedAt": res.Active.InjectedAt, "silent": true},
 			"resolved": false,
-			"check":    map[string]interface{}{"pass": false},
+			"check":    map[string]any{"pass": false},
 		})
 		return
 	}
@@ -217,7 +208,7 @@ func (s *Server) handleIncidentResolve(w http.ResponseWriter, r *http.Request) {
 		respondError(w, r, http.StatusInternalServerError, "resolve_failed", err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{"status": "resolved", "fault": f.Name})
+	respondJSON(w, http.StatusOK, map[string]any{"status": "resolved", "fault": f.Name})
 }
 
 // bindToActiveIncident returns an engine bound to the workload the active fault
@@ -229,8 +220,8 @@ func (s *Server) bindToActiveIncident() (*incident.Engine, func()) {
 	}
 	incidents, release, err := s.incidentEngineFor(app)
 	if err != nil {
-		// The recorded app has been removed. Acting on the current binding is
-		// wrong, but refusing would strand the lab with no way to resolve.
+		// The recorded app is gone. Carry on with the current binding so the
+		// incident can still be resolved.
 		incidents, release, _ = s.incidentEngineFor("")
 	}
 	return incidents, release

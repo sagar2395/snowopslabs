@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package cli implements the labctl command tree with cobra. Commands parse
+// their input and call the services, engines and registries built in the root
+// command's PersistentPreRunE.
 package cli
 
 import (
@@ -25,13 +29,13 @@ var (
 	// command, without editing .env. Empty means "use APP_NAME".
 	appOverride string
 
-	cfg    *config.Config
-	exec   *executor.Executor
-	reg    *platform.Registry
-	scenes *scenario.Engine
-	incEng *incident.Engine
-	svcReg *services.Registry
-	rtm    *runtime.Manager
+	cfg        *config.Config
+	scriptExec *executor.Executor
+	reg        *platform.Registry
+	scenes     *scenario.Engine
+	incEng     *incident.Engine
+	svcReg     *services.Registry
+	rtm        *runtime.Manager
 )
 
 var rootCmd = &cobra.Command{
@@ -44,14 +48,13 @@ var rootCmd = &cobra.Command{
 	// already set this are now redundant but harmless.)
 	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip init for commands that must work when the environment is
-		// broken. doctor in particular exists to diagnose exactly the
-		// situations that would make this initialisation fail.
+		// Some commands, such as doctor, must work even when this setup
+		// would fail.
 		if skipSharedInit(cmd) {
 			return nil
 		}
 
-		// Configure log level before doing anything else so debug output is visible.
+		// Set the log level first, so the debug output below is shown.
 		logLevel := slog.LevelWarn
 		if verbose {
 			logLevel = slog.LevelDebug
@@ -66,41 +69,31 @@ var rootCmd = &cobra.Command{
 		}
 		slog.Debug("config loaded", "root", cfg.ProjectRoot, "profile", cfg.Profile, "cluster", cfg.ClusterName)
 
-		exec = executor.New(cfg.ProjectRoot)
-		// Propagate every value declared in .env / runtime.env so child scripts
-		// and Make targets see them. config.Load no longer mutates the process
-		// environment, so this explicit hand-off replaces the old os.Setenv side
-		// effect (e.g. METRICS_PROVIDER, REGISTRY_TYPE consumed by make targets).
+		scriptExec = executor.New(cfg.ProjectRoot)
+		// Pass every value from .env and runtime.env to child scripts and Make
+		// targets; config.Load does not set them in the process environment.
 		for k, v := range cfg.ScriptEnv {
-			exec.SetEnv(k, v)
+			scriptExec.SetEnv(k, v)
 		}
-		// The core cluster knobs are set explicitly too, so they reach scripts
-		// even when a checkout has no .env / runtime.env (defaults still apply).
-		exec.SetEnv("CLUSTER_NAME", cfg.ClusterName)
-		exec.SetEnv("DOMAIN_SUFFIX", cfg.DomainSuffix)
-		exec.SetEnv("HTTP_PORT", cfg.HTTPPort)
-		exec.SetEnv("HTTPS_PORT", cfg.HTTPSPort)
-		exec.SetEnv("INGRESS_CLASS", cfg.IngressClass)
-		exec.SetEnv("INGRESS_PROVIDER", cfg.IngressProvider)
-		exec.SetEnv("STORAGE_CLASS", cfg.StorageClass)
-		exec.SetEnv("PROFILE", cfg.Profile)
-		exec.SetEnv("MONITORING_NAMESPACE", cfg.MonitoringNamespace)
+		// Set the core cluster settings explicitly, so scripts get them (or
+		// their defaults) even without .env or runtime.env.
+		scriptExec.SetEnv("CLUSTER_NAME", cfg.ClusterName)
+		scriptExec.SetEnv("DOMAIN_SUFFIX", cfg.DomainSuffix)
+		scriptExec.SetEnv("HTTP_PORT", cfg.HTTPPort)
+		scriptExec.SetEnv("HTTPS_PORT", cfg.HTTPSPort)
+		scriptExec.SetEnv("INGRESS_CLASS", cfg.IngressClass)
+		scriptExec.SetEnv("INGRESS_PROVIDER", cfg.IngressProvider)
+		scriptExec.SetEnv("STORAGE_CLASS", cfg.StorageClass)
+		scriptExec.SetEnv("PROFILE", cfg.Profile)
+		scriptExec.SetEnv("MONITORING_NAMESPACE", cfg.MonitoringNamespace)
 		reg = platform.NewRegistryWithNamespace(cfg.ProjectRoot, cfg.MonitoringNamespace)
 		// The workload binding both engines resolve {{.Workload*}} against.
-		// APP_NAME selects it, so a lab can run its scenarios and faults against
-		// a different application without editing content (ADR-0014). The port
-		// and metric come from that app's declared contract, not a guess.
-		//
-		// A missing or malformed app.env must not stop unrelated commands from
-		// running, so the binding falls back to the conventional defaults and
-		// `labctl app verify` is where the problem is reported.
-		// --app overrides APP_NAME for one command. Unlike the env var it is a
-		// deliberate, visible choice, so an unknown name is a usage error rather
-		// than a silent fall back to the defaults.
+		// APP_NAME selects it (ADR-0014); --app overrides it for one command,
+		// and bindWorkload treats that deliberate choice more strictly.
 		appName := cfg.AppName
 		if pinsWorkload(cmd) {
-			// Challenges and learning paths are graded against a fixed workload,
-			// so they ignore the binding entirely — see pinsWorkload.
+			// Challenges and learning paths always use the default app; see
+			// pinsWorkload.
 			if appOverride != "" {
 				return fmt.Errorf(
 					"--app does not apply to %s: challenges and learning paths are graded against the default workload (%s) so par times and scores stay comparable.\n"+
@@ -122,28 +115,14 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-// skipSharedInit reports whether a command should run without the shared
-// cluster-config initialisation (config, executor, and the scenario/incident/…
-// engines). These commands either diagnose a broken environment (doctor), need
-// no config (help/completion/validate), or are served from the local run store
-// (`runs list|logs|cancel`).
+// bindWorkload binds the lab to the named app: it sets WORKLOAD_* on
+// scriptExec and rebuilds the scenario and incident engines (ADR-0014).
+// `labctl compare` calls it again for each app it measures.
 //
-// It matches on the full command path, not the bare leaf name. Several
-// unrelated commands share the leaf name "list" (scenario, app, service,
-// incident, …); those DO need the engines, so only the `runs` subcommands may
-// skip on those leaf names. Matching the leaf alone was a real bug: it made
-// `labctl scenario list` nil-panic because `scenes` was never constructed.
-// bindWorkload resolves the app name to a workload binding and rebuilds
-// everything that reads it: the script environment, the scenario engine and the
-// incident engine. Binding is a step, not a one-off during start-up, because
-// `labctl compare` runs the same scenario against several apps in turn and must
-// rebind between them (ADR-0014).
-//
-// explicit says the name came from a deliberate choice (--app, or --apps in a
-// comparison) rather than the ambient APP_NAME. A missing or malformed app.env must not stop unrelated
-// commands from running, so an ambient name falls back to the conventional
-// defaults and `labctl app verify` is where the problem is reported; an explicit
-// one is a usage error.
+// explicit is true when the user named the app (--app, or --apps in compare)
+// rather than it coming from APP_NAME. For an explicit name, a missing or
+// malformed app.env is an error. Otherwise the defaults are used, so other
+// commands still work; `labctl app verify` reports the problem.
 func bindWorkload(appName string, explicit bool) error {
 	bound := workload.Default(appName)
 	var boundContract workload.Contract
@@ -160,12 +139,11 @@ func bindWorkload(appName string, explicit bool) error {
 	slog.Debug("workload bound", "app", bound.Name, "namespace", bound.Namespace,
 		"port", bound.Port, "capabilities", boundContract.Capabilities)
 
-	// Component and fault scripts act on the bound workload, so they need it
-	// in their environment the same way they get DOMAIN_SUFFIX.
-	exec.SetEnv("WORKLOAD_NAME", bound.Name)
-	exec.SetEnv("WORKLOAD_NAMESPACE", bound.Namespace)
-	exec.SetEnv("WORKLOAD_PORT", bound.Port)
-	exec.SetEnv("WORKLOAD_METRIC", bound.Metric)
+	// Component and fault scripts read the bound app from these.
+	scriptExec.SetEnv("WORKLOAD_NAME", bound.Name)
+	scriptExec.SetEnv("WORKLOAD_NAMESPACE", bound.Namespace)
+	scriptExec.SetEnv("WORKLOAD_PORT", bound.Port)
+	scriptExec.SetEnv("WORKLOAD_METRIC", bound.Metric)
 
 	scenes = scenario.NewEngine(cfg.ProjectRoot, cfg.DomainSuffix, cfg.Profile)
 	scenes.MonitoringNamespace = cfg.MonitoringNamespace
@@ -183,14 +161,10 @@ func bindWorkload(appName string, explicit bool) error {
 	return nil
 }
 
-// rebindTo re-binds the whole lab to an app recorded in state — the workload a
-// scenario was activated against, or the one a fault was injected into.
-//
-// It must go through bindWorkload rather than setting the engine field alone:
-// the fault and component scripts read WORKLOAD_* from the executor's
-// environment, so a binding that stopped at the engine graded one app while the
-// scripts acted on another. A no-op when nothing was recorded (state written by
-// an older build) or the app is already bound.
+// rebindTo binds the lab to an app recorded in state: the app a scenario was
+// activated against, or a fault injected into. It uses bindWorkload so the
+// scripts' WORKLOAD_* change too. It does nothing when app is empty or already
+// bound.
 func rebindTo(app string) error {
 	if app == "" || app == scenes.Workload.Name {
 		return nil
@@ -201,12 +175,9 @@ func rebindTo(app string) error {
 // pinsWorkload reports whether a command must run against the default workload
 // regardless of --app or APP_NAME.
 //
-// Challenges and learning paths compose scenarios and incidents by reference, so
-// the binding would otherwise flow straight through into them. They are scored
-// and timed: a par time is calibrated against one workload, and a leaderboard
-// comparing runs on different applications measures the language rather than the
-// engineer. Nothing is lost by pinning them — a user who wants to see their own
-// app under the same fault runs that scenario or incident directly with --app.
+// Challenges and learning paths are scored and timed against the default app,
+// so results stay comparable. To try another app, run the underlying scenario
+// or incident with --app.
 func pinsWorkload(cmd *cobra.Command) bool {
 	for c := cmd; c != nil; c = c.Parent() {
 		switch c.Name() {
@@ -217,6 +188,13 @@ func pinsWorkload(cmd *cobra.Command) bool {
 	return false
 }
 
+// skipSharedInit reports whether a command runs without the setup in
+// PersistentPreRunE (config, scriptExec and the engines). These commands
+// diagnose a broken environment (doctor), need no config (help, completion,
+// validate), or only read the run store (runs list|logs|cancel).
+//
+// "list", "logs" and "cancel" are skipped only under `runs`: other commands
+// with those names, such as `scenario list`, need the engines.
 func skipSharedInit(cmd *cobra.Command) bool {
 	switch cmd.Name() {
 	case "completion", "help", "doctor", "runs", "validate":
@@ -228,9 +206,8 @@ func skipSharedInit(cmd *cobra.Command) bool {
 	return false
 }
 
-// SetVersion stamps the CLI version (from the build's -X main.version). Setting
-// it makes `labctl --version` report the build, so a reviewer can say exactly
-// which binary they are running.
+// SetVersion sets the version `labctl --version` prints. An empty v becomes
+// "dev".
 func SetVersion(v string) {
 	if v == "" {
 		v = "dev"

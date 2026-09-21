@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -13,14 +14,13 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/toolchain"
 )
 
-// `labctl scenario up|down` run activation/deactivation through the durable run
-// engine: the whole multi-component activation is one recorded,
-// cancellable run whose transcript streams to the terminal and `labctl runs`, and
-// each component it installs is written to the store inventory. The scenario
-// engine still owns the declarative install logic and its active-state markers.
+// `labctl scenario up|down` run through the run engine: an activation is one
+// recorded, cancellable run, and each component it installs is written to the
+// inventory. The scenario engine does the installing and keeps the activation
+// markers.
 
-// scenarioEngineFactory builds a scenario service over the shared run-engine
-// bootstrap, driving the process-wide scenario engine. Overridable in tests.
+// scenarioEngineFactory builds a scenario service on a new run engine, using
+// the global scenario engine. Tests replace it.
 var scenarioEngineFactory = func(ctx context.Context) (*scnsvc.Service, *store.Store, *run.Engine, func(), error) {
 	eng, st, cleanup, err := newRunEngine(ctx)
 	if err != nil {
@@ -34,8 +34,8 @@ var scenarioEngineFactory = func(ctx context.Context) (*scnsvc.Service, *store.S
 	return svc, st, eng, cleanup, nil
 }
 
-// runScenarioOp submits an activate/deactivate through the durable engine and
-// streams it, exiting non-zero if the run fails.
+// runScenarioOp starts the run engine, calls submit, and streams the run,
+// returning an error if it fails.
 func runScenarioOp(cmd *cobra.Command, verb, name string, submit func(context.Context, *scnsvc.Service) (string, error)) error {
 	ctx := cmd.Context()
 	svc, st, eng, cleanup, err := scenarioEngineFactory(ctx)
@@ -51,11 +51,8 @@ func runScenarioOp(cmd *cobra.Command, verb, name string, submit func(context.Co
 	})
 }
 
-// runScenarioReset is the scenario-retry fast-path: tear the scenario
-// down (if active) and re-activate it, both as recorded durable runs, in one
-// command — so retrying after a failed attempt is a single fast step rather than
-// a full lab teardown and rebuild. Re-activation forces (components are
-// idempotent helm-upgrade/kubectl-apply, so a converge is quick).
+// runScenarioReset deactivates the scenario if it is active and activates it
+// again, as two runs, so a learner can retry without rebuilding the lab.
 func runScenarioReset(cmd *cobra.Command, name string) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package workload
 
 import (
@@ -7,15 +8,10 @@ import (
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 )
 
-// Checks returns the assertions that prove a deployed workload actually honours
-// the contract it declares. A declaration is only a claim; these are what turn
-// it into evidence.
-//
-// They are ordinary checks.Check values rather than bespoke logic so they run
-// through the same runner, comparison and remediation machinery as a scenario's
-// own checks — and so a claim is verified exactly the way a scenario would use
-// it. Each capability contributes only the checks that capability implies, so an
-// app is never failed for lacking something it never claimed.
+// Checks returns the checks that confirm a deployed workload honours the
+// contract it declares. They are ordinary checks.Check values, run by the same
+// runner as scenario checks. Each claimed capability adds only its own checks,
+// so an app is never failed for something it did not claim.
 func (c Contract) Checks(w Workload) []checks.Check {
 	w = w.WithDefaults()
 	deploy := "deployment/" + w.Name
@@ -71,9 +67,8 @@ func (c Contract) Checks(w Workload) []checks.Check {
 	}
 
 	if c.Has(CapPrometheusMetrics) {
-		// Query Prometheus rather than the pod: it proves the metric exists AND
-		// that scraping works, which is the state every metric-driven scenario
-		// actually depends on. A histogram always carries a _count series.
+		// Query Prometheus rather than the pod, so the check also proves the
+		// metric is being scraped. Every histogram has a _count series.
 		out = append(out, checks.Check{
 			Name:     "request-metric-scraped",
 			Type:     "promql",
@@ -89,19 +84,16 @@ func (c Contract) Checks(w Workload) []checks.Check {
 	return out
 }
 
-// unprovable maps each capability that cluster state cannot demonstrate to the
-// reason why. Both are conditional promises — "if you set this env var I will
-// export", "if you call this endpoint I will go unready" — so a baseline
-// deployment looks identical whether or not the app honours them. Failing an app
-// for one would fail a conforming app; claiming it passed would be a lie.
+// unprovable maps each capability that cannot be checked from cluster state
+// to the reason. These capabilities only show when something triggers them, so
+// an idle deployment looks the same whether or not the app supports them.
 var unprovable = map[Capability]string{
 	CapOTLPTracing:     "the app exports only once OTEL_EXPORTER_OTLP_ENDPOINT is set, which a tracing scenario does; proving it means wiring a collector and finding spans",
 	CapReadinessToggle: "proving it means deliberately making the app unready, which a read-only verification must not do",
 }
 
-// UnverifiableCapabilities are the declared capabilities Checks deliberately does
-// not grade, so `app verify` reports them as claimed rather than pretending to
-// have tested them. WhyUnverifiable explains each one.
+// UnverifiableCapabilities returns the claimed capabilities that Checks does
+// not test, so `app verify` can report them as claimed but untested.
 func (c Contract) UnverifiableCapabilities() []Capability {
 	var out []Capability
 	for _, declared := range c.Capabilities {

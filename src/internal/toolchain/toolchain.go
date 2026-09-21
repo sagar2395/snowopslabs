@@ -1,18 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package toolchain is the single door between SnowOps Labs and the external
-// binaries it orchestrates: bash, kubectl, helm, k3d, kind.
+// Package toolchain runs the external binaries labctl depends on: bash,
+// kubectl, helm, k3d and kind. Those scripts run against a real cluster with
+// the user's credentials, so the package guarantees that:
 //
-// Everything here exists because of one rule — Go orchestrates, scripts do the
-// work — and one hazard: those scripts run against a real cluster with the
-// user's credentials. So the package guarantees three things.
-//
-//  1. Commands are built as argv arrays. No user-supplied value is ever
-//     interpolated into a shell string, because there is no shell string.
-//  2. Script paths resolve inside an allowlisted root, symlinks included. A
-//     scenario cannot reach outside its content root by way of "../".
-//  3. Every adapter has a Fake, so the layers above can be tested without a
-//     cluster, a network, or a real binary anywhere in sight.
+//  1. Commands are argv arrays. No value is ever interpolated into a shell
+//     string.
+//  2. Script paths resolve inside an allowed content root, after following
+//     symlinks, so a scenario cannot reach outside its root with "../".
+//  3. Runner has a Fake, so the layers above can be tested without a
+//     cluster, a network or real binaries.
 package toolchain
 
 import (
@@ -26,9 +23,8 @@ import (
 	"strings"
 )
 
-// Command is a fully-resolved invocation, ready to execute. It is deliberately
-// inert: building one performs validation but never runs anything, so callers
-// can construct, inspect and log a command before deciding to execute it.
+// Command is a fully resolved invocation. Building one runs nothing; pass it
+// to a Runner to execute it.
 type Command struct {
 	// Path is the absolute path to the binary.
 	Path string
@@ -36,17 +32,16 @@ type Command struct {
 	Args []string
 	// Dir is the working directory; empty means the caller's.
 	Dir string
-	// Env is added to (not substituted for) the parent environment. Scripts
-	// read ${VAR:-default} from here — golden rule 3 says they must never
-	// source .env themselves.
+	// Env is added to the parent environment rather than replacing it.
+	// Scripts read their settings as ${VAR:-default} and never source .env
+	// themselves, so this is how configuration reaches them.
 	Env map[string]string
 	// Stdout and Stderr receive output. Nil discards it.
 	Stdout, Stderr io.Writer
 }
 
-// String renders the command for logs and error messages. Arguments containing
-// whitespace are quoted so the output is unambiguous, but this is for humans
-// only — it is never parsed back or handed to a shell.
+// String renders the command for logs and error messages, quoting arguments
+// that contain whitespace. It is for display only, never for a shell.
 func (c Command) String() string {
 	parts := make([]string, 0, len(c.Args)+1)
 	parts = append(parts, c.Path)
@@ -60,8 +55,7 @@ func (c Command) String() string {
 	return strings.Join(parts, " ")
 }
 
-// Env sorted deterministically, as KEY=VALUE. Used when constructing the
-// process environment and when asserting in tests.
+// EnvSlice returns Env as KEY=VALUE pairs sorted by key.
 func (c Command) EnvSlice() []string {
 	keys := make([]string, 0, len(c.Env))
 	for k := range c.Env {
@@ -79,8 +73,8 @@ func (c Command) EnvSlice() []string {
 // Result is the outcome of an execution.
 type Result struct {
 	ExitCode int
-	// Signalled is true when the process was terminated by a signal rather
-	// than exiting on its own — the normal outcome of a cancellation.
+	// Signalled is true when the process was killed by a signal instead of
+	// exiting on its own, as happens when a run is cancelled.
 	Signalled bool
 }
 
@@ -89,8 +83,7 @@ type Result struct {
 type ExitError struct {
 	Command  string
 	ExitCode int
-	// Stderr is the tail of the error output, when captured. Enough to make
-	// the error actionable without dumping the whole log into one line.
+	// Stderr is the tail of the error output, when it was captured.
 	Stderr string
 }
 
@@ -104,8 +97,8 @@ func (e *ExitError) Error() string {
 
 // Runner executes commands. Production uses Exec; tests use Fake.
 //
-// Run must honour ctx: on cancellation it terminates the process *group*, not
-// just the direct child, because helm and kubectl spawn their own children
+// Run must honour ctx. On cancellation it stops the whole process group, not
+// just the direct child, because helm and kubectl start children of their own
 // (ADR-0003).
 type Runner interface {
 	Run(ctx context.Context, cmd Command) (Result, error)
@@ -121,22 +114,17 @@ var ErrOutsideRoot = errors.New("script path escapes its content root")
 // ErrScriptNotFound is returned when a script does not exist.
 var ErrScriptNotFound = errors.New("script not found")
 
-// Resolver turns a relative script path into an absolute one, refusing any
-// path that leaves its root.
-//
-// This closes a real hole: v1's executor joined a caller-supplied path onto the
-// project root and ran whatever came out, so "../../../../usr/bin/whatever"
-// would have executed happily. Content can come from an external root the user
-// pointed at, so this check is load-bearing, not theoretical.
+// Resolver turns a script path into an absolute one and refuses any path that
+// leaves its roots, such as "../../usr/bin/x". Content can come from external
+// roots the user configured, so every script goes through this check.
 type Resolver struct {
 	// Roots are the directories scripts may live in, absolute and with
 	// symlinks already resolved.
 	Roots []string
 }
 
-// NewResolver builds a Resolver from the given roots. Each root is made
-// absolute and symlink-resolved once, up front, so the per-call check is a
-// cheap prefix comparison against a canonical path.
+// NewResolver builds a Resolver from the given roots, making each one
+// absolute and resolving its symlinks up front.
 func NewResolver(roots ...string) (*Resolver, error) {
 	if len(roots) == 0 {
 		return nil, errors.New("toolchain: at least one content root is required")
@@ -150,11 +138,10 @@ func NewResolver(roots ...string) (*Resolver, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolving content root %q: %w", r, err)
 		}
-		// A root that does not exist yet is not an error — a content path may
-		// be configured before it is populated — but one that does exist gets
-		// its symlinks collapsed so containment checks compare like with like.
-		if real, err := filepath.EvalSymlinks(abs); err == nil {
-			abs = real
+		// A root may be configured before it exists, so a failure here is
+		// not an error; the path is then used as given.
+		if resolvedAbs, err := filepath.EvalSymlinks(abs); err == nil {
+			abs = resolvedAbs
 		}
 		resolved = append(resolved, abs)
 	}
@@ -183,28 +170,27 @@ func (r *Resolver) Resolve(script string) (string, error) {
 
 	var firstOutside error
 	for _, candidate := range candidates {
-		// EvalSymlinks both proves existence and collapses any symlink that
-		// might point out of the root. Checking the cleaned path alone would
-		// miss a symlink planted inside the tree.
-		real, err := filepath.EvalSymlinks(candidate)
+		// Resolving symlinks both confirms the file exists and catches a
+		// link inside the root that points outside it.
+		target, err := filepath.EvalSymlinks(candidate)
 		if err != nil {
 			continue
 		}
-		if !r.contains(real) {
+		if !r.contains(target) {
 			if firstOutside == nil {
 				firstOutside = fmt.Errorf("%w: %s resolves to %s, which is outside %s",
-					ErrOutsideRoot, script, real, strings.Join(r.Roots, ", "))
+					ErrOutsideRoot, script, target, strings.Join(r.Roots, ", "))
 			}
 			continue
 		}
-		info, err := os.Stat(real)
+		info, err := os.Stat(target)
 		if err != nil {
 			continue
 		}
 		if info.IsDir() {
 			return "", fmt.Errorf("%w: %s is a directory", ErrScriptNotFound, script)
 		}
-		return real, nil
+		return target, nil
 	}
 
 	if firstOutside != nil {

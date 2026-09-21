@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package auth
 
 import (
@@ -26,8 +27,7 @@ func TestHashPassword_UsesArgon2id(t *testing.T) {
 	}
 }
 
-// A legacy PBKDF2 hash written by a prior version must still verify, so enabling
-// Argon2id does not lock existing users out.
+// A PBKDF2 hash in an existing users file must still verify.
 func TestVerifyPassword_AcceptsLegacyPBKDF2(t *testing.T) {
 	const pw = "legacy-secret"
 	legacy := legacyPBKDF2Hash(t, pw)
@@ -59,9 +59,8 @@ func TestVerifyPassword_MalformedArgon2id(t *testing.T) {
 	}
 }
 
-// legacyPBKDF2Hash reconstructs the exact encoding a prior version produced, so
-// the backward-compatibility test does not depend on HashPassword still emitting
-// PBKDF2 (it no longer does).
+// legacyPBKDF2Hash builds a hash in the PBKDF2 format, which HashPassword
+// does not produce.
 func legacyPBKDF2Hash(t *testing.T, password string) string {
 	t.Helper()
 	salt := []byte("0123456789abcdef")

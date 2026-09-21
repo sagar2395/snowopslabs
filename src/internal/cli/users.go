@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -115,10 +117,9 @@ var usersRemoveCmd = &cobra.Command{
 	},
 }
 
-// resolvePassword reads the new password from --password, then the
-// LABCTL_PASSWORD env var, then a single line on stdin. No-echo terminal input
-// is intentionally not used to avoid an external dependency; document that the
-// stdin path echoes and is meant for scripted/local lab use.
+// resolvePassword returns the password from --password, else LABCTL_PASSWORD,
+// else one line of stdin. Stdin input is echoed; hidden terminal input would
+// need an extra dependency.
 func resolvePassword(cmd *cobra.Command) (string, error) {
 	if usersPassword != "" {
 		return usersPassword, nil
@@ -129,11 +130,11 @@ func resolvePassword(cmd *cobra.Command) (string, error) {
 	fmt.Fprint(cmd.OutOrStdout(), "Password: ")
 	sc := bufio.NewScanner(cmd.InOrStdin())
 	if !sc.Scan() {
-		return "", fmt.Errorf("no password provided (use --password, LABCTL_PASSWORD, or stdin)")
+		return "", errors.New("no password provided (use --password, LABCTL_PASSWORD, or stdin)")
 	}
 	pw := strings.TrimSpace(sc.Text())
 	if pw == "" {
-		return "", fmt.Errorf("password must not be empty")
+		return "", errors.New("password must not be empty")
 	}
 	return pw, nil
 }

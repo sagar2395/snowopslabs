@@ -42,6 +42,7 @@ contradict themselves, or you are editing the code in question.
 | Change the CLI surface | [CLI reference](reference/cli/index.md) | — |
 | Fix a dashboard, metric or trace | [R13](runbooks/R13-observability-pipeline.md) | — |
 | Understand the run engine | [architecture §3](architecture/ARCHITECTURE.md), [R01](runbooks/R01-run-engine-and-cancellation.md) | `src/internal/run/` |
+| Write or change Go code | [Go conventions](GO-CONVENTIONS.md) | — |
 | Write tests | [TESTING.md](TESTING.md) | — |
 | Ship a release | [RELEASING.md](../RELEASING.md) | — |
 | Pick up deferred work | [backlog](backlog.md) | — |

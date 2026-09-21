@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -9,9 +10,8 @@ import (
 	"testing"
 )
 
-// Every hostname labctl builds a URL for has to be one it also puts in
-// /etc/hosts. Alertmanager was not, so `incident status` could never reach the
-// pager and every expectAlert fault reported that its page had not fired.
+// Every hostname labctl builds a URL for must also be one it adds to
+// /etc/hosts.
 func TestPlatformSubdomainsCoverEveryURLTheCLIBuilds(t *testing.T) {
 	known := make(map[string]bool, len(platformSubdomains))
 	for _, s := range platformSubdomains {

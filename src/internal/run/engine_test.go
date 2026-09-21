@@ -238,8 +238,7 @@ func TestSubmit(t *testing.T) {
 	})
 
 	t.Run("rejects an unresolvable script before creating a run", func(t *testing.T) {
-		// A typo in a scenario should be an immediate clear error, not a
-		// queued run that fails later and clutters the history.
+		// A bad script path must fail at Submit, before any run is recorded.
 		h := newHarness(t)
 		_, err := h.engine.Submit(ctx, Spec{Kind: "test", Script: "does-not-exist.sh"})
 		if !errors.Is(err, toolchain.ErrScriptNotFound) {
@@ -326,7 +325,7 @@ func TestLockConflict(t *testing.T) {
 		if !errors.As(err, &conflict) {
 			t.Fatalf("error = %v, want *LockConflictError", err)
 		}
-		// The exit criterion: refusal is immediate, not a wait.
+		// The refusal must be immediate, not a wait.
 		if elapsed > 100*time.Millisecond {
 			t.Errorf("took %v to refuse; the conflict must be reported immediately", elapsed)
 		}
@@ -655,9 +654,8 @@ func TestParseStepMarker(t *testing.T) {
 	}
 }
 
-// TestRecoveryOnStart covers the exit criterion about killing the server
-// mid-run: on restart the run shows cancelled, its partial log is intact, and
-// its lock is released.
+// TestRecoveryOnStart simulates labctl dying mid-run: after a restart the run
+// shows as cancelled, its partial log is intact, and its lock is released.
 func TestRecoveryOnStart(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "test.db")
@@ -909,8 +907,8 @@ func TestSubscribe(t *testing.T) {
 	})
 
 	t.Run("a slow subscriber never stalls the engine", func(t *testing.T) {
-		// Events are notifications, not data, so dropping one costs latency,
-		// not correctness — the consumer reads lines from the store by cursor.
+		// A dropped event only delays the consumer, which reads lines from the
+		// store by cursor.
 		h := newHarness(t)
 		_, unsubscribe := h.engine.Subscribe("") // never drained
 		defer unsubscribe()

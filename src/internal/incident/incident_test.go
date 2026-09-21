@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package incident
 
 import (
@@ -263,7 +264,7 @@ func TestPickRandom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PickRandom: %v", err)
 	}
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		again, _ := e.PickRandom(42, "")
 		if again.Name != first.Name {
 			t.Fatalf("seeded pick must be deterministic: %q vs %q", again.Name, first.Name)
@@ -295,8 +296,7 @@ func TestResolveCheckTemplates(t *testing.T) {
 	}
 }
 
-// The exported wrapper is what the challenge grader calls; an unresolved URL
-// there makes a correct fix score zero.
+// The challenge grader calls ResolveCheck, so it must expand the check's URL.
 func TestResolveCheck_Exported(t *testing.T) {
 	e := NewEngine(t.TempDir(), "lab.example")
 	tests := []struct {
@@ -330,10 +330,8 @@ func TestResolveCheck_Exported(t *testing.T) {
 	}
 }
 
-// A fault injected into one app must be detected and resolved against that app.
-// Status and Resolve run in a later process than Inject, so reading the binding
-// from ambient config pointed the detection check at a namespace nothing broke —
-// where it passes, and a passing check clears the incident and scores it solved.
+// A fault injected into one app must be detected and resolved against that
+// app, even when the current binding names another.
 func TestActiveRecordsTheAppItWasInjectedInto(t *testing.T) {
 	e, _ := testEngine(t, "marker-fault")
 	e.Workload = workload.Default("java-api")
@@ -349,9 +347,8 @@ func TestActiveRecordsTheAppItWasInjectedInto(t *testing.T) {
 	}
 }
 
-// Read paths describe a fault bound to an app without rebinding the shared
-// engine: the API serves many requests from one engine, and an injection that
-// rebound it would be observed by every concurrent reader.
+// Describing a fault for another app must not change the shared engine's
+// binding.
 func TestListBoundResolvesWithoutRebindingTheEngine(t *testing.T) {
 	root := t.TempDir()
 	createApp(t, root, "go-api")
@@ -375,9 +372,8 @@ func TestListBoundResolvesWithoutRebindingTheEngine(t *testing.T) {
 	}
 }
 
-// Everything a reader is shown has to be resolved, not just the fields anyone
-// happened to notice: an unresolved snippet shipped a literal
-// "{{.WorkloadNamespace}}" into the first thing a learner reads.
+// Every field shown to a reader, snippets included, must have its templates
+// expanded.
 func TestResolvedCoversEverythingAReaderSees(t *testing.T) {
 	root := t.TempDir()
 	createApp(t, root, "go-api")
@@ -405,9 +401,8 @@ func TestResolvedCoversEverythingAReaderSees(t *testing.T) {
 	}
 }
 
-// An app prerequisite written as a template is the binding, not a requirement.
-// Presenting it as "requires go-api" told users that content which runs against
-// any conforming app ran against one.
+// An app prerequisite written as a template follows the binding, so it must
+// not be reported as a fixed requirement.
 func TestPinnedAppsExcludesTheBinding(t *testing.T) {
 	root := t.TempDir()
 	createApp(t, root, "go-api")
@@ -460,9 +455,8 @@ func writeBoundFault(t *testing.T, root, name string) {
 	}
 }
 
-// The incident counterpart of the scenario display guard: everything a reader is
-// shown must come back resolved, checked by walking the response rather than by
-// naming fields, so a field added to the schema and forgotten fails here.
+// Every string a reader is shown must have its templates expanded. The test
+// walks the whole response, so a newly added field is covered too.
 func TestResolvedLeavesNoTemplateAReaderCouldSee(t *testing.T) {
 	root := t.TempDir()
 	createApp(t, root, "go-api")

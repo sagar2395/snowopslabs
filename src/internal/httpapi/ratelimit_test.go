@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -12,9 +13,8 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/config"
 )
 
-// The always-open auth endpoints must be recognised under both the /api and
-// /api/v2 prefixes — otherwise auth-enabled servers gate the login endpoint on
-// v2 and nobody can obtain a session there.
+// The auth endpoints must be recognised under both the /api and /api/v2
+// prefixes, or nobody could log in through /api/v2.
 func TestIsAuthEndpoint_BothPrefixes(t *testing.T) {
 	open := []string{
 		"/api/auth/login", "/api/auth/logout", "/api/auth/me",
@@ -83,8 +83,7 @@ func TestLoginLimiter_KeysAreIndependent(t *testing.T) {
 	}
 }
 
-// End-to-end: a credential-stuffing loop against the login endpoint is cut off
-// with 429 once the per-client cap is hit.
+// Repeated login attempts from one client get 429 once the limit is reached.
 func TestAuthLogin_RateLimitsCredentialStuffing(t *testing.T) {
 	s := &Server{
 		authEnabled: true,

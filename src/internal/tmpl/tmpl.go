@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package tmpl owns the variables content templates may reference, and the two
-// ways they are expanded: strictly at validation time, leniently at run time.
-//
-// It exists because the set of variables used to be written out three times —
-// once in the catalog validator, once in the scenario engine, once in the
-// incident engine — and the copies drifted. {{.IngressClass}} resolved at run
-// time but was rejected by the validator, and incidents never supported
-// {{.MonitoringNamespace}} at all.
+// Package tmpl defines the variables content templates may use, such as
+// {{.DomainSuffix}}, and expands them: strictly when content is validated,
+// leniently at run time. The catalog validator, the scenario engine and the
+// incident engine all use it, so they agree on the same set of variables.
 package tmpl
 
 import (
@@ -21,14 +17,12 @@ import (
 	"unicode/utf8"
 )
 
-// Context is the typed set of variables content templates may reference.
-// It is deliberately a struct, not a map: text/template rejects a reference to a
-// field that does not exist, so a typo like {{.DomainSufix}} fails loudly at
-// validation time instead of silently resolving to empty.
+// Context holds the variables content templates may reference. It is a
+// struct, not a map, so validation rejects a misspelt name such as
+// {{.DomainSufix}} instead of expanding it to "".
 //
-// Field names are flat by design. Expand's regex matches a single dotted
-// identifier, so a nested {{.Workload.Name}} would pass through unresolved and
-// reach kubectl verbatim — see the note on varRef.
+// Keep the fields flat: Expand only matches a single name, so a nested
+// {{.Workload.Name}} would be left unexpanded.
 type Context struct {
 	// DomainSuffix is the ingress domain suffix, e.g. "k3d.local".
 	DomainSuffix string
@@ -74,10 +68,9 @@ func Since(start, now time.Time) string {
 	return fmt.Sprintf("%dm", int(math.Ceil(now.Sub(start).Minutes())))
 }
 
-// Vars renders the context as the map the lenient expander substitutes from.
+// Vars returns the context as the name-to-value map Expand substitutes from.
 // Every exported field of Context must appear here; TestVarsCoversEveryField
-// enforces that by reflection, so adding a field without wiring it fails a test
-// rather than silently resolving to nothing at run time.
+// fails if one is missing.
 func (c Context) Vars() map[string]string {
 	return map[string]string{
 		"DomainSuffix":        c.DomainSuffix,
@@ -96,7 +89,7 @@ func (c Context) Vars() map[string]string {
 
 // FieldNames lists Context's exported fields, i.e. every legal variable name.
 func FieldNames() []string {
-	t := reflect.TypeOf(Context{})
+	t := reflect.TypeFor[Context]()
 	out := make([]string, 0, t.NumField())
 	for i := range t.NumField() {
 		out = append(out, t.Field(i).Name)
@@ -104,32 +97,21 @@ func FieldNames() []string {
 	return out
 }
 
-// varRef matches labctl's own template placeholders: a single dotted identifier
-// like {{.DomainSuffix}} or {{ .MonitoringNamespace }}. It is deliberately
-// narrow so it never touches the OTHER templating languages that legitimately
-// share the file: Prometheus rule annotations ({{ $value }}, {{ $labels.pod }}),
-// Grafana legends ({{namespace}}), and Helm/sprig expressions
-// ({{ index .data "x" | base64decode }}). Parsing the whole document as one Go
-// template used to choke on those and silently return the input unrendered, so
-// a manifest's {{.MonitoringNamespace}} reached kubectl verbatim and the apply
-// failed.
+// varRef matches labctl's own placeholders: one dotted name, such as
+// {{.DomainSuffix}} or {{ .MonitoringNamespace }}. It is kept narrow so it
+// leaves alone the other template syntaxes content files contain: Prometheus
+// annotations ({{ $value }}), Grafana legends ({{namespace}}) and Helm
+// expressions ({{ index .data "x" | base64decode }}).
 var varRef = regexp.MustCompile(`{{\s*\.(\w+)\s*}}`)
 
 // Validate reports authoring mistakes in a templated content string.
 //
-// It mirrors Expand's semantics rather than parsing the input as one Go
-// template, because that is what actually happens at run time. A content file
-// legitimately carries other systems' templating — a Loki line_format
-// ({{.method}}), a Prometheus annotation ({{ $value }}), a Grafana legend — and
-// parsing the whole string would reject those as unknown fields.
+// It matches placeholders the same way Expand does. Content files also hold
+// other systems' templates, such as a Loki line_format ({{.method}}), so only a
+// name starting with an upper-case letter is treated as one of labctl's
+// variables and must be known; anything else is ignored.
 //
-// The rule: labctl's own variables are always PascalCase, because they are
-// exported fields of Context. So a {{.Name}} beginning with an upper-case letter
-// is claiming to be one of ours and must resolve; anything else belongs to
-// whichever engine consumes the document next and is left alone.
-// extra names additional variables that are legal in this particular content —
-// a scenario's own declared parameters, which are substituted alongside the
-// built-ins at activation.
+// extra lists additional legal names, such as a scenario's own parameters.
 func Validate(input string, extra ...string) error {
 	if !strings.Contains(input, "{{") {
 		return nil
@@ -154,13 +136,9 @@ func Validate(input string, extra ...string) error {
 	return nil
 }
 
-// Expand leniently substitutes {{.Var}} placeholders in input, leaving anything
-// it does not recognise untouched for whichever other templating engine consumes
-// the document next. extra is overlaid beneath the built-ins, so a scenario
-// parameter can never shadow one.
-//
-// This is the run-time path. It is lenient because by then the document may hold
-// Helm, Prometheus and Grafana syntax that is none of labctl's business.
+// Expand replaces the {{.Var}} placeholders it knows in input and leaves every
+// other placeholder unchanged for the tool that reads the document next. A name
+// in extra never overrides a built-in variable of the same name.
 func Expand(input string, ctx Context, extra map[string]string) string {
 	if input == "" || !strings.Contains(input, "{{") {
 		return input
@@ -179,9 +157,7 @@ func Expand(input string, ctx Context, extra map[string]string) string {
 	})
 }
 
-// IsTemplated reports whether input carries a placeholder for Expand to fill.
-//
-// Callers use it to tell a value an author pinned from one an author delegated
-// to the binding: "go-api" is a literal requirement, "{{.WorkloadName}}" is
-// whatever app the lab is bound to and is not a requirement at all.
+// IsTemplated reports whether input contains a placeholder for Expand to fill.
+// Callers use it to tell a fixed value, such as "go-api", from one that follows
+// the workload binding, such as "{{.WorkloadName}}".
 func IsTemplated(input string) bool { return strings.Contains(input, "{{") }

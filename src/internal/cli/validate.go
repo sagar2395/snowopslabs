@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -56,11 +59,11 @@ Extra content roots named in SNOWOPS_CONTENT_PATH are validated too.`,
 }
 
 // errSilent signals a non-zero exit whose message has already been printed.
-var errSilent = fmt.Errorf("")
+var errSilent = errors.New("")
 
-// writeValidationReport renders the catalog's validation outcome. On success it
-// prints a one-line summary; on failure it prints every problem, sorted, in the
-// stable "file:line: [kind/name] message" form, followed by a count.
+// writeValidationReport prints a one-line summary on success. On failure it
+// prints every problem, sorted, as "file:line: [kind/name] message", then a
+// count.
 func writeValidationReport(w io.Writer, c *catalog.Catalog, asJSON bool) error {
 	counts := c.Counts()
 	if asJSON {
@@ -114,13 +117,10 @@ func summarize(counts map[catalog.Kind]int) string {
 	for k := range counts {
 		kinds = append(kinds, k)
 	}
-	sort.Slice(kinds, func(i, j int) bool { return kinds[i] < kinds[j] })
-	out := ""
-	for i, k := range kinds {
-		if i > 0 {
-			out += ", "
-		}
-		out += fmt.Sprintf("%d %s", counts[k], labels[k])
+	slices.Sort(kinds)
+	parts := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		parts = append(parts, fmt.Sprintf("%d %s", counts[k], labels[k]))
 	}
-	return out
+	return strings.Join(parts, ", ")
 }

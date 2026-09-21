@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package checks
 
 import (
@@ -6,9 +7,8 @@ import (
 	"time"
 )
 
-// Default polling parameters for Eventually. They are deliberately gentle so a
-// slow-to-converge cluster (a rollout, a scaler warming up) is given time
-// without hammering the API server.
+// Default polling settings for Eventually: enough time for a slow rollout
+// without querying the cluster too often.
 const (
 	defaultEventuallyDeadline = 60 * time.Second
 	defaultInitialInterval    = 1 * time.Second
@@ -16,9 +16,8 @@ const (
 	defaultMultiplier         = 2.0
 )
 
-// EventuallyOpts controls the retry/backoff behaviour of Eventually. The zero
-// value is valid: every field falls back to a sensible default, so callers can
-// pass EventuallyOpts{} for the standard policy or override only what they need.
+// EventuallyOpts controls how Eventually retries. Zero fields take the
+// defaults, so EventuallyOpts{} is valid.
 type EventuallyOpts struct {
 	// Deadline is the total wall-clock budget for the whole poll, across all
 	// attempts. When it elapses Eventually returns the most recent Result.
@@ -53,10 +52,9 @@ func (o EventuallyOpts) withDefaults() EventuallyOpts {
 // Attempts set to the number of evaluations and DurationMS spanning the whole
 // poll (not just the last attempt).
 //
-// A check that errors (misconfiguration, unreachable dependency) is retried the
-// same as one that merely fails: transient errors during a rollout are
-// expected. The final Result therefore reflects the last observation, so the
-// caller can tell "never became true" from "still erroring".
+// A check that errors is retried like one that fails, since errors are common
+// while things roll out. The returned Result is the last attempt, so a caller
+// can tell a failing check from an erroring one.
 func (r *Runner) Eventually(ctx context.Context, c Check, opts EventuallyOpts) Result {
 	opts = opts.withDefaults()
 	start := time.Now()
@@ -75,15 +73,11 @@ func (r *Runner) Eventually(ctx context.Context, c Check, opts EventuallyOpts) R
 			break
 		}
 
-		// Compute the next backoff, capped, before deciding whether to sleep.
-		nextInterval := time.Duration(float64(interval) * opts.Multiplier)
-		if nextInterval > opts.MaxInterval {
-			nextInterval = opts.MaxInterval
-		}
+		nextInterval := min(time.Duration(float64(interval)*opts.Multiplier), opts.MaxInterval)
 
 		select {
 		case <-deadlineCtx.Done():
-			// Budget exhausted or caller cancelled: return the last observation.
+			// Out of time or cancelled: return the last result.
 			last.Explanation = last.explain()
 			last.DurationMS = time.Since(start).Milliseconds()
 			return last

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package scenario puts the scenario half of the break-it/fix-it loop on the
-// durable run engine. Unlike lab/platform/incident — whose operations
-// are single scripts — activating a scenario is multi-component orchestration
-// the scenario engine performs in Go (helm/kubectl per component, per stage). So
-// this service runs it as an in-process engine operation (run.Spec.Func): the
-// whole activation is one recorded, cancellable run, its transcript streamed to
-// the run log, and every component it installs is written to the store's
-// component inventory (kind=scenario) so deactivation and teardown know exactly
-// what to remove — the same inventory platform components use.
+// Package scenario activates and deactivates scenarios as runs on the run
+// engine.
+//
+// Activating a scenario installs several components, so it is not a single
+// script: the scenario engine does it in Go, and this service wraps that work
+// in a run.Spec.Func. The whole activation is one recorded, cancellable run.
+// Each installed component is written to the store's component inventory, so
+// deactivation and teardown know what to remove.
 package scenario
 
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -28,7 +28,7 @@ import (
 	"github.com/sagar2395/snowopslabs/pkg/checks"
 )
 
-// Run kinds, matching internal/run's DefaultTimeouts.
+// Run kinds. Each has an entry in run.DefaultTimeouts.
 const (
 	KindActivate   = "scenario.activate"
 	KindDeactivate = "scenario.deactivate"
@@ -36,17 +36,17 @@ const (
 
 var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
-// LockKey serialises a single scenario's activate/deactivate. Different
-// scenarios may act concurrently; the same one may not activate and deactivate
-// at once.
+// LockKey returns the lock key for one scenario. Different scenarios can
+// change at once; one scenario cannot activate and deactivate at once.
 func LockKey(name string) string { return "scenario:" + name }
 
-// componentID is a scenario component's stable inventory id.
+// componentID returns a scenario component's inventory ID.
 func componentID(scenario, component string) string {
 	return "scenario:" + scenario + "/" + component
 }
 
-// Service is the durable scenario-lifecycle façade.
+// Service submits scenario operations to the run engine and reports scenario
+// state from the store.
 type Service struct {
 	engine *run.Engine
 	store  *store.Store
@@ -59,15 +59,14 @@ type Service struct {
 // Option configures a Service.
 type Option func(*Service)
 
-// WithEnv layers configuration onto the component scripts' environment.
+// WithEnv sets the environment for component scripts.
 func WithEnv(env map[string]string) Option { return func(s *Service) { s.env = env } }
 
-// New builds a scenario Service. scenes is the scenario engine that owns the
-// declarative install logic; runner and projectRoot back the streaming executor
-// the activation drives.
+// New builds a scenario Service. scenes does the installing; runner and
+// projectRoot are used to run the helm, kubectl and script commands it issues.
 func New(engine *run.Engine, st *store.Store, scenes *scn.Engine, runner toolchain.Runner, projectRoot string, opts ...Option) (*Service, error) {
 	if engine == nil || st == nil || scenes == nil || runner == nil {
-		return nil, fmt.Errorf("scenario: engine, store, scenario engine and runner are all required")
+		return nil, errors.New("scenario: engine, store, scenario engine and runner are all required")
 	}
 	s := &Service{engine: engine, store: st, scenes: scenes, runner: runner, root: projectRoot}
 	for _, opt := range opts {
@@ -76,16 +75,16 @@ func New(engine *run.Engine, st *store.Store, scenes *scn.Engine, runner toolcha
 	return s, nil
 }
 
-// Activate submits a scenario activation as one recorded run and returns its ID.
-// The run installs the scenario's components (via the scenario engine) and
-// records each in the component inventory. A concurrent op on the same scenario
-// is refused with *run.LockConflictError.
+// Activate submits a scenario activation and returns the run ID. The run
+// installs the scenario's components and records each one in the inventory.
+// An operation already in flight on the same scenario causes a
+// *run.LockConflictError.
 func (s *Service) Activate(ctx context.Context, name string, force bool) (string, error) {
 	return s.ActivateWithParams(ctx, name, force, nil)
 }
 
-// ActivateWithParams is Activate with scenario parameter overrides, staged on
-// the engine for this run only. A nil/empty map behaves exactly like Activate.
+// ActivateWithParams is Activate with parameter overrides that apply to this
+// activation only. An empty map behaves like Activate.
 func (s *Service) ActivateWithParams(ctx context.Context, name string, force bool, params map[string]string) (string, error) {
 	sc, err := s.lookup(name)
 	if err != nil {
@@ -94,12 +93,9 @@ func (s *Service) ActivateWithParams(ctx context.Context, name string, force boo
 	return s.engine.Submit(ctx, run.Spec{
 		Kind: KindActivate, Target: name, LockKey: LockKey(name),
 		Func: func(fctx context.Context, out io.Writer) error {
-			// Route the scenario engine's progress into the run transcript, so
-			// activation output is recorded and streamed through the engine rather
-			// than racing on os.Stdout.
+			// Send the scenario engine's progress to the run transcript.
 			s.scenes.SetOutput(out)
 			defer s.scenes.SetOutput(nil)
-			// Stage the parameter overrides for exactly this activation.
 			s.scenes.SetActivationParams(params)
 			defer s.scenes.SetActivationParams(nil)
 			exec := s.newExec(fctx, out)
@@ -134,9 +130,8 @@ func (s *Service) Deactivate(ctx context.Context, name string) (string, error) {
 	})
 }
 
-// Verify runs the scenario's checks and returns one result per check. It is a
-// live-cluster read (not an engine run): verifying an inactive scenario is how
-// you prove it is down.
+// Verify runs the scenario's checks against the live cluster and returns one
+// result per check. It is not a run and takes no lock.
 func (s *Service) Verify(ctx context.Context, name string, runner *checks.Runner) ([]checks.Result, error) {
 	if !validName.MatchString(name) {
 		return nil, fmt.Errorf("scenario: invalid name %q", name)
@@ -178,6 +173,7 @@ func (s *Service) removeComponents(ctx context.Context, sc *scn.Scenario) {
 // State is a scenario's lifecycle state as understood from the run history.
 type State string
 
+// Scenario states.
 const (
 	StateInactive     State = "inactive"     // never activated, or last completed op was deactivate
 	StateActive       State = "active"       // last completed op was a successful activate
@@ -186,7 +182,7 @@ const (
 	StateError        State = "error"        // the last completed op failed
 )
 
-// Status is a point-in-time answer about one scenario, derived from the store.
+// Status describes one scenario at one moment, as read from the store.
 type Status struct {
 	Scenario string    `json:"scenario"`
 	State    State     `json:"state"`
@@ -194,7 +190,8 @@ type Status struct {
 	Since    time.Time `json:"since,omitempty"`
 }
 
-// Status derives a scenario's state from the store — no cluster round-trip.
+// Status reads a scenario's state from the store without contacting the
+// cluster.
 func (s *Service) Status(ctx context.Context, name string) (Status, error) {
 	if !validName.MatchString(name) {
 		return Status{}, fmt.Errorf("scenario: invalid name %q", name)
@@ -228,16 +225,15 @@ func (s *Service) Status(ctx context.Context, name string) (Status, error) {
 	return st, nil
 }
 
-// newExec builds a streaming, cancellable CommandExecutor bound to the run's
-// context and transcript writer.
+// newExec returns a CommandExecutor that runs commands under the run's
+// context and writes their output to the run transcript.
 func (s *Service) newExec(ctx context.Context, out io.Writer) *streamExec {
 	return &streamExec{ctx: ctx, out: out, runner: s.runner, env: s.env, root: s.root}
 }
 
-// streamExec adapts the toolchain runner to the scenario engine's CommandExecutor
-// interface: it runs helm/kubectl and scenario scripts, streaming their output to
-// the run transcript and honouring the run's context so a cancelled activation
-// stops promptly.
+// streamExec implements the scenario engine's CommandExecutor on top of a
+// toolchain.Runner. It holds the run's context, so cancelling the run stops the
+// command in progress.
 type streamExec struct {
 	ctx    context.Context
 	out    io.Writer
@@ -256,9 +252,8 @@ func (x *streamExec) RunCommandStreamed(_ /*label*/, name string, args ...string
 	return x.run(toolchain.Command{Path: path, Args: args})
 }
 
-// RunScriptStreamed runs a scenario script (path relative to the project root)
-// through bash, so a scenario `type: script` component works the same as under
-// the executor path.
+// RunScriptStreamed runs a script, given relative to the project root, with
+// bash.
 func (x *streamExec) RunScriptStreamed(_ /*label*/, scriptPath string, args ...string) (string, error) {
 	bash, err := x.runner.LookPath("bash")
 	if err != nil {

@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package appdetail
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -58,10 +60,5 @@ func TestBuild_ValuesFallback(t *testing.T) {
 }
 
 func contains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s, v)
 }

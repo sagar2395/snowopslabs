@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -17,7 +18,6 @@ var statusCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := context.Background()
 
-		// Cluster info
 		fmt.Println("=== Cluster ===")
 		info, err := k8s.GetClusterInfo(ctx)
 		if err != nil || !info.Connected {
@@ -31,14 +31,12 @@ var statusCmd = &cobra.Command{
 		fmt.Printf("  Nodes:    %d\n", info.NodeCount)
 		fmt.Printf("  Profile:  %s\n", cfg.Profile)
 
-		// Platform
 		fmt.Println("\n=== Platform ===")
 		fmt.Printf("  Ingress:  %s%s\n", cfg.IngressProvider,
 			providerState(ctx, "ingress", cfg.IngressProvider))
 		fmt.Printf("  Metrics:  %s%s\n", cfg.MetricsProvider,
 			providerState(ctx, "monitoring/metrics", cfg.MetricsProvider))
 
-		// Apps
 		fmt.Println("\n=== Apps ===")
 		apps, _ := config.ListApps(cfg.ProjectRoot)
 		for _, app := range apps {
@@ -59,11 +57,8 @@ var statusCmd = &cobra.Command{
 	},
 }
 
-// providerState reports what a platform component is actually doing, by pod
-// readiness rather than by whether its namespace exists. The two are not the
-// same: an ingress controller in CrashLoopBackOff leaves the namespace in
-// place, and printing [running] over a dead controller sends the user looking
-// anywhere but at the thing that is broken.
+// providerState reports a platform component's state from its pods'
+// readiness. A namespace can exist while its pods are crash-looping.
 func providerState(ctx context.Context, kind, provider string) string {
 	if provider == "" {
 		return ""

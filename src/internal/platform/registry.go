@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package platform discovers the platform component providers under
+// platform/<category>/<provider>/ and runs their install, uninstall and status
+// scripts.
 package platform
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -27,12 +33,11 @@ func (p *Provider) HasScript(name string) bool {
 	return err == nil
 }
 
-// Namespace returns the Kubernetes namespace for this provider.
-// Monitoring, logging, and tracing providers share the configured monitoring
-// namespace (default "monitoring"). Otherwise the provider's _interface.yaml
-// wins, because the installer's namespace is not always the provider's name —
-// istio installs into istio-system, nginx into ingress-nginx — and guessing it
-// makes an installed component undetectable.
+// Namespace returns the Kubernetes namespace this provider installs into.
+// Monitoring, logging and tracing providers share the configured monitoring
+// namespace. Otherwise it is the namespace declared in _interface.yaml, if
+// any (istio uses istio-system, nginx uses ingress-nginx), else the provider's
+// name.
 func (p *Provider) Namespace() string {
 	top := p.Category
 	if i := strings.Index(top, "/"); i >= 0 {
@@ -51,12 +56,10 @@ func (p *Provider) Namespace() string {
 	return p.Name
 }
 
-// SharesNamespace reports whether this provider shares its namespace with other
-// providers. Monitoring, logging and tracing providers all install into the one
-// monitoring namespace (see Namespace), so their presence can't be told apart by
-// namespace existence — callers must detect these per-component (e.g. by Helm
-// release) instead. Every other category owns its namespace, so namespace
-// existence is a sufficient signal.
+// SharesNamespace reports whether this provider shares its namespace with
+// other providers, as monitoring, logging and tracing providers do. For those,
+// the namespace existing does not show the provider is installed; callers must
+// check something specific to it, such as its Helm release.
 func (p *Provider) SharesNamespace() bool {
 	top := p.Category
 	if i := strings.Index(top, "/"); i >= 0 {
@@ -100,12 +103,12 @@ func NewRegistryWithNamespace(projectRoot, monitoringNS string) *Registry {
 	return r
 }
 
-// --- install-intent tracking -------------------------------------------------
+// --- install markers ---------------------------------------------------------
 //
-// Successful installs/uninstalls through the registry leave a marker in
-// .labctl/platform/ so lab snapshot/reset can know what labctl
-// put on the cluster without probing it. Installs done outside labctl
-// (raw make targets, manual helm) are not tracked — documented limitation.
+// A successful install through the registry writes a marker file in
+// .labctl/platform/, and an uninstall removes it, so lab snapshot and reset
+// know what labctl installed without asking the cluster. Components installed
+// any other way (make targets, manual helm) have no marker.
 
 func markerFile(category, name string) string {
 	return strings.ReplaceAll(category, "/", "__") + "__" + name + ".installed"
@@ -163,11 +166,10 @@ func (r *Registry) GetProvider(category, name string) (*Provider, error) {
 	return nil, fmt.Errorf("provider %s/%s not found", category, name)
 }
 
-// IsExclusive reports whether a category's providers are mutually exclusive
-// (pick exactly one, e.g. ingress or mesh) versus complementary (install several
-// together, e.g. secrets: vault + external-secrets). Exclusivity is declared by
-// `selection: exclusive` in the category's platform/<category>/_interface.yaml;
-// the default (missing file or any other value) is complementary.
+// IsExclusive reports whether only one provider of a category may be installed
+// at a time (ingress, mesh) rather than several together (secrets: vault and
+// external-secrets). A category is exclusive when its
+// platform/<category>/_interface.yaml says `selection: exclusive`.
 func (r *Registry) IsExclusive(category string) bool {
 	// Exclusivity is a property of the top-level category (e.g. "monitoring"
 	// for "monitoring/metrics").
@@ -238,7 +240,7 @@ func (r *Registry) Uninstall(category, name string, exec *executor.Executor) err
 		return err
 	}
 	script := filepath.Join(p.Path, "uninstall.sh")
-	if _, err := os.Stat(script); os.IsNotExist(err) {
+	if _, err := os.Stat(script); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("uninstall.sh not found for %s/%s", category, name)
 	}
 	scriptPath, err := filepath.Rel(r.ProjectRoot, script)
@@ -259,7 +261,7 @@ func (r *Registry) UninstallStreamed(category, name string, exec *executor.Execu
 		return err
 	}
 	script := filepath.Join(p.Path, "uninstall.sh")
-	if _, err := os.Stat(script); os.IsNotExist(err) {
+	if _, err := os.Stat(script); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("uninstall.sh not found for %s/%s", category, name)
 	}
 	scriptPath, err := filepath.Rel(r.ProjectRoot, script)
@@ -280,7 +282,7 @@ func (r *Registry) Status(category, name string, exec *executor.Executor) error 
 		return err
 	}
 	script := filepath.Join(p.Path, "status.sh")
-	if _, err := os.Stat(script); os.IsNotExist(err) {
+	if _, err := os.Stat(script); errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("status.sh not found for %s/%s", category, name)
 	}
 	scriptPath, err := filepath.Rel(r.ProjectRoot, script)
@@ -312,7 +314,7 @@ func (r *Registry) scanDir(dir, prefix string) {
 			category = prefix + "/" + entry.Name()
 		}
 
-		// Check if this directory is a provider (has install.sh)
+		// A directory with install.sh is a provider.
 		if _, err := os.Stat(filepath.Join(fullPath, "install.sh")); err == nil {
 			p := Provider{
 				Category:     prefix,
@@ -323,7 +325,7 @@ func (r *Registry) scanDir(dir, prefix string) {
 			p.declaredNS = p.Meta().Namespace
 			r.providers[prefix] = append(r.providers[prefix], p)
 		} else {
-			// Recurse one level deeper
+			// Otherwise it is a category, possibly nested (monitoring/metrics).
 			r.scanDir(fullPath, category)
 		}
 	}

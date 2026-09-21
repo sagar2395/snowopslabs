@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -112,20 +114,17 @@ func challengeStartCmd() *cobra.Command {
 				return err
 			}
 
-			// The challenge's setup breaks a running app; make sure that app is
-			// actually deployed first (or --deploy-prereqs deploys it), so start
-			// fails fast with guidance instead of deep inside the setup action.
+			// The setup breaks a running app, so check it is deployed first (or
+			// deploy it with --deploy-prereqs).
 			if err := ensureAppsDeployed(cmd.Context(), challengeRequiredApps(c), deployPrereqs); err != nil {
 				return err
 			}
 
-			// Run the setup action.
-			if err := runChallengeSetup(cmd.Context(), c, exec); err != nil {
-				// A setup that fails partway still changed the cluster, and no
-				// run has been recorded yet — so `challenge abort` refuses and
-				// the learner is left with a half-injected fault and nothing to
-				// undo it. Clean up here, where the failure is known about.
-				if cleanupErr := runChallengeCleanup(cmd.Context(), c, exec); cleanupErr != nil {
+			if err := runChallengeSetup(cmd.Context(), c, scriptExec); err != nil {
+				// A failed setup may have changed the cluster, and no run is
+				// recorded yet for `challenge abort` to clean up, so undo it
+				// here.
+				if cleanupErr := runChallengeCleanup(cmd.Context(), c, scriptExec); cleanupErr != nil {
 					fmt.Fprintf(cmd.OutOrStdout(), "Warning: could not undo the partial setup: %v\n", cleanupErr)
 				}
 				return fmt.Errorf("setup failed: %w", err)
@@ -149,9 +148,9 @@ func challengeStartCmd() *cobra.Command {
 	return cmd
 }
 
-// challengeRequiredApps returns the repo apps a challenge's setup depends on, so
-// `start` can verify they are deployed. Incident targets that are not repo apps
-// (synthetic namespaces the fault script creates) are intentionally excluded.
+// challengeRequiredApps returns the repo apps a challenge's setup depends on,
+// so `start` can check they are deployed. Incident targets that are not repo
+// apps, such as namespaces the fault script creates, are left out.
 func challengeRequiredApps(c *challenge.Challenge) []string {
 	switch c.Setup.Type {
 	case "scenario":
@@ -215,7 +214,7 @@ func challengeHintCmd() *cobra.Command {
 				return err
 			}
 			if active == nil {
-				return fmt.Errorf("no active challenge — start one with `labctl challenge start <name>`")
+				return errors.New("no active challenge — start one with `labctl challenge start <name>`")
 			}
 			c, err := eng.Load(active.ChallengeName)
 			if err != nil {
@@ -223,7 +222,7 @@ func challengeHintCmd() *cobra.Command {
 			}
 			penalty := hintPenaltyValue(c)
 
-			// Delegate hint to the incident engine if setup is an incident.
+			// An incident challenge uses the incident's own hints.
 			if c.Setup.Type == "incident" {
 				hint, err := incEng.NextHint()
 				if err != nil {
@@ -252,7 +251,7 @@ func challengeSubmitCmd() *cobra.Command {
 				return err
 			}
 			if active == nil {
-				return fmt.Errorf("no active challenge")
+				return errors.New("no active challenge")
 			}
 			c, err := eng.Load(active.ChallengeName)
 			if err != nil {
@@ -277,10 +276,8 @@ func challengeSubmitCmd() *cobra.Command {
 			total := len(results)
 			out := cmd.OutOrStdout()
 
-			// A failed submit does NOT end the run. Ending it on the first
-			// attempt gave the learner one shot, discarded the score they were
-			// working towards, and left the fault injected with no cleanup
-			// offered — `challenge abort` refuses once nothing is active.
+			// A failed submit does not end the run: the learner can fix the
+			// failing checks and submit again, or abort.
 			if passed < total {
 				rec, err := eng.Attempt(passed, total)
 				if err != nil {
@@ -298,12 +295,9 @@ func challengeSubmitCmd() *cobra.Command {
 			}
 			printGradingResults(out, c, rec, results)
 
-			// The challenge injected the fault, so finishing it owns the
-			// teardown — exactly as abort does. Without this the incident stays
-			// active after a passing run: its alert rule stays armed, its
-			// bookkeeping stays on the workload, and the NEXT challenge refuses
-			// to start with "an incident is already active".
-			if err := runChallengeCleanup(cmd.Context(), c, exec); err != nil {
+			// Undo the setup, as abort does, so no incident stays active to
+			// block the next challenge.
+			if err := runChallengeCleanup(cmd.Context(), c, scriptExec); err != nil {
 				fmt.Fprintf(out, "Warning: cleanup failed: %v\n", err)
 			}
 			return nil
@@ -330,8 +324,7 @@ func challengeAbortCmd() *cobra.Command {
 				return err
 			}
 
-			// Undo the setup action.
-			if err := runChallengeCleanup(cmd.Context(), c, exec); err != nil {
+			if err := runChallengeCleanup(cmd.Context(), c, scriptExec); err != nil {
 				fmt.Fprintf(cmd.OutOrStdout(), "Warning: cleanup failed: %v\n", err)
 			}
 
@@ -402,10 +395,9 @@ func runChallengeCleanup(_ context.Context, c *challenge.Challenge, ex *executor
 	}
 }
 
-// resolveGradingChecks returns the checks to run for grading, and the directory
-// their scripts are relative to. A detection check's script lives in the fault's
-// own directory, not the project root — grading it from anywhere else looks for
-// a file that is not there and scores every submission zero.
+// resolveGradingChecks returns the checks to grade with and the directory
+// their scripts are relative to: the fault's directory for a detection check,
+// otherwise the project root.
 func resolveGradingChecks(_ context.Context, c *challenge.Challenge, projectRoot string) ([]checks.Check, string, error) {
 	if c.Grading.UseDetectionCheck && c.Setup.Type == "incident" {
 		f, err := incEng.Get(c.Setup.Ref)
@@ -414,7 +406,6 @@ func resolveGradingChecks(_ context.Context, c *challenge.Challenge, projectRoot
 		}
 		return []checks.Check{incEng.ResolveCheck(f.Detection)}, f.Dir, nil
 	}
-	// Convert challenge GChecks to checks.Check.
 	var cs []checks.Check
 	for _, g := range c.Grading.Checks {
 		cs = append(cs, resolveGradingCheck(c, checks.Check{
@@ -432,8 +423,8 @@ func resolveGradingChecks(_ context.Context, c *challenge.Challenge, projectRoot
 	return cs, projectRoot, nil
 }
 
-// resolveGradingCheck expands template variables using the engine that owns the
-// challenge's setup, so a grading check reads the same as the content it wraps.
+// resolveGradingCheck expands template variables with the engine that runs
+// the challenge's setup (scenario or incident).
 func resolveGradingCheck(c *challenge.Challenge, k checks.Check) checks.Check {
 	if c.Setup.Type == "scenario" {
 		return scenes.ResolveCheck(k)

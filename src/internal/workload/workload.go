@@ -8,21 +8,20 @@
 package workload
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
 
-// DefaultApp is the workload every scenario binds to unless the user chooses
-// another. It is the single source of the name: config's APP_NAME default reads
-// it, so the two cannot drift.
+// DefaultApp is the app scenarios bind to unless the user picks another. The
+// APP_NAME default in internal/config uses this constant.
 const DefaultApp = "go-api"
 
 // DefaultPort is the HTTP port the app contract requires a workload to serve on.
 const DefaultPort = "8080"
 
-// DefaultMetric is the request-duration histogram the app contract requires.
-// The name is OpenTelemetry semantic conventions rather than one SnowOps Labs
-// invented, so an already-instrumented app arrives close to conformant.
+// DefaultMetric is the default request-duration histogram name. It follows the
+// OpenTelemetry semantic conventions, which many instrumented apps already use.
 const DefaultMetric = "http_server_request_duration_seconds"
 
 // Workload is a resolved binding: which app, deployed where, reachable how.
@@ -33,9 +32,8 @@ type Workload struct {
 	Namespace string
 	// Port is the port serving HTTP.
 	Port string
-	// Metric is the request-duration histogram the app exposes. Named rather
-	// than assumed: each language's instrumentation library picks its own, and a
-	// scenario that hardcodes one grades the language instead of the engineer.
+	// Metric is the request-duration histogram the app exposes. Each
+	// language's instrumentation library picks its own name.
 	Metric string
 }
 
@@ -78,11 +76,11 @@ func (w Workload) URL() string {
 	return fmt.Sprintf("http://%s:%s/", svc, w.WithDefaults().Port)
 }
 
-// Validate reports why a binding cannot be used. An unusable binding must fail
-// before anything installs, rather than as a red check half an hour later.
+// Validate reports why a binding cannot be used. Call it before installing
+// anything.
 func (w Workload) Validate() error {
 	if strings.TrimSpace(w.Name) == "" {
-		return fmt.Errorf("workload has no name")
+		return errors.New("workload has no name")
 	}
 	if strings.TrimSpace(w.Namespace) == "" {
 		return fmt.Errorf("workload %q has no namespace", w.Name)

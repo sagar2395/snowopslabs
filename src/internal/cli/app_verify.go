@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -59,8 +60,8 @@ capability it never advertised.`,
 		results := newCheckRunner().RunAll(cmd.Context(), verifyChecks)
 		printCheckResults(results)
 
-		// Naming what was NOT proven matters as much as the passes: an unverified
-		// claim must never read as a verified one.
+		// List the claims that could not be tested, so they are not mistaken
+		// for verified ones.
 		if unproven := c.UnverifiableCapabilities(); len(unproven) > 0 {
 			fmt.Println("\nDeclared, not machine-checked:")
 			for _, u := range unproven {
@@ -88,8 +89,7 @@ func orNoneCaps(caps []workload.Capability) string {
 	return strings.Join(parts, ", ")
 }
 
-// appCapabilitiesCmd documents the closed vocabulary, so an author writing a
-// scenario's requires: does not have to read the source to learn the names.
+// appCapabilitiesCmd lists every valid capability name and its meaning.
 var appCapabilitiesCmd = &cobra.Command{
 	Use:   "capabilities",
 	Short: "List the workload capabilities a scenario may require",

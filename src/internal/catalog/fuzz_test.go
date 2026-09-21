@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package catalog
 
 import (
@@ -43,7 +44,7 @@ var fuzzSeeds = []string{
 	"name: item\nsetup:\n  type: incident\n  ref: {{",
 	string([]byte{0x00, 0x01, 0xff, 0xfe}),
 	"a: &a [*a]", // self-referential alias
-	// M2 references/snippets: malformed shapes must surface as problems, never panic.
+	// Malformed references and snippets.
 	"name: item\nreferences: not-a-list",
 	"name: item\nreferences:\n  - {}",
 	"name: item\nsnippets:\n  - {label: x, yaml: \"a\", path: \"b\"}",

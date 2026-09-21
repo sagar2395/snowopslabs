@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package challenge
 
 import (
@@ -294,9 +295,8 @@ func TestHistory_EmptyIsNil(t *testing.T) {
 	}
 }
 
-// A failed submit must not end the run. Ending it gave the learner one shot,
-// discarded the score they were working towards, and left the injected fault
-// behind with no cleanup path — `abort` refuses once nothing is active.
+// A failed submit must not end the run: the learner can keep working, and
+// `abort` still has an active run to clean up.
 func TestAttemptGradesWithoutEndingTheRun(t *testing.T) {
 	e, cDir := makeEngine(t)
 	writeChallengeYAML(t, cDir, "test-challenge", validChallengeYAML)

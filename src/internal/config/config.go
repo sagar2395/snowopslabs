@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
+
+// Package config finds the project root and loads the lab configuration from
+// .env and the runtime profile's runtime.env, and per-app settings from
+// apps/<name>/app.env.
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,13 +61,10 @@ type Config struct {
 	RegistryIndexURL string
 	RegistryIndexKey string
 
-	// ScriptEnv holds every key defined in the project's .env / runtime.env,
-	// resolved with real environment variables taking precedence over file
-	// values. Callers propagate it to child scripts and Make targets (see
-	// internal/cli.root) so those subprocesses observe the same values the CLI
-	// resolved. This replaces the old side effect where Load mutated the global
-	// process environment via os.Setenv — which leaked one project's values into
-	// the next Load and was not safe to call more than once.
+	// ScriptEnv holds every key defined in .env and runtime.env, with real
+	// environment variables taking precedence over the files. Callers pass it
+	// to child scripts and Make targets so they see the same values the CLI
+	// resolved.
 	ScriptEnv map[string]string
 }
 
@@ -78,19 +81,17 @@ type AppConfig struct {
 	Contract workload.Contract
 }
 
-// Workload is the binding this app resolves to, taking its port and metric from
-// the app's own contract rather than a compiled-in guess.
+// Workload returns the binding for this app, with the port and metric taken
+// from the app's declared contract.
 func (a *AppConfig) Workload() workload.Workload {
 	return a.Contract.Workload(a.AppName, a.Namespace)
 }
 
 // Load reads the project configuration from .env and the profile's runtime.env.
 //
-// Load is pure with respect to the process environment: it never calls
-// os.Setenv, so it can be called repeatedly (a long-running server, an
-// in-process profile switch) or concurrently without one call's values leaking
-// into the next. Resolution precedence for every key is: real environment
-// variable (if set and non-empty) > .env > runtime.env > built-in default.
+// Load never modifies the process environment, so it is safe to call more
+// than once or concurrently. For every key the first non-empty value wins, in
+// this order: real environment variable, .env, runtime.env, built-in default.
 func Load(projectRoot string) (*Config, error) {
 	if projectRoot == "" {
 		var err error
@@ -104,9 +105,8 @@ func Load(projectRoot string) (*Config, error) {
 		ProjectRoot: projectRoot,
 	}
 
-	// Parse the env files into a local map instead of the global environment.
-	// .env is merged first and wins over runtime.env (mergeEnvFile does not
-	// overwrite keys already present), matching the previous load order.
+	// .env is merged first, and mergeEnvFile never overwrites a key, so .env
+	// wins over runtime.env.
 	fileVals := map[string]string{}
 	mergeEnvFile(fileVals, filepath.Join(projectRoot, ".env"))
 
@@ -114,16 +114,14 @@ func Load(projectRoot string) (*Config, error) {
 	// .env or the real environment.
 	profile := resolveEnv(fileVals, "PROFILE", "k3d")
 
-	// Validate that the profile directory exists.
 	runtimeDir := filepath.Join(projectRoot, "runtimes", profile)
-	if _, err := os.Stat(runtimeDir); os.IsNotExist(err) {
+	if _, err := os.Stat(runtimeDir); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("runtime profile %q not found in runtimes/; available profiles: %s",
 			profile, availableProfiles(projectRoot))
 	}
 
 	mergeEnvFile(fileVals, filepath.Join(runtimeDir, "runtime.env"))
 
-	// Populate config from the resolved values.
 	cfg.Profile = profile
 	cfg.ClusterName = resolveEnv(fileVals, "CLUSTER_NAME", "snowops")
 	cfg.HTTPPort = resolveEnv(fileVals, "HTTP_PORT", "80")
@@ -155,9 +153,8 @@ func Load(projectRoot string) (*Config, error) {
 	cfg.RegistryIndexURL = resolveEnv(fileVals, "PACK_REGISTRY_INDEX", "https://snowops.github.io/registry/index.json")
 	cfg.RegistryIndexKey = resolveEnv(fileVals, "PACK_REGISTRY_KEY", "")
 
-	// Expose the resolved value of every file-declared key so callers can pass
-	// them to child processes (scripts, Make) explicitly — the propagation the
-	// old os.Setenv side effect used to provide, now without the global mutation.
+	// Resolve every key the files declare, so callers can pass them on to
+	// child processes.
 	cfg.ScriptEnv = make(map[string]string, len(fileVals))
 	for k := range fileVals {
 		cfg.ScriptEnv[k] = resolveEnv(fileVals, k, fileVals[k])
@@ -169,12 +166,12 @@ func Load(projectRoot string) (*Config, error) {
 // LoadAppConfig reads app-specific config from apps/<name>/app.env.
 func LoadAppConfig(projectRoot, appName string) (*AppConfig, error) {
 	appDir := filepath.Join(projectRoot, "apps", appName)
-	if _, err := os.Stat(appDir); os.IsNotExist(err) {
+	if _, err := os.Stat(appDir); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("app %q not found in apps/; available apps: %s",
 			appName, availableApps(projectRoot))
 	}
 	appEnv := filepath.Join(appDir, "app.env")
-	if _, err := os.Stat(appEnv); os.IsNotExist(err) {
+	if _, err := os.Stat(appEnv); errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("app %q exists but has no app.env", appName)
 	}
 
@@ -234,12 +231,9 @@ func findProjectRoot() (string, error) {
 		return "", err
 	}
 
-	// Identify the repo root by user-facing content the CLI depends on at
-	// runtime: scenarios/ (declarative content) plus runtimes/ (cluster
-	// profiles). Both live at the content root, unaffected by the Go source
-	// moving under src/. We key on these rather than Makefile so a make-free
-	// checkout — the release binary dropped next to a git clone — is still
-	// auto-detected. --project-dir overrides.
+	// The project root is the nearest directory with both scenarios/ and
+	// runtimes/. Keying on content rather than a Makefile also finds a checkout
+	// used with a downloaded binary. --project-dir overrides this search.
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "scenarios")); err == nil {
 			if _, err := os.Stat(filepath.Join(dir, "runtimes")); err == nil {
@@ -248,22 +242,21 @@ func findProjectRoot() (string, error) {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("could not find project root (looked for scenarios/ + runtimes/)")
+			return "", errors.New("could not find project root (looked for scenarios/ + runtimes/)")
 		}
 		dir = parent
 	}
 }
 
-// mergeEnvFile parses a KEY=VALUE env file into dst without touching the global
-// process environment. Keys already present in dst are left untouched, so an
-// earlier merge (e.g. .env) wins over a later one (runtime.env). A missing or
-// unreadable file is silently ignored — both files are optional.
+// mergeEnvFile parses a KEY=VALUE file into dst. Keys already in dst are kept,
+// so the file merged first wins. A missing or unreadable file is ignored,
+// because both env files are optional.
 func mergeEnvFile(dst map[string]string, path string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return
 	}
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -311,10 +304,9 @@ func parseEnvValue(raw string) string {
 	return v
 }
 
-// resolveEnv returns the value for key with real environment variables taking
-// precedence over the parsed file values, and defaultVal when neither supplies a
-// non-empty value. An empty string (from either source) is treated as unset, so
-// a blank assignment falls back to the default — the previous behaviour.
+// resolveEnv returns the real environment variable for key if it is non-empty,
+// else the file value if non-empty, else defaultVal. A blank assignment
+// therefore falls back to the default.
 func resolveEnv(fileVals map[string]string, key, defaultVal string) string {
 	if v, ok := os.LookupEnv(key); ok && v != "" {
 		return v

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -90,9 +91,8 @@ var scenarioUpCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		// Make sure the scenario's prerequisite apps are actually running before
-		// we install into them. Without --deploy-prereqs this returns an error
-		// naming the exact commands to fix it.
+		// Check the prerequisite apps are running, or deploy them with
+		// --deploy-prereqs.
 		s, err := scenes.Get(name)
 		if err != nil {
 			return err
@@ -100,12 +100,10 @@ var scenarioUpCmd = &cobra.Command{
 		if err := ensureAppsDeployed(cmd.Context(), scenes.ResolvedPrereqApps(s), scenarioDeployPrereqs); err != nil {
 			return err
 		}
-		// Platform prerequisites (opencost, prometheus, ingress, …) are not
-		// auto-installed; warn up front if any is missing so a later check
-		// failure isn't the first the learner hears of it.
+		// Platform prerequisites are not installed automatically; warn about
+		// any that look missing.
 		warnMissingPlatformPrereqs(cmd.Context(), os.Stderr, s.Prerequisites.Platform)
-		// An already-active scenario is a friendly no-op unless --force (which
-		// re-installs; components are idempotent).
+		// An already-active scenario is left alone unless --force is given.
 		if s.Active && !scenarioUpForce {
 			fmt.Fprintf(os.Stderr, "Scenario %s is already active. Re-run with --force to reinstall.\n", name)
 			return nil
@@ -131,7 +129,7 @@ var scenarioDownCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Scenario %s is not active.\n", name)
 			return nil
 		}
-		// Tear down against the workload the scenario was brought up against.
+		// Tear down using the app the scenario was activated against.
 		if err := rebindTo(scenes.ActiveApp(name)); err != nil {
 			return err
 		}
@@ -166,8 +164,7 @@ var scenarioStatusCmd = &cobra.Command{
 			return nil
 		}
 
-		// With a name argument, report just that scenario's status instead of
-		// listing every active one — matching what `status <name>` implies.
+		// With a name, report only that scenario.
 		if len(args) == 1 {
 			name := args[0]
 			for _, s := range statuses {
@@ -229,8 +226,8 @@ With --watch, checks are re-run every --interval until they all pass or
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true, // a failing check is a result, not a usage error
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Grade against the workload the scenario was activated against — the
-		// check scripts read WORKLOAD_* from the executor environment.
+		// Check the app the scenario was activated against; check scripts read
+		// WORKLOAD_* from scriptExec.
 		if err := rebindTo(scenes.ActiveApp(args[0])); err != nil {
 			return err
 		}
@@ -250,9 +247,8 @@ With --watch, checks are re-run every --interval until they all pass or
 				recordScenarioVerify(args[0], results, startedAt)
 				return nil
 			}
-			// Separate genuine failures from checks that are merely pending the
-			// user's next drill step, so "you haven't run backup yet" never reads
-			// as "the scenario is broken".
+			// Count failures separately from pending checks, which are waiting
+			// for the learner's next step.
 			var failed, pending int
 			for _, r := range results {
 				switch {
@@ -267,8 +263,7 @@ With --watch, checks are re-run every --interval until they all pass or
 				printVerifyRemediation(results)
 				recordScenarioVerify(args[0], results, startedAt)
 				if failed == 0 && pending > 0 {
-					// Nothing regressed — the scenario just isn't finished. Report
-					// it as an incomplete drill, not a failure.
+					// Nothing failed; the learner has steps left to do.
 					return fmt.Errorf("%d step(s) still pending — complete the drill above, then re-verify", pending)
 				}
 				return fmt.Errorf("%d of %d checks failed", failed, len(results))
@@ -280,10 +275,9 @@ With --watch, checks are re-run every --interval until they all pass or
 	},
 }
 
-// recordScenarioVerify appends a scenario-verification record to the results
-// history — the scenario's objectives plus each check's pass/fail — so `results`
-// and the UI can show whether the user actually solved the scenario.
-// Best-effort: a history write must never fail the verify command itself.
+// recordScenarioVerify appends a scenario verification record, with the
+// objectives and each check's result, to the results history. Errors are
+// ignored so they never fail the verify.
 func recordScenarioVerify(name string, results []checks.Result, startedAt time.Time) {
 	var objectives []string
 	if s, err := scenes.Get(name); err == nil {
@@ -293,8 +287,7 @@ func recordScenarioVerify(name string, results []checks.Result, startedAt time.T
 	_ = resultspkg.NewStore(filepath.Join(cfg.ProjectRoot, ".labctl", "history")).Append(rec)
 }
 
-// checkOutcomes flattens check results into the compact display shape the
-// results store records.
+// checkOutcomes converts check results to the form the results store records.
 func checkOutcomes(results []checks.Result) []resultspkg.CheckOutcome {
 	out := make([]resultspkg.CheckOutcome, 0, len(results))
 	for _, r := range results {
@@ -307,9 +300,9 @@ func checkOutcomes(results []checks.Result) []resultspkg.CheckOutcome {
 	return out
 }
 
-// newCheckRunner builds a check runner wired to the lab's config: the
-// Prometheus endpoint (PROMETHEUS_URL env override, else the ingress
-// hostname) and the standard script environment.
+// newCheckRunner builds a check runner for the lab: Prometheus at
+// PROMETHEUS_URL or the ingress hostname, and the standard script
+// environment.
 func newCheckRunner() *checks.Runner {
 	r := checks.NewRunner()
 	r.DefaultTimeout = verifyCheckTimeout
@@ -318,16 +311,12 @@ func newCheckRunner() *checks.Runner {
 		promURL = "http://prometheus." + cfg.DomainSuffix
 	}
 	r.PrometheusURL = promURL
-	// A check script grades the bound workload, so it needs the workload's
-	// identity for the same reason a component script does (ADR-0014).
-	// Without these a check can only hardcode an app name, which is the thing
-	// the workload binding exists to remove.
+	// Check scripts need the bound app, as component scripts do (ADR-0014).
 	r.Env = []string{
 		"DOMAIN_SUFFIX=" + cfg.DomainSuffix,
 		"MONITORING_NAMESPACE=" + cfg.MonitoringNamespace,
 		"PROJECT_ROOT=" + cfg.ProjectRoot,
-		// The same Prometheus the promql checks use, so a script check and a
-		// promql check in one scenario cannot disagree about where to look.
+		// The same Prometheus the promql checks use.
 		"PROMETHEUS_URL=" + promURL,
 		"WORKLOAD_NAME=" + scenes.Workload.Name,
 		"WORKLOAD_NAMESPACE=" + scenes.Workload.Namespace,
@@ -342,9 +331,8 @@ func printCheckResults(results []checks.Result) {
 	for _, r := range results {
 		mark := "PASS"
 		if !r.Pass {
-			// A check declared pending is expected to be red until the user
-			// performs the matching drill step — render it as PENDING, not a
-			// hard FAIL, so it doesn't read as breakage.
+			// A pending check fails until the learner does the matching step,
+			// so show it as PENDING rather than FAIL.
 			if r.Pending {
 				mark = "PENDING"
 			} else {
@@ -370,13 +358,9 @@ func orDash(s string) string {
 	return s
 }
 
-// printVerifyRemediation prints targeted next-step guidance for the checks that
-// did not pass, instead of the old blanket "pods may still be starting" line
-// that misdirected troubleshooting whenever the real fix was an action (take a
-// backup, restore the marker). Each failing check with a declared Remediation
-// gets its own line; the generic pods/--watch hint is printed only when a check
-// failed with no remediation of its own — the case where waiting might actually
-// help (a rollout still settling).
+// printVerifyRemediation prints the next step for each failed check that
+// declares a remediation. The general "pods may still be starting" hint is
+// printed only if a check failed without one.
 func printVerifyRemediation(results []checks.Result) {
 	var steps []string
 	genericFailure := false
@@ -405,7 +389,7 @@ func printVerifyRemediation(results []checks.Result) {
 }
 
 // bindForScenario binds a read-only command to the app it describes: the one
-// --app names, or else the app the scenario was activated for.
+// --app names, or else the app the scenario was activated against.
 func bindForScenario(cmd *cobra.Command, name string) error {
 	if f := cmd.Flags().Lookup("app"); f != nil && f.Changed {
 		return nil
@@ -454,9 +438,7 @@ var scenarioInfoCmd = &cobra.Command{
 			return err
 		}
 
-		// Resolve with the scenario's parameter defaults, exactly as the HTTP API
-		// does for the UI. Without them the CLI printed a raw "{{.MinReplicas}}"
-		// for the same snippet the UI rendered as a real number.
+		// Expand with the scenario's parameter defaults, as the API does.
 		defaults := scenes.ParamDefaults(s)
 		resolve := func(in string) string { return scenes.ResolveTemplateWithParams(in, defaults) }
 
@@ -483,8 +465,7 @@ var scenarioInfoCmd = &cobra.Command{
 				fmt.Printf("  - %s\n", a)
 			}
 		}
-		// Show the requirement against the app actually bound, so a reader sees
-		// whether THIS lab can run the scenario, not just what it asks for.
+		// Show whether the bound app meets each requirement.
 		if len(s.Prerequisites.Capabilities) > 0 {
 			fmt.Printf("\nPrerequisites (workload capabilities), bound to %q:\n", scenes.Workload.Name)
 			for _, name := range s.Prerequisites.Capabilities {
@@ -496,9 +477,7 @@ var scenarioInfoCmd = &cobra.Command{
 			}
 		}
 
-		// Parameters are the knobs a learner is meant to turn — including the
-		// SLO a scenario grades against. Left unlisted, a threshold reads as an
-		// unexplained constant rather than a choice.
+		// List the parameters, which the learner can change with --set.
 		if len(s.Parameters) > 0 {
 			fmt.Printf("\nParameters (override with --set Name=value):\n")
 			for _, p := range s.Parameters {

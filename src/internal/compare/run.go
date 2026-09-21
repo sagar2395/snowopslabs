@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package compare
 
 import (
@@ -9,9 +10,8 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/workload"
 )
 
-// Lab is the side-effecting half of a comparison: everything that changes the
-// cluster. It is an interface so the ordering rules below — which are what make
-// a comparison fair — can be tested without a cluster.
+// Lab is everything a comparison does that changes the cluster. It is an
+// interface so the ordering rules in Run can be tested without a cluster.
 type Lab interface {
 	// Bind resolves an app name to its workload contract.
 	Bind(app string) (workload.Workload, error)
@@ -23,8 +23,8 @@ type Lab interface {
 	TrafficStop(ctx context.Context) error
 }
 
-// Sleeper waits, and gives up when the context does. Injected so tests do not
-// spend the warmup.
+// Sleeper waits for a duration or until the context ends. Tests replace it so
+// they do not wait out the warmup.
 type Sleeper func(ctx context.Context, d time.Duration) error
 
 // RealSleeper waits on a timer or the context, whichever comes first.
@@ -42,9 +42,8 @@ func RealSleeper(ctx context.Context, d time.Duration) error {
 	}
 }
 
-// Report is one comparison: the conditions every workload was held to, and what
-// each one did under them. The conditions are recorded with the numbers because
-// a measurement without them cannot be compared with anything.
+// Report is one comparison: the conditions every workload was measured under,
+// and each workload's results.
 type Report struct {
 	Scenario      string        `json:"scenario"`
 	Apps          []string      `json:"apps"`
@@ -57,8 +56,8 @@ type Report struct {
 	Measurements  []Measurement `json:"measurements"`
 }
 
-// Options returns the fair-run controls this report was produced under, so a
-// stored report renders exactly as it did when it ran.
+// Options returns the conditions this report was produced under, so a stored
+// report renders as it did when it ran.
 func (r *Report) Options() Options {
 	return Options{
 		Scenario: r.Scenario, Apps: r.Apps, Profile: r.Profile, RPS: r.RPS,
@@ -69,24 +68,18 @@ func (r *Report) Options() Options {
 
 // Run measures every app in turn under identical conditions.
 //
-// Four rules make the result a comparison rather than two unrelated runs, and
-// each is enforced here rather than left to the caller:
+// Run enforces four rules so the results are comparable:
 //
-//  1. **One workload at a time.** Two apps measured concurrently share the
-//     node's CPU, so each would be measured under the other's load — and the
-//     one scheduled second would look slower on every run.
-//  2. **The same conditions throughout.** Profile, rate and window come from a
-//     single Options, validated once before anything is deployed.
-//  3. **Warmup is excluded.** Load runs for Warmup before the window opens.
-//     Measuring from the first request compares class loading and JIT warm-up,
-//     which is how a comparison ends up reporting the runtime rather than the
-//     application.
-//  4. **Each app starts from the same state.** The scenario is torn down after
-//     every app, so the second is not measured on a cluster the first left
-//     scaled up.
+//  1. One workload at a time. Apps measured together would compete for the
+//     same CPU.
+//  2. The same conditions for every app, from one validated Options.
+//  3. Warmup is excluded: load runs for Warmup before the measured window
+//     starts.
+//  4. Every app starts from the same state: the scenario is torn down after
+//     each app.
 //
-// A failure on any app fails the whole run: a comparison missing a column is
-// not a comparison, and reporting one silently would be worse than stopping.
+// If any app fails, the whole run fails, since a comparison with a missing
+// workload is not useful.
 func Run(ctx context.Context, o Options, lab Lab, q Querier, sleep Sleeper) (*Report, error) {
 	if err := o.Validate(); err != nil {
 		return nil, err
@@ -113,8 +106,8 @@ func Run(ctx context.Context, o Options, lab Lab, q Querier, sleep Sleeper) (*Re
 	return rep, nil
 }
 
-// runOne measures a single workload and always tears down what it set up, so a
-// failure midway does not leave the next app measuring a dirty cluster.
+// runOne measures a single workload and always tears down what it set up,
+// even when it fails part-way.
 func runOne(ctx context.Context, o Options, lab Lab, q Querier, sleep Sleeper, app string) (Measurement, error) {
 	var zero Measurement
 
@@ -129,8 +122,8 @@ func runOne(ctx context.Context, o Options, lab Lab, q Querier, sleep Sleeper, a
 		return zero, fmt.Errorf("activating %s: %w", o.Scenario, err)
 	}
 
-	// Teardown runs on every path out, including a cancelled context, and its
-	// own failure never masks the failure that caused it.
+	// Teardown runs on every return path, including cancellation. A teardown
+	// error never replaces the error that caused the return.
 	defer func() {
 		_ = lab.TrafficStop(context.WithoutCancel(ctx))
 		_ = lab.ScenarioDown(context.WithoutCancel(ctx), o.Scenario, w)
@@ -140,14 +133,9 @@ func runOne(ctx context.Context, o Options, lab Lab, q Querier, sleep Sleeper, a
 		return zero, fmt.Errorf("starting traffic: %w", err)
 	}
 
-	// Wait for load to actually arrive before the warmup clock starts.
-	//
-	// Starting the generator is not the same as being under load: the job has
-	// to be scheduled, pull an image and ramp, which took longer than a 30s
-	// warmup on the first real run of this harness. The window then opened on
-	// an idle app and the comparison reported 0.3 req/s against 30 requested —
-	// a plausible-looking table built on no load at all, which is worse than an
-	// error because nothing about it says the run was void.
+	// Wait until load is actually reaching the app before starting the warmup.
+	// The traffic job must be scheduled, pull its image and ramp up, which can
+	// take longer than the warmup itself.
 	if err := awaitLoad(ctx, q, w, o, sleep); err != nil {
 		return zero, err
 	}
@@ -158,16 +146,14 @@ func runOne(ctx context.Context, o Options, lab Lab, q Querier, sleep Sleeper, a
 		return zero, fmt.Errorf("during the measured window: %w", err)
 	}
 
-	// Measured after the window has closed, looking back over exactly its
-	// length — so the warmup is outside the range, not merely before it.
+	// Measure after the window ends, over exactly its length, so the warmup
+	// falls outside the queried range.
 	m, err := Measure(ctx, q, w, o.Window)
 	if err != nil {
 		return zero, err
 	}
-	// A window that saw almost none of the offered load did not measure this
-	// workload; it measured the gap where the load should have been. Refusing
-	// is the only honest answer, because every other number in the row was
-	// taken under conditions the comparison does not describe.
+	// If the app served almost none of the offered load during the window,
+	// the numbers do not describe it under load, so fail instead.
 	if got := m.Values[KeyRPS]; got < minServedFraction*float64(o.RPS) {
 		return zero, fmt.Errorf(
 			"only %.1f req/s of the %d offered reached the workload during the measured window; "+
@@ -176,32 +162,27 @@ func runOne(ctx context.Context, o Options, lab Lab, q Querier, sleep Sleeper, a
 	return m, nil
 }
 
-// minServedFraction is how much of the offered rate must actually be served for
-// a window to count. Well below 1 because a saturated workload legitimately
-// serves less than it is offered — which is a finding, not a void run — but far
-// enough above 0 to catch a generator that never started.
+// minServedFraction is the share of the offered rate an app must serve for its
+// window to count. It is well below 1, since an overloaded app legitimately
+// serves less, but high enough to catch load that never arrived.
 const minServedFraction = 0.5
 
-// loadSettleTimeout bounds the wait for load to arrive. Generous, because it
-// covers scheduling and an image pull on a cold node.
+// loadSettleTimeout is how long to wait for load to arrive, including pod
+// scheduling and an image pull.
 const loadSettleTimeout = 3 * time.Minute
 
-// loadPollWindow is the range awaitLoad reads over.
-//
-// It must span at least two scrapes, because `rate()` over a range holding one
-// sample returns nothing at all. Measured the hard way: a 30s range on this
-// lab's 30s scrape interval reported "no samples" for a workload that was
-// serving exactly the 30 req/s it had been asked for, and the run aborted
-// saying the load never arrived.
+// loadPollWindow is the range awaitLoad queries. It must hold at least two
+// scrapes, because rate() over a single sample returns nothing; with a 30s
+// scrape interval, 30s is too short.
 const loadPollWindow = 2 * time.Minute
 
-// loadArrivedFraction is how much of the offered rate counts as "load is
-// flowing". Well below the measurement threshold because this range starts
-// before the generator did and averages the idle time in with the rest — the
-// strict check is on the measured window, where the whole range is under load.
+// loadArrivedFraction is the share of the offered rate that counts as "load
+// has arrived". It is lower than minServedFraction because the polled range
+// can include time before the load started.
 const loadArrivedFraction = 0.2
 
-// awaitLoad blocks until load is actually reaching the workload.
+// awaitLoad blocks until load is reaching the workload, or loadSettleTimeout
+// passes.
 func awaitLoad(ctx context.Context, q Querier, w workload.Workload, o Options, sleep Sleeper) error {
 	const poll = 10 * time.Second
 	want := loadArrivedFraction * float64(o.RPS)

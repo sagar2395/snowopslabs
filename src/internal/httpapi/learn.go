@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package httpapi
 
 import (
@@ -86,7 +87,7 @@ func (s *Server) handleLearnPath(w http.ResponseWriter, r *http.Request) {
 			Completed:   completed[i],
 		}
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	respondJSON(w, http.StatusOK, map[string]any{
 		"name":        p.Name,
 		"displayName": p.DisplayName,
 		"description": p.Description,
@@ -95,12 +96,11 @@ func (s *Server) handleLearnPath(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// learnProgressPayload is the single, canonical serialization of a started
-// path's progress. start/progress/complete all return this exact shape so the
-// UI can trust the `started`/`nextIdx`/`total` fields no matter which endpoint
-// produced them (the raw learn.Progress carries none of those derived fields).
-func learnProgressPayload(p *learn.Path, prog *learn.Progress) map[string]interface{} {
-	return map[string]interface{}{
+// learnProgressPayload returns a started path's progress as the start,
+// progress and complete endpoints all send it, including the started, nextIdx
+// and total fields that learn.Progress does not have.
+func learnProgressPayload(p *learn.Path, prog *learn.Progress) map[string]any {
+	return map[string]any{
 		"path":      prog.PathName,
 		"started":   true,
 		"completed": prog.CompletedIdxs,
@@ -127,8 +127,8 @@ func (s *Server) handleLearnStart(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, learnProgressPayload(p, prog))
 }
 
-// handleLearnReset discards a path's progress so the learner starts over. It is
-// intentionally distinct from lab reset — progress is not cluster state.
+// handleLearnReset discards a path's progress so the learner can start over.
+// It does not touch the cluster.
 func (s *Server) handleLearnReset(w http.ResponseWriter, r *http.Request) {
 	name := mux.Vars(r)["name"]
 	eng := learnEngine(s)
@@ -136,7 +136,7 @@ func (s *Server) handleLearnReset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	respondJSON(w, http.StatusOK, map[string]interface{}{"path": name, "started": false})
+	respondJSON(w, http.StatusOK, map[string]any{"path": name, "started": false})
 }
 
 func (s *Server) handleLearnProgress(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +148,7 @@ func (s *Server) handleLearnProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if prog == nil {
-		respondJSON(w, http.StatusOK, map[string]interface{}{"path": name, "started": false})
+		respondJSON(w, http.StatusOK, map[string]any{"path": name, "started": false})
 		return
 	}
 	p, err := eng.LoadPath(name)

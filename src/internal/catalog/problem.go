@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package catalog
 
 import "fmt"
@@ -15,8 +16,8 @@ type Problem struct {
 }
 
 // String renders the problem as "file:line: [kind/name] message", omitting the
-// line when it is unknown. This is the golden-file-stable form used by
-// `labctl validate`.
+// line when it is unknown. `labctl validate` prints this form, and golden
+// tests depend on it.
 func (p Problem) String() string {
 	loc := p.File
 	if p.Line > 0 {

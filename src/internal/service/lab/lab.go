@@ -1,24 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package lab moves cluster lifecycle — bring a lab up, tear it down, ask its
-// status — onto the durable run engine (internal/run), so every operation is
-// cancellable, time-bounded, and recorded in the store rather than shelled out
-// and forgotten (ADR-0003/0004/0006).
+// Package lab brings a cluster up, tears it down and reports its status, with
+// each operation running as a recorded, cancellable run on the run engine.
 //
-// It sets the shape the platform, scenario and incident services follow:
+// The platform, scenario and incident services follow the same pattern:
 //
-//   - A service is a thin façade over the engine. It owns the run Kind, the
-//     exclusive LockKey and the name-to-script mapping; it executes nothing.
-//   - Mutations return a run ID immediately — callers stream progress from the
-//     store rather than blocking here.
-//   - Status comes from the store, with an opt-in live probe for callers that
-//     need ground truth.
+//   - The service decides the run kind, the lock key and which script runs;
+//     the run engine executes it.
+//   - Operations return a run ID at once; callers follow progress through the
+//     store instead of waiting.
+//   - Status is read from the store, with an optional live check of the
+//     cluster.
 //
-// Snapshot and reset stay on their existing path (internal/lab).
+// Snapshots and reset live in internal/lab.
 package lab
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"regexp"
@@ -28,26 +27,24 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
-// LockKey serialises every cluster-lifecycle operation. Bringing a lab up while
-// a teardown is in flight (or vice versa) is never valid, so up and down share
-// one key: the engine refuses the second with a *run.LockConflictError (409).
+// LockKey is the lock both up and down take, so one cannot start while the
+// other is in flight; the engine refuses the second with a
+// *run.LockConflictError.
 const LockKey = "lab"
 
-// Run kinds. They match internal/run's DefaultTimeouts so up gets the long
-// cluster-build budget and down the shorter teardown one.
+// Run kinds. Each has an entry in run.DefaultTimeouts.
 const (
 	KindUp   = "lab.up"
 	KindDown = "lab.down"
 )
 
-// validRuntime guards the name that becomes a path segment (runtimes/<name>/…).
-// The resolver would reject an escaping path anyway, but validating here turns a
-// typo into a clear "unknown runtime" instead of a "script not found".
+// validRuntime restricts runtime names, which become a path segment
+// (runtimes/<name>/). Checking here gives a clearer error than the resolver's
+// "script not found".
 var validRuntime = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,30}$`)
 
-// Prober reports whether the cluster is reachable right now. It is the seam for
-// Status(..., live=true): production wires a kubectl/API probe, tests inject a
-// deterministic one. A nil Prober means live probing is unavailable.
+// Prober reports whether the cluster is reachable right now. Status calls it
+// when live is true; a nil Prober disables the live check.
 type Prober func(ctx context.Context) (Liveness, error)
 
 // Liveness is the result of a live cluster probe.
@@ -57,7 +54,8 @@ type Liveness struct {
 	Detail    string `json:"detail,omitempty"`  // human-readable note (version, error)
 }
 
-// Service is the durable lab-lifecycle façade.
+// Service submits lab operations to the run engine and reports lab state from
+// the store.
 type Service struct {
 	engine  *run.Engine
 	store   *store.Store
@@ -72,22 +70,20 @@ type Option func(*Service)
 // WithProber attaches a live cluster prober used by Status when live=true.
 func WithProber(p Prober) Option { return func(s *Service) { s.prober = p } }
 
-// WithEnv layers configuration onto the runtime scripts' environment. The
-// scripts read values like HTTP_PORT and DOMAIN_SUFFIX as ${VAR:-default}
-// (golden rule 3), so the caller passes the resolved config here rather than
-// letting a script source .env itself.
+// WithEnv sets the environment for runtime scripts. They read settings such as
+// HTTP_PORT and DOMAIN_SUFFIX as ${VAR:-default} and never source .env.
 func WithEnv(env map[string]string) Option {
 	return func(s *Service) { s.env = env }
 }
 
-// New builds a lab Service over the given engine and store. clusterName is the
-// argument passed to the runtime scripts (they read it as argv[1]).
+// New builds a lab Service. clusterName is passed to the runtime scripts as
+// their first argument.
 func New(engine *run.Engine, st *store.Store, clusterName string, opts ...Option) (*Service, error) {
 	if engine == nil {
-		return nil, fmt.Errorf("lab: a run engine is required")
+		return nil, errors.New("lab: a run engine is required")
 	}
 	if st == nil {
-		return nil, fmt.Errorf("lab: a store is required")
+		return nil, errors.New("lab: a store is required")
 	}
 	s := &Service{engine: engine, store: st, cluster: clusterName}
 	for _, opt := range opts {
@@ -96,9 +92,8 @@ func New(engine *run.Engine, st *store.Store, clusterName string, opts ...Option
 	return s, nil
 }
 
-// Up submits a cluster bring-up for the named runtime and returns the run ID.
-// It does not wait: the caller streams the run's progress. A concurrent lab
-// operation is refused with *run.LockConflictError.
+// Up submits a cluster bring-up for the named runtime and returns the run ID
+// without waiting for it to finish.
 func (s *Service) Up(ctx context.Context, runtime string) (string, error) {
 	return s.submit(ctx, KindUp, runtime, "up.sh")
 }
@@ -112,8 +107,8 @@ func (s *Service) submit(ctx context.Context, kind, runtime, script string) (str
 	if !validRuntime.MatchString(runtime) {
 		return "", fmt.Errorf("lab: invalid runtime %q (expected a name like k3d, kind, incluster)", runtime)
 	}
-	// path.Join (not filepath) keeps the script relative and slash-separated,
-	// which is what the engine's content-root resolver expects.
+	// path.Join, not filepath.Join: the resolver expects slash-separated
+	// relative paths.
 	spec := run.Spec{
 		Kind:    kind,
 		Target:  runtime,
@@ -127,9 +122,7 @@ func (s *Service) submit(ctx context.Context, kind, runtime, script string) (str
 	return s.engine.Submit(ctx, spec)
 }
 
-// Cancel stops an in-flight lab run. Cancellation reaches the whole process
-// group via the engine, so a cancelled `lab up` leaves no orphaned k3d/kubectl
-// children behind (ADR-0003).
+// Cancel stops an in-flight lab run, including any child processes it started.
 func (s *Service) Cancel(ctx context.Context, runID string) error {
 	return s.engine.Cancel(ctx, runID)
 }
@@ -137,6 +130,7 @@ func (s *Service) Cancel(ctx context.Context, runID string) error {
 // State is the lab's lifecycle state as understood from the run history.
 type State string
 
+// Lab states.
 const (
 	StateUnknown      State = "unknown"      // no lab operation has ever been recorded
 	StateUp           State = "up"           // the last completed operation was a successful up
@@ -146,7 +140,7 @@ const (
 	StateError        State = "error"        // the last completed operation failed
 )
 
-// Status is a point-in-time answer about the lab, derived from the store.
+// Status describes the lab at one moment, as read from the store.
 type Status struct {
 	State   State     `json:"state"`
 	Runtime string    `json:"runtime,omitempty"` // the runtime the deciding run acted on
@@ -156,12 +150,10 @@ type Status struct {
 	Live *Liveness `json:"live,omitempty"`
 }
 
-// Status answers from the store — no cluster round-trip — so it stays fast and
-// works even when the cluster is unreachable. When live is true and a Prober is
-// configured, it additionally attaches a fresh cluster probe.
-//
-// The store read is the deciding one: an in-flight operation wins (the lab is
-// mid-transition), otherwise the most recent completed up/down decides.
+// Status reads the lab state from the store, so it is fast and works when the
+// cluster is unreachable. A queued or running operation takes precedence;
+// otherwise the most recent finished up or down decides. When live is true and
+// a Prober is set, the result also includes a live cluster check.
 func (s *Service) Status(ctx context.Context, live bool) (Status, error) {
 	st, err := s.deriveState(ctx)
 	if err != nil {
@@ -178,7 +170,6 @@ func (s *Service) Status(ctx context.Context, live bool) (Status, error) {
 }
 
 func (s *Service) deriveState(ctx context.Context) (Status, error) {
-	// An in-flight lab run means the lab is mid-transition; report that first.
 	if active, held, err := s.store.ActiveRunForLock(ctx, LockKey); err != nil {
 		return Status{}, err
 	} else if held {
@@ -209,9 +200,8 @@ func (s *Service) deriveState(ctx context.Context) (Status, error) {
 	return st, nil
 }
 
-// lastCompleted returns the most recent terminal up-or-down run. It queries each
-// kind's newest row (both indexed, LIMIT 1) and takes the later of the two,
-// rather than scanning an unbounded window of unrelated runs.
+// lastCompleted returns the most recent finished up or down run, by fetching
+// the newest run of each kind and taking the later one.
 func (s *Service) lastCompleted(ctx context.Context) (store.Run, bool, error) {
 	var best store.Run
 	found := false

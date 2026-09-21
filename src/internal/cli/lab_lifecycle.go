@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -15,18 +16,13 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
-// `labctl lab up|down|status` runs cluster lifecycle through the durable run
-// engine: every bring-up and teardown is cancellable, time-bounded,
-// and recorded in the same store `labctl runs` reads, so an operation can be
-// followed live and read back tomorrow. This replaces the fire-and-forget
-// executor path for the cluster itself; snapshot/restore/reset stay on their
-// existing path until component state lands.
+// `labctl lab up|down|status` run through the run engine, so each bring-up and
+// teardown is cancellable, has a timeout, and is recorded for `labctl runs`.
+// Snapshot, restore and reset are in lab.go.
 
-// labEngineFactory builds a lab service over the shared run-engine bootstrap
-// (see newRunEngine). The engine is returned UN-started: `up`/`down` start it,
-// while read-only `status` must not. Overridable in tests so the lab commands
-// can be exercised hermetically with a Fake runner. cleanup shuts the engine
-// down (a no-op if never started) and closes the store; always defer it.
+// labEngineFactory builds a lab service on a new, unstarted run engine (see
+// newRunEngine). `up` and `down` start it; `status` must not. Tests replace
+// it. Always defer cleanup.
 var labEngineFactory = func(ctx context.Context) (svc *labsvc.Service, st *store.Store, eng *run.Engine, cleanup func(), err error) {
 	eng, st, cleanup, err = newRunEngine(ctx)
 	if err != nil {
@@ -42,9 +38,8 @@ var labEngineFactory = func(ctx context.Context) (svc *labsvc.Service, st *store
 	return svc, st, eng, cleanup, nil
 }
 
-// clusterProber answers `lab status --live` with a real kubectl probe. It never
-// returns an error: an unreachable cluster is a reachable=false result, not a
-// failure of the status command.
+// clusterProber checks the cluster with kubectl for `lab status --live`. It
+// never returns an error; an unreachable cluster gives Reachable=false.
 func clusterProber() labsvc.Prober {
 	return func(ctx context.Context) (labsvc.Liveness, error) {
 		pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -65,9 +60,8 @@ func clusterProber() labsvc.Prober {
 	}
 }
 
-// runLabOperation submits an up/down operation and streams its transcript to the
-// terminal, exiting non-zero if the run does not succeed. The submit closure
-// picks up/down.
+// runLabOperation starts the engine, calls submit (up or down), and streams
+// the run, returning an error if it does not succeed.
 func runLabOperation(cmd *cobra.Command, verb string, submit func(context.Context, *labsvc.Service) (string, error)) error {
 	ctx := cmd.Context()
 
@@ -122,7 +116,7 @@ func labStatusCmd() *cobra.Command {
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			// Status is read-only: build the service but never Start the engine.
+			// Read-only: do not start the engine.
 			svc, _, _, cleanup, err := labEngineFactory(ctx)
 			if err != nil {
 				return err

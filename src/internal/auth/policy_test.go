@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package auth
 
 import "testing"
@@ -28,8 +29,7 @@ func TestRequiresOperator(t *testing.T) {
 		{"POST traffic start is operator", "POST", "/api/traffic/start", true},
 		{"POST traffic stop is operator", "POST", "/api/traffic/stop", true},
 		{"GET traffic is read", "GET", "/api/traffic", false},
-		// The v2 prefix must gate identically to v1 (regression guard: the
-		// operator check used to match only the literal /api/... prefix).
+		// /api/v2 paths must be gated the same as /api paths.
 		{"v2 POST platform up", "POST", "/api/v2/platform/up", true},
 		{"v2 POST runtime activate", "POST", "/api/v2/runtimes/k3d/activate", true},
 		{"v2 POST traffic start is operator", "POST", "/api/v2/traffic/start", true},

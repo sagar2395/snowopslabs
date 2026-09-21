@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package checks
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -118,7 +120,7 @@ func TestRunKubectl_Existence(t *testing.T) {
 func TestRunKubectl_ExecError(t *testing.T) {
 	r := testRunner()
 	r.Exec = func(ctx context.Context, name string, args ...string) (string, error) {
-		return "", fmt.Errorf("kubectl: connection refused")
+		return "", errors.New("kubectl: connection refused")
 	}
 	res := r.Run(context.Background(), Check{
 		Name: "x", Type: "kubectl", Resource: "deploy/x",
@@ -312,13 +314,12 @@ func TestRun_TimeoutRespected(t *testing.T) {
 	}
 }
 
-// TestRun_CarriesAdvisoryMetadata verifies a check's Remediation and Pending
-// fields travel through to the Result, so the CLI/API/UI can render the right
-// next step and distinguish "pending your action" from a genuine regression.
+// TestRun_CarriesAdvisoryMetadata checks that Remediation and Pending are
+// copied to the Result.
 func TestRun_CarriesAdvisoryMetadata(t *testing.T) {
 	r := testRunner()
 	r.Exec = func(ctx context.Context, name string, args ...string) (string, error) {
-		return "", fmt.Errorf("kubectl: not found")
+		return "", errors.New("kubectl: not found")
 	}
 	res := r.Run(context.Background(), Check{
 		Name: "restore-marker-present", Type: "kubectl", Resource: "configmap/restore-marker",

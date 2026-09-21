@@ -1,21 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Package incident moves the mutating half of the break-it/fix-it loop —
-// injecting a fault and resolving it — onto the durable run engine. Both are
-// single scripts (incidents/<name>/{inject,resolve}.sh), so they map onto the
-// engine like lab and platform: a recorded, cancellable run under a lock.
+// Package incident injects and resolves faults as runs on the run engine.
+// Each operation runs one script, incidents/<name>/inject.sh or resolve.sh, as
+// a recorded, cancellable run.
 //
-// One incident is active at a time, so every inject and resolve shares one
-// global "incident" lock: a second inject, or a resolve racing an inject, is
-// refused. Whether one is active is answered from the store.
-//
-// Detection — does the fault's check pass? — is not here. That is a read over
-// the live cluster, owned by the incident engine's checks runner.
+// Only one incident can be active, so every inject and resolve takes the same
+// "incident" lock. Status is read from the store. Checking whether a fault has
+// been fixed is done by internal/incident, not here.
 package incident
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"path"
 	"regexp"
 	"time"
@@ -24,9 +22,8 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
-// LockKey serialises every incident operation. One incident is active at a time,
-// so inject and resolve share this single key — a second inject while one is in
-// flight is refused with a *run.LockConflictError.
+// LockKey is the lock every inject and resolve takes. A second operation while
+// one is in flight is refused with a *run.LockConflictError.
 const LockKey = "incident"
 
 // Run kinds, matching internal/run's DefaultTimeouts.
@@ -35,11 +32,11 @@ const (
 	KindResolve = "incident.resolve"
 )
 
-// validName guards the incident name that becomes a path segment.
+// validName restricts incident names, which become path segments.
 var validName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
-// Target is the workload a fault breaks; exported to its scripts as
-// TARGET_NAMESPACE / TARGET_WORKLOAD, matching the incident engine's contract.
+// Target is the workload a fault breaks. Its scripts receive it as
+// TARGET_NAMESPACE and TARGET_WORKLOAD.
 type Target struct {
 	Namespace string
 	Workload  string
@@ -56,7 +53,8 @@ func (t Target) env() map[string]string {
 	return m
 }
 
-// Service is the durable incident-lifecycle façade.
+// Service submits incident operations to the run engine and reports their
+// state from the store.
 type Service struct {
 	engine *run.Engine
 	store  *store.Store
@@ -66,8 +64,8 @@ type Service struct {
 // Option configures a Service.
 type Option func(*Service)
 
-// WithEnv layers base configuration onto the fault scripts' environment (e.g.
-// DOMAIN_SUFFIX). The fault's own TARGET_* are added per operation.
+// WithEnv sets the base environment for fault scripts, such as DOMAIN_SUFFIX.
+// Each operation adds its own TARGET_* values on top.
 func WithEnv(env map[string]string) Option {
 	return func(s *Service) { s.env = env }
 }
@@ -75,10 +73,10 @@ func WithEnv(env map[string]string) Option {
 // New builds an incident Service over the given engine and store.
 func New(engine *run.Engine, st *store.Store, opts ...Option) (*Service, error) {
 	if engine == nil {
-		return nil, fmt.Errorf("incident: a run engine is required")
+		return nil, errors.New("incident: a run engine is required")
 	}
 	if st == nil {
-		return nil, fmt.Errorf("incident: a store is required")
+		return nil, errors.New("incident: a store is required")
 	}
 	s := &Service{engine: engine, store: st}
 	for _, opt := range opts {
@@ -87,14 +85,14 @@ func New(engine *run.Engine, st *store.Store, opts ...Option) (*Service, error) 
 	return s, nil
 }
 
-// Inject submits a fault's inject.sh and returns the run ID. It does not wait; a
-// second incident operation while one is in flight is refused.
+// Inject submits a fault's inject.sh and returns the run ID without waiting
+// for it to finish.
 func (s *Service) Inject(ctx context.Context, name string, target Target) (string, error) {
 	return s.submit(ctx, KindInject, name, "inject.sh", target)
 }
 
-// Resolve submits a fault's resolve.sh — the escape hatch that always restores
-// the lab.
+// Resolve submits a fault's resolve.sh, which restores the lab, and returns
+// the run ID.
 func (s *Service) Resolve(ctx context.Context, name string, target Target) (string, error) {
 	return s.submit(ctx, KindResolve, name, "resolve.sh", target)
 }
@@ -103,14 +101,10 @@ func (s *Service) submit(ctx context.Context, kind, name, script string, target 
 	if !validName.MatchString(name) {
 		return "", fmt.Errorf("incident: invalid fault name %q", name)
 	}
-	// Base env plus the fault's target, without mutating the shared base map.
+	// Copy, so the shared base map is not modified.
 	env := make(map[string]string, len(s.env)+2)
-	for k, v := range s.env {
-		env[k] = v
-	}
-	for k, v := range target.env() {
-		env[k] = v
-	}
+	maps.Copy(env, s.env)
+	maps.Copy(env, target.env())
 	spec := run.Spec{
 		Kind:    kind,
 		Target:  name,
@@ -129,6 +123,7 @@ func (s *Service) Cancel(ctx context.Context, runID string) error {
 // State is the incident lifecycle state as understood from the run history.
 type State string
 
+// Incident states.
 const (
 	StateNone      State = "none"      // no incident operation recorded
 	StateInjected  State = "injected"  // last completed op was a successful inject
@@ -138,7 +133,7 @@ const (
 	StateError     State = "error"     // the last completed op failed
 )
 
-// Status is a point-in-time answer about the active incident, from the store.
+// Status describes the incident state at one moment, as read from the store.
 type Status struct {
 	State State     `json:"state"`
 	Fault string    `json:"fault,omitempty"` // the fault the deciding run acted on
@@ -146,9 +141,9 @@ type Status struct {
 	Since time.Time `json:"since,omitempty"`
 }
 
-// Status derives the incident state from the store — no cluster round-trip. An
-// in-flight op wins; otherwise the most recent completed inject/resolve decides.
-// A store-derived StateInjected is the durable answer to "is a fault active?".
+// Status reads the incident state from the store without contacting the
+// cluster. A queued or running operation takes precedence; otherwise the most
+// recent finished inject or resolve decides.
 func (s *Service) Status(ctx context.Context) (Status, error) {
 	if active, held, err := s.store.ActiveRunForLock(ctx, LockKey); err != nil {
 		return Status{}, err

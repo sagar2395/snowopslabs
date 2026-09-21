@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -15,8 +16,7 @@ import (
 // carries no template variables.
 func identityResolve(in string) string { return in }
 
-// A reference names the bound workload in its label, URL and note, so all three
-// are resolved — a note reading "{{.WorkloadName}}" is an authoring bug on show.
+// A reference's label, URL and note must all have templates expanded.
 func TestRenderReferencesResolvesEveryField(t *testing.T) {
 	var buf bytes.Buffer
 	upper := func(in string) string { return strings.ReplaceAll(in, "{{.WorkloadName}}", "go-api") }
@@ -108,10 +108,7 @@ func TestRenderSnippets_MissingFileReportedInline(t *testing.T) {
 	}
 }
 
-// `scenario info` is the learner's first contact, and it used to print the raw
-// "{{.MonitoringNamespace}}" — sending them to a namespace that does not exist
-// while install had already resolved it. observability-sre and gitops-cicd both
-// hit this.
+// `scenario info` must print component namespaces with templates expanded.
 func TestRenderComponent_ResolvesTemplates(t *testing.T) {
 	resolve := func(s string) string {
 		return strings.ReplaceAll(s, "{{.MonitoringNamespace}}", "monitoring")

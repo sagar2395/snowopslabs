@@ -9,10 +9,8 @@ import (
 	"testing"
 )
 
-// The point of preflight is that a broken environment produces a sentence the
-// user can act on. These tests assert on the *content* of those messages, not
-// just on status codes, because a correct status with a useless message is
-// still a bad experience.
+// These tests check the wording of preflight messages as well as the status,
+// because the message is what tells the user how to fix their environment.
 
 func TestPreflightCheck(t *testing.T) {
 	ctx := context.Background()
@@ -111,8 +109,7 @@ func TestPreflightCheck(t *testing.T) {
 	})
 
 	t.Run("an unparseable version is unknown, not a failure", func(t *testing.T) {
-		// Our inability to parse a version is our problem, not the user's;
-		// blocking their work over it would be worse than proceeding.
+		// An unparseable version must not block the user.
 		f := NewFake().WhenArgsContain("version", "some future format\n", 0)
 		f.Available = map[string]string{"helm": "/usr/local/bin/helm"}
 
@@ -306,9 +303,8 @@ func TestRequirements(t *testing.T) {
 	})
 
 	t.Run("jq is required but optional", func(t *testing.T) {
-		// Content that scrubs manifests needs jq, but a cluster builds and runs
-		// without it — reporting it as a hard failure would block the golden
-		// path over a tool most of the lab never touches.
+		// Only some content needs jq; its absence must not block a cluster
+		// build.
 		var found bool
 		for _, r := range reqs {
 			if r.Binary != "jq" {
@@ -325,7 +321,7 @@ func TestRequirements(t *testing.T) {
 	})
 
 	t.Run("bash minimum accommodates macOS", func(t *testing.T) {
-		// macOS ships bash 3.2; requiring 4+ would break the golden path.
+		// macOS ships bash 3.2, so requiring 4+ would block every Mac user.
 		for _, r := range reqs {
 			if r.Binary != "bash" {
 				continue

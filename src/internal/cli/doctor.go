@@ -17,19 +17,17 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/toolchain"
 )
 
-// The most common first-run failure is an under-provisioned Docker VM: `make
-// init` stands up a 3-node k3d cluster plus the full platform stack, which OOMs
-// or times out (a cryptic API-server "TLS handshake timeout") on a default
-// 2 GB VM. doctor catches it before the build does. Thresholds mirror the
-// README guidance.
+// Minimum Docker resources, matching the README. The 3-node k3d cluster and
+// platform run out of memory or time out on a default 2 GB VM, often with an
+// API server "TLS handshake timeout".
 const (
 	minDockerCPU      = 4
 	minDockerMemBytes = 8 << 30 // 8 GiB
 )
 
-// doctorCmd tells the user what is wrong with their environment *before* they
-// hit it forty seconds into a cluster build. Every failure line names the tool,
-// what breaks without it, and the platform-specific fix.
+// doctorCmd checks the user's environment before a cluster build. Each
+// failure names the tool, what breaks without it, and how to fix it on this
+// platform.
 func doctorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "doctor",
@@ -47,8 +45,8 @@ as a gate in a script.`,
 	}
 }
 
-// runDoctor is separated from the cobra plumbing so it can be tested against a
-// fake runner without a terminal.
+// runDoctor runs the checks and prints the results to out. It takes a runner
+// so tests can use a fake.
 func runDoctor(ctx context.Context, out io.Writer, runner toolchain.Runner) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -148,14 +146,10 @@ func statusLabel(r toolchain.CheckResult) string {
 	}
 }
 
-// dockerResourceWarning returns an actionable, multi-line warning when the
-// Docker/container engine has fewer than the minimum CPUs or memory SnowOps
-// Labs needs, or "" when resources are sufficient or cannot be determined.
-//
-// It degrades gracefully, exactly like the missing-tool checks: if docker is
-// not on PATH, the daemon is unreachable, or `docker info` output cannot be
-// parsed, it stays silent rather than guessing — a missing docker is already
-// reported by the preflight table, and a stopped daemon is a different problem.
+// dockerResourceWarning returns a warning when Docker has fewer CPUs or less
+// memory than the minimum, or "" when it has enough or the values cannot be
+// read (docker missing, daemon down, output unparseable). A missing docker is
+// already reported by the tool checks.
 func dockerResourceWarning(ctx context.Context, runner toolchain.Runner) string {
 	if ctx == nil {
 		ctx = context.Background()
@@ -170,8 +164,7 @@ func dockerResourceWarning(ctx context.Context, runner toolchain.Runner) string 
 	}
 
 	const gib = 1 << 30
-	// A whole number when the VM is set to an integer GiB (the common case),
-	// one decimal otherwise, so "2 GiB" doesn't render as "2.0 GiB".
+	// Show "2 GiB" rather than "2.0 GiB" for whole numbers.
 	detectedMem := strconv.FormatFloat(float64(mem)/gib, 'f', -1, 64)
 
 	return fmt.Sprintf(
@@ -194,13 +187,12 @@ func dockerResources(ctx context.Context, runner toolchain.Runner) (ncpu int, me
 		return 0, 0, false
 	}
 
-	// Bound the call: a wedged daemon should not hang `doctor`.
+	// A hung daemon must not hang doctor.
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	var buf bytes.Buffer
-	// --format keeps this machine-readable and locale-independent; NCPU and
-	// MemTotal (bytes) are the simplest source of truth (docker info fields).
+	// --format gives machine-readable output; MemTotal is in bytes.
 	_, err = runner.Run(ctx, toolchain.Command{
 		Path:   path,
 		Args:   []string{"info", "--format", "{{.NCPU}} {{.MemTotal}}"},

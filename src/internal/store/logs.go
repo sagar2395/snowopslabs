@@ -13,12 +13,12 @@ import (
 // Stream identifies where a log line came from.
 type Stream string
 
+// Log streams.
 const (
 	StreamStdout Stream = "stdout"
 	StreamStderr Stream = "stderr"
-	// StreamSystem is the engine speaking for itself — "cancelled by user",
-	// "timed out after 20m" — so the reason a run ended is in the same
-	// ordered transcript as the output, not only in a status field.
+	// StreamSystem marks lines written by the engine itself, such as
+	// "cancelled by user" or "timed out after 20m".
 	StreamSystem Stream = "system"
 )
 
@@ -31,20 +31,14 @@ type LogLine struct {
 	Text   string
 }
 
-// maxLogLine bounds a single stored line. Some tools emit megabyte-long lines
-// (a base64 blob, a minified manifest); storing them whole would blow up the
-// database and any client rendering them.
+// maxLogLine caps a stored line. Longer lines, such as a base64 blob or a
+// minified manifest, are truncated.
 const maxLogLine = 16 * 1024
 
 const truncationNotice = "… [truncated by snowops: line exceeded 16KiB]"
 
-// AppendLogs writes lines for a run in one transaction, assigning sequence
-// numbers after the run's current maximum. It returns the last sequence
-// written.
-//
-// Persistence is never skipped for a slow consumer — that was v1's bug, where
-// a non-blocking channel send dropped output silently. Delivery backpressure is
-// the streaming layer's problem; the transcript is always complete.
+// AppendLogs writes lines for a run in one transaction, numbering them after
+// the run's current highest sequence, and returns the last sequence written.
 func (s *Store) AppendLogs(ctx context.Context, runID string, lines []LogLine) (int64, error) {
 	if len(lines) == 0 {
 		return s.LastLogSeq(ctx, runID)
@@ -93,9 +87,9 @@ func (s *Store) AppendLogs(ctx context.Context, runID string, lines []LogLine) (
 	return last, nil
 }
 
-// ReadLogs returns up to limit lines with seq strictly greater than after.
-// Passing after=0 reads from the beginning; passing the last seq a client saw
-// resumes exactly where it left off, with no gap and no duplicate (ADR-0006).
+// ReadLogs returns up to limit lines with a sequence greater than after. Pass
+// 0 to read from the start, or the last sequence a client saw to resume with
+// no gap and no duplicate (ADR-0006).
 func (s *Store) ReadLogs(ctx context.Context, runID string, after int64, limit int) ([]LogLine, error) {
 	if limit <= 0 {
 		limit = 1000
@@ -143,6 +137,7 @@ func (s *Store) LastLogSeq(ctx context.Context, runID string) (int64, error) {
 // StepStatus is a step's state.
 type StepStatus string
 
+// Step states.
 const (
 	StepRunning   StepStatus = "running"
 	StepSucceeded StepStatus = "succeeded"
@@ -162,9 +157,9 @@ type Step struct {
 // ErrStepNotFound is returned when finishing a step that was never started.
 var ErrStepNotFound = errors.New("step not found")
 
-// StartStep records the beginning of a step and returns its index. Starting a
-// step closes the previous one as succeeded: scripts announce steps, they do
-// not announce the end of the one before.
+// StartStep records the beginning of a step and returns its index. It also
+// marks the previous step succeeded, because scripts announce only the start
+// of each step.
 func (s *Store) StartStep(ctx context.Context, runID, name string, at time.Time) (int, error) {
 	if at.IsZero() {
 		at = s.now()
@@ -200,9 +195,8 @@ func (s *Store) StartStep(ctx context.Context, runID, name string, at time.Time)
 	return idx, nil
 }
 
-// FinishSteps closes any still-running step for a run. Called when the run
-// itself ends, so an interrupted run's timeline shows exactly which step it
-// died in rather than leaving it open forever.
+// FinishSteps closes any step of the run still marked running with status.
+// Call it when the run ends, so a failed run shows the step it failed in.
 func (s *Store) FinishSteps(ctx context.Context, runID string, status StepStatus, at time.Time) error {
 	if at.IsZero() {
 		at = s.now()
@@ -259,9 +253,8 @@ type AuditEntry struct {
 	Detail string
 }
 
-// Audit appends an audit entry. Audit deliberately outlives runs — the run_id
-// column is not a foreign key, so pruning run history does not erase the record
-// that something happened.
+// Audit appends an audit entry. Its run_id is not a foreign key, so pruning
+// old runs keeps their audit entries.
 func (s *Store) Audit(ctx context.Context, e AuditEntry) error {
 	if e.Action == "" {
 		return errors.New("store: audit action is required")

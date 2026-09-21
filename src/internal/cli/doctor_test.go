@@ -32,8 +32,7 @@ func fakeEnv(dockerInfo string) *toolchain.Fake {
 	return f
 }
 
-// doctor's whole value is the quality of its output, so these assert on what
-// the user reads, not just the exit status.
+// These tests check doctor's output text as well as its exit status.
 
 func TestRunDoctor(t *testing.T) {
 	ctx := context.Background()

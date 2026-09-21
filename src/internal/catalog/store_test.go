@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package catalog
 
 import (
@@ -42,11 +43,9 @@ func TestStore_ConcurrentReadDuringReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 50; j++ {
+	for range 8 {
+		wg.Go(func() {
+			for range 50 {
 				c := s.Current()
 				if c == nil {
 					t.Error("Current() returned nil during reload")
@@ -55,9 +54,9 @@ func TestStore_ConcurrentReadDuringReload(t *testing.T) {
 				_ = c.Counts()
 				_ = c.Scenarios()
 			}
-		}()
+		})
 	}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		if _, err := s.Reload(); err != nil {
 			t.Error(err)
 		}

@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package scenario
 
 import (
+	"maps"
+
 	"github.com/sagar2395/snowopslabs/internal/snippet"
 	"github.com/sagar2395/snowopslabs/internal/tmpl"
 	"github.com/sagar2395/snowopslabs/internal/workload"
@@ -11,23 +14,15 @@ import (
 // ResolvedForDisplay returns a copy of the scenario with every reader-facing
 // field expanded against an explicit binding and parameter set.
 //
-// It exists so exactly one place decides which fields a reader sees resolved.
-// That list was previously spread through the API handler and grew a field at a
-// time, which is how stage descriptions, explore labels and check remediations
-// each shipped a literal "{{.WorkloadName}}" to the UI. Anything an author can
-// write and a reader can read belongs here.
+// This is the one place that decides which fields are expanded for display.
+// When the schema gains a field that readers see, expand it here.
 //
-// It mutates nothing: the engine is shared across requests, and a display call
-// must not rebind it.
+// It does not modify the engine, which other requests share.
 func (e *Engine) ResolvedForDisplay(s *Scenario, params map[string]string, bound workload.Workload) *Scenario {
 	ctx := e.templateContextFor(bound)
 	overlay := make(map[string]string, len(e.resolvedParams)+len(params))
-	for k, v := range e.resolvedParams {
-		overlay[k] = v
-	}
-	for k, v := range params {
-		overlay[k] = v
-	}
+	maps.Copy(overlay, e.resolvedParams)
+	maps.Copy(overlay, params)
 	resolve := func(in string) string { return tmpl.Expand(in, ctx, overlay) }
 	each := func(in []string) []string {
 		if in == nil {
@@ -108,8 +103,8 @@ func (e *Engine) ResolvedForDisplay(s *Scenario, params map[string]string, bound
 	if s.Snippets != nil {
 		snips := make([]Snippet, len(s.Snippets))
 		for i, sn := range s.Snippets {
-			// The UI has no access to the scenario directory, so the body travels
-			// with the snippet. A file that cannot be read renders without one.
+			// Include the file's content, since the UI cannot read the scenario
+			// directory. An unreadable file is shown without a body.
 			snips[i], _ = snippet.Resolve(s.Dir, sn, resolve)
 		}
 		c.Snippets = snips

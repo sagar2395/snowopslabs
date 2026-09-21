@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package runtime
 
 import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -19,12 +22,7 @@ func newTestManager(t *testing.T, runtimesDir, clusterName, currentCtx string, k
 			return currentCtx, nil
 		},
 		contextExists: func(_ context.Context, name string) (bool, error) {
-			for _, c := range knownCtxs {
-				if c == name {
-					return true, nil
-				}
-			}
-			return false, nil
+			return slices.Contains(knownCtxs, name), nil
 		},
 	}
 	m.scan()
@@ -43,10 +41,7 @@ func makeRuntime(t *testing.T, base, name string, envLines []string) {
 		t.Fatal(err)
 	}
 	if len(envLines) > 0 {
-		content := ""
-		for _, l := range envLines {
-			content += l + "\n"
-		}
+		content := strings.Join(envLines, "\n") + "\n"
 		if err := os.WriteFile(filepath.Join(dir, "runtime.env"), []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}

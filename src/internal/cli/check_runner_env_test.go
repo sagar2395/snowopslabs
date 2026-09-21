@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -10,9 +11,8 @@ import (
 	"github.com/sagar2395/snowopslabs/internal/workload"
 )
 
-// A check script grades the bound workload, so it needs the same workload
-// identity a component script gets. Without it a check can only hardcode an app
-// name, which is what the workload binding exists to remove (ADR-0014).
+// Check scripts must receive the bound workload in their environment, as
+// component scripts do (ADR-0014).
 func TestNewCheckRunner_CarriesWorkloadEnv(t *testing.T) {
 	oldCfg, oldScenes := cfg, scenes
 	t.Cleanup(func() { cfg, scenes = oldCfg, oldScenes })

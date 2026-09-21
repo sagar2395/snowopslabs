@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package scenario
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -46,10 +48,8 @@ func (r *recordingExec) find(binary, needle string) []string {
 		if c[0] != binary {
 			continue
 		}
-		for _, a := range c[1:] {
-			if a == needle {
-				return c
-			}
+		if slices.Contains(c[1:], needle) {
+			return c
 		}
 	}
 	return nil
@@ -74,10 +74,8 @@ func newTestEngine(t *testing.T) *Engine {
 	return NewEngine(root, "k3d.local", "k3d", "observability")
 }
 
-// installHelm and uninstallHelm must resolve the component namespace the SAME
-// way. A regression where uninstall used the raw "{{.MonitoringNamespace}}"
-// meant `helm uninstall` ran against the wrong namespace and the release leaked
-// while `scenario down` reported success.
+// installHelm and uninstallHelm must resolve the component namespace the same
+// way, or `helm uninstall` targets the wrong namespace.
 func TestHelm_InstallAndUninstallUseSameResolvedNamespace(t *testing.T) {
 	eng := newTestEngine(t)
 	comp := &Component{
@@ -116,13 +114,11 @@ type failingExec struct{ recordingExec }
 
 func (f *failingExec) RunCommandStreamed(label, name string, args ...string) (string, error) {
 	_, _ = f.recordingExec.RunCommandStreamed(label, name, args...)
-	return "", fmt.Errorf("kubectl apply rejected the manifest")
+	return "", errors.New("kubectl apply rejected the manifest")
 }
 
-// installGrafanaDashboard must resolve the namespace template like the other
-// installers (a raw "{{.MonitoringNamespace}}" produced an invalid ConfigMap
-// that kubectl rejected), and uninstall must target the same resolved namespace
-// so `scenario down` deletes what `up` created.
+// installGrafanaDashboard must resolve the namespace like the other
+// installers, and uninstall must use the same namespace.
 func TestGrafanaDashboard_InstallAndUninstallUseSameResolvedNamespace(t *testing.T) {
 	eng := newTestEngine(t)
 	dir := t.TempDir()
@@ -170,8 +166,7 @@ func TestGrafanaDashboard_InstallAndUninstallUseSameResolvedNamespace(t *testing
 	}
 }
 
-// A dashboard apply that the cluster rejects must fail the activation, not be
-// silently swallowed — the false-success bug the audit flagged as P0.
+// A dashboard apply that the cluster rejects must fail the activation.
 func TestGrafanaDashboard_ApplyFailurePropagates(t *testing.T) {
 	eng := newTestEngine(t)
 	dir := t.TempDir()
@@ -241,7 +236,7 @@ func (s *scriptedExec) RunCommandStreamed(label, name string, args ...string) (s
 	}
 	if n := s.failures[sig]; n > 0 {
 		s.failures[sig] = n - 1
-		return s.output[sig], fmt.Errorf("exit status 1")
+		return s.output[sig], errors.New("exit status 1")
 	}
 	return out, nil
 }
@@ -369,9 +364,8 @@ func TestImmutableStatefulSet(t *testing.T) {
 	}
 }
 
-// Re-running a scenario over an existing Loki/Tempo release used to dead-end on
-// the immutable-StatefulSet error. Orphaning the StatefulSet and retrying keeps
-// the scenario idempotent.
+// When helm fails on a StatefulSet's immutable fields, the installer deletes
+// the StatefulSet with --cascade=orphan and retries.
 func TestHelm_RecoversFromImmutableStatefulSet(t *testing.T) {
 	eng := newTestEngine(t)
 	eng.SetOutput(io.Discard)
@@ -461,8 +455,8 @@ func TestScript_UninstallScriptRunsOnTeardown(t *testing.T) {
 	}
 }
 
-// adopt is "borrow, not own": a scenario that reused a platform release must
-// leave it alone on teardown, or `scenario down` takes Loki and Tempo with it.
+// A release the scenario adopted belongs to the platform, so teardown must
+// leave it in place.
 func TestHelm_AdoptedReleaseIsNotUninstalled(t *testing.T) {
 	tests := []struct {
 		name          string

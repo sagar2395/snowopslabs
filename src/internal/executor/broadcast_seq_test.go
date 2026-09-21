@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package executor
 
 import (
@@ -27,7 +28,7 @@ func TestBroadcaster_SeqIsMonotonic(t *testing.T) {
 	ch := b.Subscribe()
 	defer b.Unsubscribe(ch)
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		b.Send(ActionEvent{ID: "x", Type: "action_output"})
 	}
 	events := drain(t, ch, 5)
@@ -38,9 +39,8 @@ func TestBroadcaster_SeqIsMonotonic(t *testing.T) {
 	}
 }
 
-// The core reconnect guarantee: a client that drops after Seq N and resumes with
-// SubscribeFrom(N) sees every later event exactly once — the backlog fills the
-// gap and the live channel carries on, with no overlap at the seam.
+// A client that disconnects after Seq N and resumes with SubscribeFrom(N) must
+// see every later event exactly once.
 func TestBroadcaster_ResumeIsGapFreeAndNoDuplicates(t *testing.T) {
 	b := NewBroadcaster()
 
@@ -84,7 +84,7 @@ func TestBroadcaster_ResumeIsGapFreeAndNoDuplicates(t *testing.T) {
 func TestBroadcaster_NonContiguousWhenCursorFellOffRing(t *testing.T) {
 	b := NewBroadcaster()
 	total := eventRingCap + 10
-	for i := 0; i < total; i++ {
+	for range total {
 		b.Send(ActionEvent{ID: "x", Type: "action_output"})
 	}
 

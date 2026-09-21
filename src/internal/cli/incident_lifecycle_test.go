@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -75,7 +76,7 @@ func TestRunIncidentOp_InjectRecordsAndStreams(t *testing.T) {
 	var buf bytes.Buffer
 	cmd := dummyCmd(&buf)
 	target := incsvc.Target{Namespace: "echo-server", Workload: "echo-server"}
-	err := runIncidentOp(cmd, "inject", "oom-kill", target, func(ctx context.Context, svc *incsvc.Service) (string, error) {
+	err := runIncidentOp(cmd, "inject", "oom-kill", func(ctx context.Context, svc *incsvc.Service) (string, error) {
 		return svc.Inject(ctx, "oom-kill", target)
 	})
 	if err != nil {
@@ -96,7 +97,7 @@ func TestRunIncidentOp_ResolveFailPropagates(t *testing.T) {
 
 	var buf bytes.Buffer
 	target := incsvc.Target{Namespace: "echo-server", Workload: "echo-server"}
-	err := runIncidentOp(dummyCmd(&buf), "resolve", "oom-kill", target, func(ctx context.Context, svc *incsvc.Service) (string, error) {
+	err := runIncidentOp(dummyCmd(&buf), "resolve", "oom-kill", func(ctx context.Context, svc *incsvc.Service) (string, error) {
 		return svc.Resolve(ctx, "oom-kill", target)
 	})
 	if err == nil {

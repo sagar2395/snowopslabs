@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+
 package cli
 
 import (
@@ -41,7 +42,7 @@ var serviceUpCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		fmt.Printf("Installing service %s...\n", name)
-		if err := svcReg.Install(name, exec); err != nil {
+		if err := svcReg.Install(name, scriptExec); err != nil {
 			return fmt.Errorf("service install failed: %w", err)
 		}
 		fmt.Printf("Service %s installed.\n", name)
@@ -56,7 +57,7 @@ var serviceDownCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		fmt.Printf("Uninstalling service %s...\n", name)
-		if err := svcReg.Uninstall(name, exec); err != nil {
+		if err := svcReg.Uninstall(name, scriptExec); err != nil {
 			return fmt.Errorf("service uninstall failed: %w", err)
 		}
 		fmt.Printf("Service %s uninstalled.\n", name)
@@ -70,7 +71,7 @@ var serviceStatusCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 1 {
-			return svcReg.Status(args[0], exec)
+			return svcReg.Status(args[0], scriptExec)
 		}
 
 		svcs := svcReg.List()
@@ -82,7 +83,7 @@ var serviceStatusCmd = &cobra.Command{
 		for _, s := range svcs {
 			if s.HasScript("status.sh") {
 				fmt.Printf("--- %s ---\n", s.Name)
-				_ = svcReg.Status(s.Name, exec)
+				_ = svcReg.Status(s.Name, scriptExec)
 				fmt.Println()
 			}
 		}
