@@ -187,14 +187,17 @@ func catalogLess(catA, dispA, nameA, catB, dispB, nameB string) bool {
 	return nameA < nameB
 }
 
-// Get returns a scenario by name.
+// Get returns a scenario by name. The result is a copy of the cached
+// scenario with Active filled in: the cached value itself is never
+// written, so concurrent callers cannot race on it.
 func (e *Engine) Get(name string) (*Scenario, error) {
 	s, ok := e.scenarios[name]
 	if !ok {
 		return nil, fmt.Errorf("scenario %q not found", name)
 	}
-	s.Active = e.isActive(name)
-	return s, nil
+	out := *s
+	out.Active = e.isActive(name)
+	return &out, nil
 }
 
 // Preflight checks that a scenario can be activated: the runtime, the

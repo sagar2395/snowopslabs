@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sagar2395/snowopslabs/internal/workload"
@@ -123,6 +124,53 @@ func TestGet_NotFound(t *testing.T) {
 	_, err := engine.Get("nonexistent")
 	if err == nil {
 		t.Error("expected error for nonexistent scenario")
+	}
+}
+
+// TestGet_ConcurrentReadsDoNotMutateCache calls Get from several goroutines
+// at once. Get fills Active in on a copy, so the cached scenario is never
+// written; under -race any write to it would be reported here.
+func TestGet_ConcurrentReadsDoNotMutateCache(t *testing.T) {
+	root := t.TempDir()
+	createTestScenario(t, root, "test-scenario", testScenarioYAML)
+
+	engine := NewEngine(root, "k3d.local", "k3d")
+
+	// Mark the scenario active so Get has an Active value to fill in.
+	if err := os.MkdirAll(engine.stateDir(), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(engine.stateDir(), "test-scenario.active"), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 8
+	const calls = 50
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			for range calls {
+				s, err := engine.Get("test-scenario")
+				if err != nil {
+					errs <- err
+					return
+				}
+				if !s.Active {
+					errs <- errors.New("Get returned Active = false, want true")
+					return
+				}
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+
+	if engine.scenarios["test-scenario"].Active {
+		t.Error("Get mutated the cached scenario: Active = true, want false")
 	}
 }
 
