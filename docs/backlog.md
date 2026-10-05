@@ -24,7 +24,6 @@ Effort is in engineering days and is an estimate, not a commitment.
 | [B10](#b10--chaos-network-faults-never-reach-the-traffic-generator) | Chaos network faults never reach the traffic generator | content, traffic | 1–2 |
 | [B11](#b11--secrets-management-only-works-for-the-app-the-platform-was-installed-for) | secrets-management only works for the app the platform was installed for | platform, content | 1 |
 | [B12](#b12--every-k3d-node-promises-the-whole-machines-memory) | Every k3d node promises the whole machine's memory | runtime | 1 |
-| [B13](#b13--scenarioengineget-writes-to-a-shared-cached-scenario) | `scenario.Engine.Get` writes to a shared, cached scenario | engine | 0.5 |
 | [B14](#b14--ctrl-c-orphans-running-scripts) | Ctrl-C orphans running scripts | CLI, run engine | 1 |
 | [B15](#b15--two-submits-can-take-the-same-lock) | Two submits can take the same lock | run engine, store | 0.5–1 |
 | [B16](#b16--web-ui-actions-bypass-the-run-engine) | Web UI actions bypass the run engine | API | 4–6 |
@@ -345,23 +344,6 @@ memory requests approach the VM's memory, and document a memory budget per
 scenario so learners know how many they can run at once.
 
 **Start at.** `runtimes/k3d/up.sh` (`create_cluster`), `src/internal/cli/doctor.go`.
-
----
-
-## B13 — `scenario.Engine.Get` writes to a shared, cached scenario
-
-**Problem.** `Get` returns the `*Scenario` held in the engine's cache, but only
-after setting `s.Active` on it. Any two goroutines that call `Get` at the same
-time, or one that calls `Get` while a run reads the scenario, race on that
-field. `go test -race ./internal/service/scenario/` reports it on `main` in
-`TestActivate_ConflictsPerScenario`, which fails most runs. The same race is
-live in `labctl ui`, because its handlers call `Get` concurrently.
-
-**Proposed approach.** Stop writing to the cached value. Either return a
-shallow copy with `Active` filled in, or drop the field and have callers ask
-`IsActive(name)`. Take the copy approach first: it keeps every caller the same.
-
-**Start at.** `src/internal/scenario/engine.go` (`Get`, `isActive`).
 
 ---
 

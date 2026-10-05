@@ -75,10 +75,9 @@ retire them, and new code should not copy them:
   should be a `run.Spec`.
 - Guard every map that more than one goroutine touches, or use `sync.Map` for
   write-once, read-many data (`run.Engine.specs`).
-- Never mutate a value that a cache hands out. `scenario.(*Engine).Get` writes
-  to a shared `*Scenario`, and the race detector catches it in
-  `service/scenario`: [B13](backlog.md#b13--scenarioengineget-writes-to-a-shared-cached-scenario).
-  Return a copy, or compute the field on read.
+- Never mutate a value that a cache hands out. Return a copy, or compute the
+  field on read: `scenario.(*Engine).Get` and `List` fill in `Active` on a
+  copy of the cached `*Scenario`.
 - Prefer `wg.Go(f)` over `wg.Add(1)` followed by `go func() { defer wg.Done() }`,
   and prefer the `atomic.Int64` type over the `atomic.AddInt64` functions.
 - `make test` runs with `-race`. A race report is a bug, never a flaky test.
