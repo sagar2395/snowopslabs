@@ -46,7 +46,7 @@ func newIncidentServer(t *testing.T) (*Server, string) {
 	files := map[string]string{
 		"fault.yaml":         apiTestFaultYAML,
 		"inject.sh":          "#!/usr/bin/env bash\ntouch \"$(dirname \"$0\")/BROKEN\"\n",
-		"resolve.sh":         "#!/usr/bin/env bash\nrm -f \"$(dirname \"$0\")/BROKEN\"\n",
+		"resolve.sh":         "#!/usr/bin/env bash\nrm -f \"$(dirname \"$0\")/BROKEN\"\ntouch \"$(dirname \"$0\")/RESOLVED\"\n",
 		"checks/resolved.sh": "#!/usr/bin/env bash\n[ ! -f \"$(dirname \"$0\")/../BROKEN\" ]\n",
 		"hints.md":           "## Hint 1\nx\n## Hint 2\ny\n## Hint 3\nz\n",
 		"solution.md":        "# Solution\n",
@@ -101,6 +101,39 @@ func TestHandleIncidentInject_FullLoop(t *testing.T) {
 	s.handleIncidentStatus(w, httptest.NewRequest(http.MethodGet, "/api/incidents/status", nil))
 	if !strings.Contains(w.Body.String(), `"active":null`) {
 		t.Fatalf("expected no active incident, got %s", w.Body.String())
+	}
+}
+
+func TestHandleIncidentStatus_TidiesUpAfterAFix(t *testing.T) {
+	tests := []struct {
+		name         string
+		fixByHand    bool
+		wantResolved bool
+	}{
+		{name: "an unfixed fault is left alone", fixByHand: false, wantResolved: false},
+		{name: "a hand fix runs resolve.sh to tidy up", fixByHand: true, wantResolved: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, root := newIncidentServer(t)
+			dir := filepath.Join(root, "incidents", "api-fault")
+
+			req := setVars(httptest.NewRequest(http.MethodPost, "/api/incidents/api-fault/inject", nil), map[string]string{"name": "api-fault"})
+			s.handleIncidentInject(httptest.NewRecorder(), req)
+			if tt.fixByHand {
+				os.Remove(filepath.Join(dir, "BROKEN"))
+			}
+
+			w := httptest.NewRecorder()
+			s.handleIncidentStatus(w, httptest.NewRequest(http.MethodGet, "/api/incidents/status", nil))
+			if w.Code != http.StatusOK {
+				t.Fatalf("status: %d %s", w.Code, w.Body.String())
+			}
+			_, err := os.Stat(filepath.Join(dir, "RESOLVED"))
+			if ran := err == nil; ran != tt.wantResolved {
+				t.Fatalf("resolve.sh ran = %v, want %v (body %s)", ran, tt.wantResolved, w.Body.String())
+			}
+		})
 	}
 }
 

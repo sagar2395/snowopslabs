@@ -94,6 +94,13 @@ host ports 80/443 on the `ingress-ready` control-plane node, the one
 `runtimes/kind/up.sh` maps to the host. The Traefik chart reads the type from
 `service.spec.type`; it ignores `service.type`.
 
+**Helm 4 upgrades apply server-side and refuse fields kubectl owns.** After a
+`kubectl set env` or `kubectl patch`, `helm upgrade` fails with
+`Apply failed with 1 conflict: conflict with "kubectl-set"`. Helm 3's
+client-side merge overwrote such edits silently. `src/engine/deploy/helm.sh`
+passes `--force-conflicts` on Helm 4 so `labctl app deploy` still restores the
+chart; it is not passed to Helm 3, which has no such flag.
+
 **A scenario that adopts a platform release must not uninstall it on teardown.**
 
 **A pod's `.status.containerStatuses[].image` reports whichever tag the kubelet

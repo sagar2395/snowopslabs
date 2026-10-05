@@ -41,7 +41,7 @@ Includes:
 - **Datasource**: Auto-provisioned Prometheus datasource
 - **Dashboards**: Placeholder JSON dashboards for customization
   - Cluster Metrics (CPU, memory, pod count)
-  - Pod Resources (per-pod CPU/memory, network)
+  - Pod Resources (per-pod CPU/memory, network, restarts, waiting reasons)
   - Application Requests (HTTP metrics from go-api)
 - **Traefik Ingress**: Exposes Grafana at `grafana.snowops.localhost`
 - **Admin Credentials**: `admin` / `admin` (changeable via `GRAFANA_ADMIN_PASSWORD` env var)
@@ -158,7 +158,7 @@ In Grafana:
 1. Click **Dashboards** (home icon) > **Manage**
 2. Under folder "Kubernetes", you should see:
    - **Cluster Metrics**: Node CPU/memory, pod count, network I/O
-   - **Pod Resources**: Per-pod CPU/memory usage by namespace
+   - **Pod Resources**: Per-pod CPU/memory usage by namespace, container restarts, and containers stuck waiting (CrashLoopBackOff, ImagePullBackOff) by reason
    - **Application Request Metrics**: HTTP request rate, latency, errors (from go-api)
 
 ### 9. Verify Go-API Metrics

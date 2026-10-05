@@ -67,6 +67,13 @@ injected between the ingress and the app does not show on the k6 panels.
 never matches and both are returned: two lines with one legend. Aggregate first,
 `sum(rate(x[5m])) or vector(0)`.
 
+**An app that is not running cannot count its own failures.** When every pod
+crash-loops, the server-side panels show no data and *Error rate (5xx)* reads
+zero during a total outage. Read an outage from the client side (k6's failed
+request rate, and *Offered vs served*, whose app line falls to zero) and its
+cause from kube-state-metrics: *Pod Resources* charts container restarts and
+containers waiting by reason (`kube_pod_container_status_waiting_reason`).
+
 **A scrapeTimeout above the scrapeInterval voids the ServiceMonitor.**
 prometheus-operator rejects it outright (`InvalidConfiguration`, visible only in
 the operator log and a Warning event) and the target never appears. Charts that

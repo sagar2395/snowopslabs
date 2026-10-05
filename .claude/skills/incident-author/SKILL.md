@@ -58,7 +58,8 @@ teaches learners to distrust the grader.
    `labfault-<name>=...` and stash originals in `labfault-<name>-original-*`, so
    `resolve.sh` can undo it without guessing.
 3. **`resolve.sh` must never fail the user.** It runs after any amount of manual
-   fixing. Every step tolerates "already fixed" — `--ignore-not-found`, guards,
+   fixing, and `incident status` runs it again after a hand fix passes, to
+   tidy up. Every step tolerates "already fixed" — `--ignore-not-found`, guards,
    `|| true` where it is genuinely safe.
 4. **`inject.sh` is idempotent.** Re-running while injected is a no-op.
 5. **Write the detection check as "what must be true when healthy."** It is both

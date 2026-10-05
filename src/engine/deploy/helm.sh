@@ -127,8 +127,17 @@ case "${COMMAND}" in
     # ensure namespace exists (kubectl apply is idempotent)
     kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1 || true
 
+    # Helm 4 applies server-side, so a field last changed with kubectl (set env,
+    # scale, patch) belongs to kubectl and the upgrade refuses to touch it. The
+    # app's chart is the source of truth, so a redeploy takes those fields back.
+    APPLY_ARGS=()
+    case "$(helm version --short 2>/dev/null)" in
+      v3.*) ;;
+      *) APPLY_ARGS=(--force-conflicts) ;;
+    esac
+
     helm upgrade --install "${HELM_RELEASE}" "${HELM_CHART_PATH}" \
-      "${VALUES_ARGS[@]}" \
+      "${VALUES_ARGS[@]}" ${APPLY_ARGS[@]+"${APPLY_ARGS[@]}"} \
       --namespace "${NAMESPACE}" --create-namespace
 
     echo "[rollout] Waiting for deployment to be ready (timeout: ${HELM_WAIT_TIMEOUT})..."

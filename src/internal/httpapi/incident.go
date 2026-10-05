@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -139,6 +140,14 @@ func (s *Server) handleIncidentStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, r, http.StatusInternalServerError, "internal_error", err.Error())
 		return
+	}
+
+	// A hand fix leaves the fault's armed alert rule and labfault-* marks behind;
+	// resolve.sh removes them and leaves what is already fixed alone.
+	if res.Resolved {
+		if _, err := incidents.Resolve(res.Fault.Name, s.exec, actingUser(r)); err != nil {
+			slog.Warn("tidy-up after a fixed incident failed; run labctl incident resolve", "fault", res.Fault.Name, "error", err)
+		}
 	}
 
 	// In silent mode, don't leak the fault's identity until it's resolved.

@@ -432,13 +432,13 @@
           "format": "time_series"
         },
         {
-          "expr": "sum(rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m]))",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m])) or vector(0)",
           "legendFormat": "handled by the app (server)",
           "refId": "B",
           "format": "time_series"
         }
       ],
-      "description": "Two lines that should overlap when only k6 is loading the selected apps. k6 counts what it sent to them; the apps count what they handled, which also includes kubelet probes and any traffic that did not come from k6. A persistent gap beyond that means requests are lost before reaching the app."
+      "description": "Two lines that should overlap when only k6 is loading the selected apps. k6 counts what it sent to them; the apps count what they handled, which also includes kubelet probes and any traffic that did not come from k6. A persistent gap beyond that means requests are lost before reaching the app. When no pod is serving at all, the app line drops to zero."
     },
     {
       "id": 8,

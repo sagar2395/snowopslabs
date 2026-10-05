@@ -20,4 +20,4 @@ spec:
             severity: warning
           annotations:
             summary: "${TARGET_WORKLOAD} pods are restarting repeatedly"
-            description: "Containers in namespace ${TARGET_NAMESPACE} restarted more than twice in 5 minutes — classic crash loop. Check pod Last State and the deployment spec."
+            description: "Containers in namespace ${TARGET_NAMESPACE} restarted more than twice in 5 minutes: a crash loop. The crashed container's logs (kubectl logs --previous) say why it exited."
