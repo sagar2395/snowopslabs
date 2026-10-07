@@ -29,7 +29,10 @@ labctl traffic start --target http://echo-server.snowops.localhost/ --rps 50
 
 ## Profiles
 
-Discovered from `src/services/traffic/profiles/`.
+Discovered from `src/services/traffic/profiles/`. Every profile sends exactly
+one request per iteration: Application Request Metrics counts the iterations k6
+drops (`k6_dropped_iterations_total`) as offered requests, so a new profile has
+to keep that one-to-one.
 
 | Profile | Shape |
 |---|---|

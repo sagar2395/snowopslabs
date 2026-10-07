@@ -26,8 +26,11 @@ kubectl get deploy {{.WorkloadName}} -n {{.WorkloadNamespace}} \
 # [{"name":"PORT","value":"80800"}, ...]          <- there's your problem
 ```
 
-In Grafana, *Application Request Metrics* shows the impact (k6's failed
-request rate at 100%, the app handling nothing) and *Pod Resources* shows the
+In Grafana, *Application Request Metrics* shows the impact (a red *No
+available pods* region from the config change to the fix, *Responses by
+outcome (k6 client)* turning from 200 to `no response`, k6's failed request
+rate at 100%, and the app handling nothing while k6 keeps offering the same
+load) and *Pod Resources* shows the
 cause category (*Container restarts* climbing, *Containers not running, by
 reason* reading CrashLoopBackOff).
 

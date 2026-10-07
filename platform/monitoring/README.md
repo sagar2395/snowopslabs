@@ -180,8 +180,13 @@ kubectl logs -n go-api -l app=go-api | grep "Building metrics"
 In Grafana dashboard "Application Request Metrics", you should see:
 - HTTP request rate
 - Request latency (p95, p99)
-- HTTP response codes (2xx, 4xx, 5xx)
+- HTTP response codes the app returned, coloured by class (2xx, 4xx, 5xx)
 - Error rate
+- With `labctl traffic start` running: what k6 got back per request, including
+  requests that got no response at all, and the load k6 offered against what
+  the app handled
+- A red *No available pods* region over every panel while no pod of the app is
+  Ready
 
 ## Customization
 
