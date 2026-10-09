@@ -105,6 +105,10 @@ spec:
               value: "$DURATION"
             - name: TRAFFIC_METHOD
               value: "$METHOD"
+            # A new connection per request, like a stream of users: a kept-alive
+            # connection still reaches its pod after the Service stops selecting it.
+            - name: K6_NO_CONNECTION_REUSE
+              value: "true"
             - name: K6_PROMETHEUS_RW_SERVER_URL
               value: "$RW_URL"
             # Export latency percentiles, not just the mean, so the k6-side

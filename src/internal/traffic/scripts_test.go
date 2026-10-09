@@ -136,6 +136,8 @@ func TestStartScript_AppliesJobWithSettings(t *testing.T) {
 		`value: "http://echo-server.echo-server.svc.cluster.local:8080/"`,
 		`value: "25"`,
 		`value: "15m"`,
+		// One connection per request, so faults that only block new connections show.
+		"name: K6_NO_CONNECTION_REUSE\n              value: \"true\"",
 	} {
 		if !strings.Contains(applied, want) {
 			t.Errorf("applied manifest missing %q:\n%s", want, applied)

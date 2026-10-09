@@ -69,6 +69,12 @@ them.
 Override the endpoint with `K6_PROMETHEUS_RW_SERVER_URL`, or set
 `TRAFFIC_METRICS=off` to skip the probe.
 
+k6 opens a new connection for every request (`K6_NO_CONNECTION_REUSE`), as a
+stream of users does. A kept-alive connection would keep reaching its pod after
+the Service stops selecting it or a NetworkPolicy starts denying new traffic, so
+faults like `service-selector-broken` and `network-blackhole` would never show
+on the k6 panels.
+
 > **k6's remote-write metrics are in seconds**, not milliseconds, even though
 > k6's own CLI output is in ms. A panel labelled `ms` is wrong by 1000×.
 > See [R13](../../runbooks/R13-observability-pipeline.md).
