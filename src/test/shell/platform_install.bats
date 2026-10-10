@@ -91,3 +91,24 @@ teardown() {
   [ "$status" -ne 0 ]
   refute_called helm "upgrade --install"
 }
+
+# kind has no LoadBalancer implementation, so helm --wait on a LoadBalancer
+# Service never returns there.
+@test "traefik on kind binds the ingress node's host ports, not a LoadBalancer" {
+  PROFILE=kind run bash "$ROOT/platform/ingress/traefik/install.sh"
+  [ "$status" -eq 0 ]
+  assert_called helm "service.spec.type=ClusterIP"
+  assert_called helm "ports.web.hostPort=80"
+  assert_called helm "ports.websecure.hostPort=443"
+  assert_called helm "nodeSelector.ingress-ready=true"
+  assert_called helm "key=node-role.kubernetes.io/control-plane"
+}
+
+@test "traefik on k3d keeps the LoadBalancer from its values file" {
+  PROFILE=k3d run bash "$ROOT/platform/ingress/traefik/install.sh"
+  [ "$status" -eq 0 ]
+  assert_called helm "upgrade --install traefik"
+  refute_called helm "hostPort"
+  refute_called helm "service.spec.type"
+  grep -A2 '^service:' "$ROOT/platform/ingress/traefik/values.yaml" | grep -q 'type: LoadBalancer'
+}

@@ -5,9 +5,11 @@
 api:
   dashboard: true
 
-# service type exposes load balancer for k3d
+# k3d's built-in load balancer publishes this Service on the host's 80/443.
+# install.sh overrides it on kind, which has no load balancer.
 service:
-  type: LoadBalancer
+  spec:
+    type: LoadBalancer
 
 # If you want the dashboard ingress route as well:
 # ingressRoute:
