@@ -41,7 +41,7 @@ Includes:
 - **Datasource**: Auto-provisioned Prometheus datasource
 - **Dashboards**: Placeholder JSON dashboards for customization
   - Cluster Metrics (CPU, memory, pod count)
-  - Pod Resources (per-pod CPU/memory, network)
+  - Pod Resources (per-pod CPU/memory, network, restarts, waiting reasons)
   - Application Requests (HTTP metrics from go-api)
 - **Traefik Ingress**: Exposes Grafana at `grafana.snowops.localhost`
 - **Admin Credentials**: `admin` / `admin` (changeable via `GRAFANA_ADMIN_PASSWORD` env var)
@@ -158,7 +158,7 @@ In Grafana:
 1. Click **Dashboards** (home icon) > **Manage**
 2. Under folder "Kubernetes", you should see:
    - **Cluster Metrics**: Node CPU/memory, pod count, network I/O
-   - **Pod Resources**: Per-pod CPU/memory usage by namespace
+   - **Pod Resources**: Per-pod CPU/memory usage by namespace, container restarts, and containers stuck waiting (CrashLoopBackOff, ImagePullBackOff) by reason
    - **Application Request Metrics**: HTTP request rate, latency, errors (from go-api)
 
 ### 9. Verify Go-API Metrics
@@ -180,8 +180,13 @@ kubectl logs -n go-api -l app=go-api | grep "Building metrics"
 In Grafana dashboard "Application Request Metrics", you should see:
 - HTTP request rate
 - Request latency (p95, p99)
-- HTTP response codes (2xx, 4xx, 5xx)
+- HTTP response codes the app returned, coloured by class (2xx, 4xx, 5xx)
 - Error rate
+- With `labctl traffic start` running: what k6 got back per request, including
+  requests that got no response at all, and the load k6 offered against what
+  the app handled
+- A red *No available pods* region over every panel while no pod of the app is
+  Ready
 
 ## Customization
 

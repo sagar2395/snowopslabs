@@ -14,7 +14,7 @@ Every fault is a directory `incidents/<name>/` with:
 |------|---------|
 | `fault.yaml` | Metadata + the **detection check** (passes ⇔ the fault is RESOLVED) |
 | `inject.sh` | Breaks the lab. Idempotent: re-running while injected is a no-op. |
-| `resolve.sh` | The escape hatch. Always restores the lab, even after a partial manual fix. |
+| `resolve.sh` | The escape hatch. Always restores the lab, even after a partial manual fix. Also runs after a hand fix passes `status`, to remove the alert rule and marks, so it must change nothing that is already fixed. |
 | `hints.md` | Progressive hints, one `## Hint N` section each (revealed by `labctl incident hint`) |
 | `solution.md` | Full diagnosis + fix walkthrough (spoiler — `labctl incident solution`) |
 | `alerts/rule.yaml` | Required iff `expectAlert` is set: the PrometheusRule that fires the page (armed by `inject.sh`, disarmed by `resolve.sh`) |
@@ -25,10 +25,10 @@ Every fault is a directory `incidents/<name>/` with:
 ```yaml
 name: crashloop-bad-config        # must match the directory name
 verified: true                    # optional: confirmed end-to-end on a fresh cluster (else unverified)
-displayName: "CrashLoop: broken container command"
+displayName: "CrashLoop: a bad config value takes the app down"
 description: "What the victim experiences, not how it's injected"
 category: workload                # workload | network | resources | storage | config
-severity: medium                  # low | medium | high
+severity: high                    # low | medium | high
 target:                           # templatable — see "Targeting a workload"
   namespace: "{{.WorkloadNamespace}}"
   workload: "{{.WorkloadName}}"
@@ -46,7 +46,7 @@ references:                       # optional: upstream docs for the fix
     url: "https://kubernetes.io/docs/tasks/debug/debug-application/"
     note: "Optional context."
 snippets:                         # optional: applyable diagnose/remediate manifests
-  - label: "Restore the container command"
+  - label: "Restore the PORT setting"
     description: "Strategic-merge patch that undoes the fault."
     yaml: |                       # inline manifest, OR `path: manifests/fix.yaml`
       spec:
@@ -54,7 +54,9 @@ snippets:                         # optional: applyable diagnose/remediate manif
           spec:
             containers:
               - name: go-api
-                command: null
+                env:
+                  - name: PORT
+                    value: "8080"
 ```
 
 ### Targeting a workload
@@ -165,7 +167,7 @@ hatch from every state a learner can leave behind, and scores the result out of
 
 | Fault | Category | Severity | What breaks |
 |-------|----------|----------|-------------|
-| `crashloop-bad-config` | workload | medium | the workload's container command is replaced with one that exits immediately — new pods crash-loop |
+| `crashloop-bad-config` | workload | high | a config change sets the workload's `PORT` to a port that cannot exist and no old pod is left serving — every pod crash-loops with the error in its logs, and every request fails |
 | `bad-deploy-rollout` | workload | medium | the workload is "deployed" with a tag that was never pushed — rollout sticks in ImagePullBackOff |
 | `oom-kill` | resources | high | the workload's memory limit is cut just below what it needs under load, and k6 traffic is started — the pod idles fine and is OOMKilled once requests arrive |
 | `network-blackhole` | network | high | a deny-all-ingress NetworkPolicy lands in the workload's namespace — the service goes dark through the ingress |

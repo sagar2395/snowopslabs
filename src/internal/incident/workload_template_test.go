@@ -134,11 +134,13 @@ func TestGetResolvesReaderFacingFields(t *testing.T) {
 }
 
 // A detection script runs on checks.Runner, which does not inherit the
-// executor's environment, so targetEnv must supply the domain suffix it needs
-// to reach the workload's ingress.
+// executor's environment, so targetEnv must supply the domain suffix and the
+// ingress URL suffix (which keeps a non-default port) it needs to reach the
+// workload's ingress.
 func TestTargetEnvCarriesTheContextAChecksScriptNeeds(t *testing.T) {
 	e := &Engine{
 		DomainSuffix:        "k3d.local",
+		IngressURLSuffix:    "k3d.local:8081",
 		MonitoringNamespace: "observability",
 		Workload:            workload.Workload{Name: "shop", Namespace: "storefront"},
 	}
@@ -148,6 +150,7 @@ func TestTargetEnvCarriesTheContextAChecksScriptNeeds(t *testing.T) {
 		"TARGET_NAMESPACE":     "storefront",
 		"TARGET_WORKLOAD":      "shop",
 		"DOMAIN_SUFFIX":        "k3d.local",
+		"INGRESS_URL_SUFFIX":   "k3d.local:8081",
 		"MONITORING_NAMESPACE": "observability",
 	} {
 		if env[k] != want {

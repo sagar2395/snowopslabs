@@ -13,7 +13,8 @@ set -euo pipefail
 
 NS="${TARGET_NAMESPACE:-go-api}"
 DEPLOY="${TARGET_WORKLOAD:-go-api}"
-SUFFIX="${DOMAIN_SUFFIX:-${CLUSTER_NAME:-snowops}.localhost}"
+# INGRESS_URL_SUFFIX keeps the ingress port when it is not 80.
+SUFFIX="${INGRESS_URL_SUFFIX:-${DOMAIN_SUFFIX:-${CLUSTER_NAME:-snowops}.localhost}}"
 
 # Look for the fault's OWN policy, by its label, rather than for any deny-all.
 # A namespace-wide deny baseline with targeted allows beside it is the pattern
@@ -36,7 +37,8 @@ if [ -n "$DENYING" ]; then
   exit 1
 fi
 
-CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${DEPLOY}.${SUFFIX}/health" || echo 000)"
+# curl prints 000 itself when it cannot connect, so a failure needs no fallback.
+CODE="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://${DEPLOY}.${SUFFIX}/health" || true)"
 if [ "$CODE" != "200" ]; then
   echo "FAIL: no policy is blocking ingress, but http://${DEPLOY}.${SUFFIX}/health returned ${CODE}." >&2
   echo "  The ingress controller may still be retrying failed connections — try again shortly." >&2

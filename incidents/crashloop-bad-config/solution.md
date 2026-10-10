@@ -2,38 +2,60 @@
 
 ## What happened
 
-The {{.WorkloadName}} Deployment's container `command` was overridden with
-`/bin/false`, so every new pod exits immediately with code 1 and enters
-CrashLoopBackOff. Because Deployments roll out progressively, the old
-ReplicaSet's pods keep serving — the symptom is a *stuck rollout*, not a
-full outage.
+A config change set the {{.WorkloadName}} container's `PORT` environment
+variable to `80800`, one zero too many. The app reads `PORT` at startup, cannot
+listen on a port that does not exist, logs the error and exits with code 1. The
+kubelet restarts it, it fails again, and the waits between restarts double:
+CrashLoopBackOff.
+
+The old pods were already gone. The release went out the way a `Recreate`
+strategy, or a crash that only starts after the pod passed its readiness check,
+lets it: the old ReplicaSet scaled to zero before the new pods proved
+themselves. With nothing left to fall back on, a crash loop is an outage.
 
 ## Diagnosis path
 
 ```bash
-kubectl get pods -n {{.WorkloadNamespace}}                      # new pods CrashLoopBackOff, old pod Running
-kubectl rollout status deploy/{{.WorkloadName}} -n {{.WorkloadNamespace}}  # "Waiting for deployment ... to finish" — stuck
-kubectl describe pod -n {{.WorkloadNamespace}} <crashing-pod>   # Last State: Terminated, Exit Code 1, no app logs
-kubectl get deploy {{.WorkloadName}} -n {{.WorkloadNamespace}} -o jsonpath='{.spec.template.spec.containers[0].command}'
-# ["/bin/false"]  ← there's your problem
+kubectl get pods -n {{.WorkloadNamespace}}                     # CrashLoopBackOff, RESTARTS climbing
+kubectl get rs -n {{.WorkloadNamespace}}                       # old ReplicaSet at 0, new one never ready
+kubectl logs -n {{.WorkloadNamespace}} <crashing-pod> --previous
+# ... "listen tcp: address 80800: invalid port"   <- the app tells you why
+kubectl describe pod -n {{.WorkloadNamespace}} <crashing-pod>  # Last State: Terminated, Exit Code 1
+kubectl get deploy {{.WorkloadName}} -n {{.WorkloadNamespace}} \
+  -o jsonpath='{.spec.template.spec.containers[0].env}'
+# [{"name":"PORT","value":"80800"}, ...]          <- there's your problem
 ```
+
+In Grafana, *Application Request Metrics* shows the impact (a red *No
+available pods* region from the config change to the fix, *Responses by
+outcome (k6 client)* turning from 200 to `no response`, k6's failed request
+rate at 100%, and the app handling nothing while k6 keeps offering the same
+load) and *Pod Resources* shows the
+cause category (*Container restarts* climbing, *Containers not running, by
+reason* reading CrashLoopBackOff).
 
 ## Fix
 
-Remove the command override and let the image's own entrypoint run:
+Put `PORT` back to the port the container declares ({{.WorkloadPort}}):
 
 ```bash
-kubectl -n {{.WorkloadNamespace}} patch deploy {{.WorkloadName}} --type=json \
-  -p '[{"op":"remove","path":"/spec/template/spec/containers/0/command"}]'
+kubectl -n {{.WorkloadNamespace}} set env deploy/{{.WorkloadName}} PORT={{.WorkloadPort}}
 kubectl -n {{.WorkloadNamespace}} rollout status deploy/{{.WorkloadName}}
 ```
 
-Verify: `labctl incident status` — the detection check passes once the
-rollout completes.
+`kubectl rollout undo deploy/{{.WorkloadName}} -n {{.WorkloadNamespace}}` works
+too: it returns the template to the previous revision, config included.
+Deleting the pod does not: the Deployment recreates it from the same broken
+template.
+
+Verify: `labctl incident status`. The detection check passes once every
+replica is ready.
 
 ## Real-world parallel
 
-Bad entrypoint/command overrides ship constantly: a debug command left in a
-values file, a wrong `args` merge, an init wrapper missing from the image.
-The lesson: when pods die with exit code 1 *before logging*, read the spec,
-not just the logs.
+A typo in a values file, an environment variable renamed in one place and not
+the other, a setting that is valid in staging and not in production. The
+lesson: CrashLoopBackOff is a symptom; the cause is in the previous
+container's logs, and the fix belongs in the template the pods are built from.
+When there are no logs at all, the app never started: read the spec (command,
+args, image, env).

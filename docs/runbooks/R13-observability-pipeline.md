@@ -67,6 +67,42 @@ injected between the ingress and the app does not show on the k6 panels.
 never matches and both are returned: two lines with one legend. Aggregate first,
 `sum(rate(x[5m])) or vector(0)`.
 
+**An app that is not running cannot count its own failures.** When every pod
+crash-loops, the server-side request panels fall to zero and *Error rate (5xx)*
+reads zero too. Read an outage from the client side (*Responses by outcome (k6
+client)*, where requests that got no answer show as `no response`, and k6's
+failed request rate) and its cause from kube-state-metrics: *Pod Resources*
+charts container restarts and containers waiting by reason
+(`kube_pod_container_status_waiting_reason`).
+
+**A rate that stops leaves a gap, not a zero.** When a counter stops being
+scraped, `rate()` returns nothing, and Grafana draws a gap that reads as missing
+data. The server-side panels add
+`or 0 * group by (app) (last_over_time(<counter>[1h]))`, so an app seen in the
+last hour draws 0 while it serves nothing.
+
+**k6 trend series linger for five minutes.** k6 remote-writes one
+`k6_http_req_duration_p95` series per status, and remote-written series have no
+staleness markers, so a burst of 503s keeps its latency on the chart for five
+minutes after it ends. *k6 client-observed latency* keeps a status's series only
+while `rate(k6_http_reqs_total{status=...}[1m]) > 0`.
+
+**k6 under-reports what it was asked to send when the target stops answering.**
+An arrival-rate executor starts each request on a free virtual user; while every
+user waits on a connection that times out, k6 drops the iteration instead
+(`k6_dropped_iterations_total`), and `k6_http_reqs_total` falls with it. During
+the CrashLoop outage it fell from 10 to 2 req/s. *Offered vs served* plots sent
+plus dropped, which is the offered load because every profile sends one request
+per iteration.
+
+**Grafana skips Prometheus annotation samples whose value is 0.** An annotation
+query ending in `== 0` returns series that never draw. The *No available pods*
+annotation selects `kube_deployment_spec_replicas` (at least 1) and filters it by
+`kube_deployment_status_replicas_available == 0`, so the region draws. It joins
+the deployment name to the request metric's `app` label, so it shades only apps
+seen in the last hour whose Deployment is named after the app, and never a
+Deployment scaled to 0 on purpose.
+
 **A scrapeTimeout above the scrapeInterval voids the ServiceMonitor.**
 prometheus-operator rejects it outright (`InvalidConfiguration`, visible only in
 the operator log and a Warning event) and the target never appears. Charts that
@@ -157,11 +193,14 @@ labctl traffic status
 
 Open **Grafana → Application Request Metrics** (`/d/app-requests`). It is one
 dashboard for every app: pick one or more in the **App** selector, or open
-`/d/app-requests?var-app=go-api`. The k6 panels are not filtered by it — k6
-metrics carry no app label, so they show the whole traffic run.
+`/d/app-requests?var-app=go-api`. k6 metrics carry no app label, so the k6
+panels follow the selector through the URL each request was sent to. Below the
+first row, the left column is the server's view and the right column is k6's.
 
 **Expect:** "Request rate by app" settles near 25 req/s within a minute, and on
-"Offered vs served" the k6 line and the app line sit on top of each other. A
+"Offered vs served" the k6 offered line and the app line sit on top of each
+other. A red region on every panel is the *No available pods* annotation: no
+pod of the app was Ready then. A
 persistent gap means requests are being lost before reaching the app — that is a
 finding, not noise.
 

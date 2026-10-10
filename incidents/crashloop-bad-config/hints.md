@@ -1,18 +1,23 @@
 # Hints — crashloop-bad-config
 
 ## Hint 1
-Something changed about the {{.WorkloadName}} deployment recently. Start where you
-always should: `kubectl get pods -n {{.WorkloadNamespace}}` and look at the STATUS and
-RESTARTS columns. What's different between the old and new pods?
+Users get errors on every request, so start from what should be answering them:
+`kubectl get pods -n {{.WorkloadNamespace}}` and read the STATUS and RESTARTS
+columns. In Grafana, *Pod Resources* shows the same thing over time:
+*Container restarts* and *Containers not running, by reason*. Is anything left
+serving?
 
 ## Hint 2
-A pod that dies instantly usually logs why — or dies too fast to log
-anything, which is itself a clue. Compare
-`kubectl logs -n {{.WorkloadNamespace}} <crashing-pod>` (and `--previous`) with
-`kubectl describe pod` — check the container's Last State and exit code.
+CrashLoopBackOff only says the container keeps exiting, not why. A container
+that crashed already wrote its last words: read them with
+`kubectl logs -n {{.WorkloadNamespace}} <crashing-pod> --previous`, and check
+Last State and Exit Code in `kubectl describe pod`. What does the error
+complain about?
 
 ## Hint 3
-Exit code 1 with no app logs means the app never started. Inspect the pod
-*spec*, not its status: `kubectl get deploy {{.WorkloadName}} -n {{.WorkloadNamespace}} -o yaml` and
-look at the container's `command`. Does that look like it belongs there?
-Remove the override and watch the rollout recover.
+The error names a setting the app reads when it starts. Settings like that come
+from the pod template, not the pod:
+`kubectl get deploy {{.WorkloadName}} -n {{.WorkloadNamespace}} -o yaml` and
+read the container's `env`. Compare it with the `containerPort` a few lines
+above. Fix the Deployment, not the pod: a deleted pod comes back from the same
+template and crashes the same way.

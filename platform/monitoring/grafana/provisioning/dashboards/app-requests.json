@@ -9,6 +9,22 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(242, 73, 92, 0.5)",
+        "name": "No available pods",
+        "expr": "(kube_deployment_spec_replicas{deployment=~\"$app\"} > 0) and on (namespace, deployment) (kube_deployment_status_replicas_available == 0) and on (deployment) label_replace(group by (app) (last_over_time(http_server_request_duration_seconds_count[1h])), \"deployment\", \"$1\", \"app\", \"(.*)\")",
+        "step": "15s",
+        "titleFormat": "No available pods",
+        "textFormat": "{{namespace}}/{{deployment}}: no pod is Ready to serve",
+        "tagKeys": "namespace,deployment",
+        "useValueForTime": false
       }
     ]
   },
@@ -29,7 +45,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**Server-side** panels (`http_server_request_duration_seconds_count`) count what the app actually handled. **Client-side** panels (`k6_*`) count what the load generator sent. A gap between them is the interesting signal: requests dropped at the ingress, rejected by a full queue, or lost to pod restarts never reach the app's counters.\n\nGenerate load with `labctl traffic start --profile steady --rps 25`, then compare the two rows. The `k6_*` series only appear while a run is in flight."
+        "content": "**Server-side** panels (`http_server_request_duration_seconds_count`) count what the app actually handled; **client-side** panels (`k6_*`) count what the load generator sent and got back. Below the first row, the left column is the server's view and the right column is k6's view of the same question. A gap between them is the interesting signal: requests dropped at the ingress, rejected by a full queue, or lost to pod restarts never reach the app's counters.\n\nGenerate load with `labctl traffic start --profile steady --rps 25`. The `k6_*` series only appear while a run is in flight."
       }
     },
     {
@@ -89,13 +105,13 @@
       },
       "targets": [
         {
-          "expr": "sum by (app) (rate(http_server_request_duration_seconds_count[1m]))",
+          "expr": "sum by (app) (rate(http_server_request_duration_seconds_count[1m])) or 0 * group by (app) (last_over_time(http_server_request_duration_seconds_count[1h]))",
           "legendFormat": "{{app}}",
           "refId": "A",
           "format": "time_series"
         }
       ],
-      "description": "Every route is metered by one middleware, so this moves for any traffic the app serves."
+      "description": "Every route is metered by one middleware, so this moves for any traffic the app serves. An app seen in the last hour that handles nothing, because no pod is serving, reads 0 rather than disappearing."
     },
     {
       "id": 3,
@@ -154,13 +170,13 @@
       },
       "targets": [
         {
-          "expr": "sum by (app, http_route) (rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m]))",
+          "expr": "sum by (app, http_route) (rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m])) or 0 * group by (app, http_route) (last_over_time(http_server_request_duration_seconds_count{app=~\"$app\"}[1h]))",
           "legendFormat": "{{app}} {{http_route}}",
           "refId": "A",
           "format": "time_series"
         }
       ],
-      "description": "The route label is normalised to known routes plus 'other', so cardinality stays bounded."
+      "description": "The route label is normalised to known routes plus 'other', so cardinality stays bounded. A route seen in the last hour reads 0 while nothing is served on it."
     },
     {
       "id": 4,
@@ -174,7 +190,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 28
       },
       "options": {
         "legend": {
@@ -242,7 +258,7 @@
     {
       "id": 5,
       "type": "timeseries",
-      "title": "Responses by status code",
+      "title": "Responses by status code (server-side)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -250,7 +266,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
+        "x": 0,
         "y": 12
       },
       "options": {
@@ -272,7 +288,7 @@
           "custom": {
             "drawStyle": "bars",
             "lineWidth": 2,
-            "fillOpacity": 10,
+            "fillOpacity": 80,
             "showPoints": "never",
             "spanNulls": false,
             "stacking": {
@@ -292,7 +308,68 @@
           },
           "unit": "reqps"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 2[0-9][0-9]$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 3[0-9][0-9]$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 4[0-9][0-9]$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 5[0-9][0-9]$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
       },
       "targets": [
         {
@@ -302,7 +379,7 @@
           "format": "time_series"
         }
       ],
-      "description": "Filtered on the app label. The scrape job for annotation-discovered pods is 'kubernetes-pods', not the app name, so filtering on job here would always be empty."
+      "description": "Filtered on the app label. The scrape job for annotation-discovered pods is 'kubernetes-pods', not the app name, so filtering on job here would always be empty. Requests that never reach the app, because no pod is serving, are not here: read those from Responses by outcome (k6 client)."
     },
     {
       "id": 6,
@@ -361,27 +438,27 @@
       },
       "targets": [
         {
-          "expr": "sum by (app) (rate(http_server_request_duration_seconds_count{app=~\"$app\", http_response_status_code=~\"5..\"}[5m])) or 0 * sum by (app) (rate(http_server_request_duration_seconds_count{app=~\"$app\"}[5m]))",
+          "expr": "sum by (app) (rate(http_server_request_duration_seconds_count{app=~\"$app\", http_response_status_code=~\"5..\"}[1m])) or 0 * group by (app) (last_over_time(http_server_request_duration_seconds_count{app=~\"$app\"}[1h]))",
           "legendFormat": "5xx {{app}}",
           "refId": "A",
           "format": "time_series"
         }
       ],
-      "description": "5xx responses per second. A line at 0 means the app is serving and failing nothing; no line means it is not serving at all."
+      "description": "5xx responses per second the app itself returned. It also reads 0 during a total outage: an app that is not running returns nothing, so read an outage from k6 failed request rate and Responses by outcome (k6 client)."
     },
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Offered vs served: k6 sent vs app handled",
+      "title": "Offered vs served: k6 offered vs app handled",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 20
+        "w": 24,
+        "x": 0,
+        "y": 36
       },
       "options": {
         "legend": {
@@ -426,19 +503,19 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\"}[1m]))",
-          "legendFormat": "k6 sent (client)",
+          "expr": "((sum(rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\"}[1m])) or vector(0)) + (sum(rate(k6_dropped_iterations_total[1m])) or vector(0))) and on () (count(last_over_time(k6_http_reqs_total{url=~\"https?://$app\\\\..*\"}[5m])) > 0)",
+          "legendFormat": "k6 offered (client)",
           "refId": "A",
           "format": "time_series"
         },
         {
-          "expr": "sum(rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m]))",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{app=~\"$app\"}[1m])) or vector(0)",
           "legendFormat": "handled by the app (server)",
           "refId": "B",
           "format": "time_series"
         }
       ],
-      "description": "Two lines that should overlap when only k6 is loading the selected apps. k6 counts what it sent to them; the apps count what they handled, which also includes kubelet probes and any traffic that did not come from k6. A persistent gap beyond that means requests are lost before reaching the app."
+      "description": "Two lines that should overlap when only k6 is loading the selected apps. k6 offered is every request the run was asked to send: the ones it sent plus the ones it dropped because every virtual user was still waiting on an earlier request. The apps count what they handled, which also includes kubelet probes and any traffic that did not come from k6. A persistent gap beyond that means requests are lost before reaching the app. When no pod is serving at all, the app line drops to zero while the offered line stays at the configured rate."
     },
     {
       "id": 8,
@@ -451,7 +528,7 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
+        "x": 12,
         "y": 28
       },
       "options": {
@@ -497,19 +574,19 @@
       },
       "targets": [
         {
-          "expr": "label_replace(label_replace(max by (url) (k6_http_req_duration_p95{url=~\"https?://$app\\\\..*\"}), \"app\", \"$1\", \"url\", \"https?://([^.]+)\\\\..*\"), \"route\", \"$1\", \"url\", \"https?://[^/]+(/.*)\")",
+          "expr": "label_replace(label_replace(max by (url) (k6_http_req_duration_p95{url=~\"https?://$app\\\\..*\"} and on (url, status) (rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\", status!=\"0\"}[1m]) > 0)), \"app\", \"$1\", \"url\", \"https?://([^.]+)\\\\..*\"), \"route\", \"$1\", \"url\", \"https?://[^/]+(/.*)\")",
           "legendFormat": "p95 {{app}} {{route}}",
           "refId": "A",
           "format": "time_series"
         },
         {
-          "expr": "label_replace(label_replace(max by (url) (k6_http_req_duration_p99{url=~\"https?://$app\\\\..*\"}), \"app\", \"$1\", \"url\", \"https?://([^.]+)\\\\..*\"), \"route\", \"$1\", \"url\", \"https?://[^/]+(/.*)\")",
+          "expr": "label_replace(label_replace(max by (url) (k6_http_req_duration_p99{url=~\"https?://$app\\\\..*\"} and on (url, status) (rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\", status!=\"0\"}[1m]) > 0)), \"app\", \"$1\", \"url\", \"https?://([^.]+)\\\\..*\"), \"route\", \"$1\", \"url\", \"https?://[^/]+(/.*)\")",
           "legendFormat": "p99 {{app}} {{route}}",
           "refId": "B",
           "format": "time_series"
         }
       ],
-      "description": "Latency as the k6 client measured it, per route it hit. The k6 panels follow the App selector through the URL each request was sent to."
+      "description": "Latency as the k6 client measured it, per route it hit. The k6 panels follow the App selector through the URL each request was sent to. Each status's latency is drawn only while k6 is still getting that status back, so a burst of errors does not linger after it ends; a request that got no response has no latency, so a total outage is a gap."
     },
     {
       "id": 9,
@@ -523,7 +600,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 20
       },
       "options": {
         "legend": {
@@ -575,6 +652,147 @@
         }
       ],
       "description": "The share of requests k6 sent in the last minute that did not get the response it expected, per route. Unlike the server-side error panel it includes requests that never reached the app."
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Responses by outcome (k6 client)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 2,
+            "fillOpacity": 80,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "reqps"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 2[0-9][0-9]$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 3[0-9][0-9]$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 4[0-9][0-9]$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* 5[0-9][0-9]$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".* no response$"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "dark-red"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "sum by (app, status) (label_replace(label_replace(rate(k6_http_reqs_total{url=~\"https?://$app\\\\..*\"}[1m]), \"app\", \"$1\", \"url\", \"https?://([^.]+)\\\\..*\"), \"status\", \"no response\", \"status\", \"0\"))",
+          "legendFormat": "{{app}} {{status}}",
+          "refId": "A",
+          "format": "time_series"
+        }
+      ],
+      "description": "What k6 got back for each request it sent, by HTTP status. 'no response' is a request that got no answer at all (connection refused or timed out): the failures the app's own counters can never see."
     }
   ],
   "refresh": "10s",

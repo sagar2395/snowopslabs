@@ -1,9 +1,9 @@
 name: crashloop-bad-config
 verified: true
-displayName: "CrashLoop: broken container command"
-description: "Users report the latest {{.WorkloadName}} deploy never finished. New pods start, die instantly, and start again — classic CrashLoopBackOff. The old pods are still serving, so traffic mostly works… for now."
+displayName: "CrashLoop: a bad config value takes the app down"
+description: "{{.WorkloadName}} went down minutes after a config change rolled out. Every request now fails. Every {{.WorkloadName}} pod starts, dies within a second and starts again (CrashLoopBackOff), and no old pod is left to serve."
 category: workload
-severity: medium
+severity: high
 target:
   namespace: "{{.WorkloadNamespace}}"
   workload: "{{.WorkloadName}}"
@@ -16,3 +16,14 @@ detection:
   script: checks/resolved.sh
   timeoutSeconds: 30
 expectAlert: LabFaultCrashLoop
+
+references:
+  - label: "Kubernetes — Determine the reason for pod failure"
+    url: "https://kubernetes.io/docs/tasks/debug/debug-application/determine-reason-pod-failure/"
+    note: "Last State, exit codes and termination messages: where a crashed container leaves its evidence."
+  - label: "Kubernetes — Container restarts and CrashLoopBackOff"
+    url: "https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#container-restarts"
+    note: "Why the wait between restarts doubles up to five minutes."
+  - label: "Kubernetes — Define environment variables for a container"
+    url: "https://kubernetes.io/docs/tasks/inject-data-application/define-environment-variable-container/"
+    note: "Where a container's settings live in the pod template, and how to change them."

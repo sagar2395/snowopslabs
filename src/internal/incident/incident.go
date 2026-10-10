@@ -493,16 +493,16 @@ func (e *Engine) ResolvedTarget(f *Fault) Target {
 	}
 }
 
-// targetEnv returns the environment for the fault's scripts: its resolved
-// target, plus the domain suffix and monitoring namespace. Detection scripts
-// run on checks.Runner, which does not inherit the executor's environment, so
-// they get these values only from here.
+// targetEnv returns the environment for the fault's scripts: the resolved
+// target, domain and ingress URL suffixes (the latter keeps a non-80 port) and
+// monitoring namespace. Detection scripts get these values only from here.
 func (e *Engine) targetEnv(f *Fault) map[string]string {
 	t := e.ResolvedTarget(f)
 	return map[string]string{
 		"TARGET_NAMESPACE":     t.Namespace,
 		"TARGET_WORKLOAD":      t.Workload,
 		"DOMAIN_SUFFIX":        e.DomainSuffix,
+		"INGRESS_URL_SUFFIX":   e.IngressURLSuffix,
 		"MONITORING_NAMESPACE": e.MonitoringNamespace,
 	}
 }

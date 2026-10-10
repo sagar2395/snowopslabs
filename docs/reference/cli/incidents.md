@@ -68,6 +68,9 @@ labctl incident inject --random --category network
 - The first `incident status` call timestamps *time-to-check*, the detection
   proxy. Resolution — the detection check passing, or the escape hatch — closes
   the run.
+- When a hand fix makes `incident status` pass, it then runs the fault's
+  `resolve.sh` as a recorded resolve. That removes the armed alert rule and the
+  `labfault-*` bookkeeping a fix leaves behind; the run still counts as solved.
 - Each run is appended to `~/.snowops/state/<cluster>/history/results.jsonl` with MTTR, hints
   used, and whether it was resolved manually or via `resolve`. The escape hatch
   counts as a non-completion for challenge scoring.

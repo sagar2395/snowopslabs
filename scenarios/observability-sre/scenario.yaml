@@ -262,7 +262,7 @@ explore:
     - label: "4. Confirm the app is counting them (server-side truth)"
       command: "kubectl -n {{.WorkloadNamespace}} exec deploy/{{.WorkloadName}} -- wget -qO- localhost:{{.WorkloadPort}}/metrics | grep '^{{.WorkloadMetric}}_count'"
     - label: "5. Compare client-side vs server-side in Grafana"
-      command: "open 'http://grafana.{{.IngressURLSuffix}}/d/app-requests?var-app={{.WorkloadName}}'  # k6 sent vs app handled — the two lines should overlap"
+      command: "open 'http://grafana.{{.IngressURLSuffix}}/d/app-requests?var-app={{.WorkloadName}}'  # k6 offered vs app handled — the two lines should overlap"
     - label: "6. Query {{.WorkloadName}} logs in Loki"
       command: "Open Grafana > Explore > Loki > {namespace=\"{{.WorkloadNamespace}}\"} | json | line_format \"{{.method}} {{.path}} {{.status}}\""
     - label: "7. Jump from a log line to its trace"

@@ -181,6 +181,7 @@ var incidentStatusCmd = &cobra.Command{
 		if res.Resolved {
 			fmt.Printf("\nRESOLVED — detection check %q passes. Nice work.\n", res.Check.Name)
 			fmt.Printf("It was: %s — %s\n", res.Fault.Name, res.Fault.DisplayName)
+			tidyAfterFix(cmd, res.Fault.Name, incsvc.Target(incEng.ResolvedTarget(res.Fault)))
 			return nil
 		}
 		detail := res.Check.Error
@@ -191,6 +192,19 @@ var incidentStatusCmd = &cobra.Command{
 		fmt.Println("Keep digging, or: labctl incident hint")
 		return nil
 	},
+}
+
+// tidyAfterFix runs a fault's resolve.sh once a hand fix passes, removing the armed
+// alert rule and labfault-* marks; resolve.sh leaves what is already fixed alone.
+func tidyAfterFix(cmd *cobra.Command, name string, target incsvc.Target) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "\nTidying up: running %s's resolve.sh to remove its alert rule and bookkeeping.\n", name)
+	err := runIncidentOp(cmd, "resolve", name, func(ctx context.Context, svc *incsvc.Service) (string, error) {
+		return svc.Resolve(ctx, name, target)
+	})
+	if err != nil {
+		fmt.Fprintf(out, "The tidy-up did not finish (%v). Your fix still counts; run 'labctl incident resolve %s' to finish it.\n", err, name)
+	}
 }
 
 var incidentResolveCmd = &cobra.Command{
