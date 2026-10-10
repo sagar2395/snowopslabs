@@ -44,6 +44,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
 
       - name: Build
@@ -76,6 +77,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
 
       - name: gofmt
@@ -104,6 +106,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
 
       # gosec (SAST) runs as part of golangci-lint (the go-lint job) so its
@@ -124,6 +127,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
       # A short run on every PR catches crashers introduced by the change; the
       # long run happens nightly.
@@ -243,6 +247,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
       - uses: actions/setup-node@v4
         with:
@@ -273,6 +278,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
       - uses: actions/setup-node@v4
         with:
@@ -320,6 +326,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          check-latest: true
           cache: true
           cache-dependency-path: apps/${{ matrix.app }}/go.sum
 
