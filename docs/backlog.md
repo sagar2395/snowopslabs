@@ -35,6 +35,7 @@ Effort is in engineering days and is an estimate, not a commitment.
 | [B21](#b21--init-floods-the-screen-with-metricsk8sio-discovery-errors) | `init` floods the screen with `metrics.k8s.io` discovery errors | platform | 0.5–1 |
 | [B22](#b22--cost-right-sizing-cannot-activate-on-a-2-cpu-lab) | cost-right-sizing cannot activate on a 2 CPU lab | content | 0.5–1 |
 | [B23](#b23--scenario-explore-links-point-at-dashboards-that-do-not-exist-yet) | Scenario Explore links point at dashboards that do not exist yet | UI, content | 0.5 |
+| [B24](#b24--service-selector-broken-writes-the-answer-on-the-service) | service-selector-broken writes the answer on the Service | content | 0.5 |
 
 ---
 
@@ -588,4 +589,26 @@ dashboards list instead.
 
 **Start at.** The scenario details panel in `src/ui/src/`, and the explore
 links in each `scenario.yaml`.
+
+---
+
+## B24 — service-selector-broken writes the answer on the Service
+
+**Problem.** `inject.sh` annotates the go-api Service with
+`labfault-service-selector-broken: injected` and
+`labfault-service-selector-broken-original-selector: {"app":"go-api",...,"app.kubernetes.io/name":"go-api"}`.
+`kubectl describe svc`, the one command the drill wants the learner to run,
+prints both lines right above the broken `Selector`, so the answer is on screen
+before any comparison. inject.sh already avoids a `labfault-` selector value for
+this reason; the annotation undoes it.
+
+**Found.** Recording VID-13 (Service has no endpoints).
+
+**Proposed approach.** Keep the original selector out of the learner's object:
+store it in the active incident's state (`.labctl/incidents/`) or in a
+ConfigMap in the monitoring namespace, and have `resolve.sh` read it from
+there. Keep the guard on the fault itself (selector differs from the template).
+
+**Start at.** `incidents/service-selector-broken/inject.sh`, `resolve.sh`;
+how other faults keep their bookkeeping in `incidents/_lib/`.
 
