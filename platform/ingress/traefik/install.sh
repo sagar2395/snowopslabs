@@ -27,6 +27,24 @@ if kubectl get deployment traefik -n kube-system &>/dev/null; then
   kubectl delete service traefik -n kube-system --ignore-not-found
 fi
 
+# kind has no LoadBalancer implementation, so the Service never gets an address
+# and helm --wait cannot finish. Traefik binds host ports 80/443 on the node
+# that runtimes/kind/up.sh maps them to, and gives the port up before a new pod.
+EXPOSE_ARGS=()
+if [ "${PROFILE:-k3d}" = "kind" ]; then
+  EXPOSE_ARGS=(
+    --set service.spec.type=ClusterIP
+    --set ports.web.hostPort=80
+    --set ports.websecure.hostPort=443
+    --set-string nodeSelector.ingress-ready=true
+    --set "tolerations[0].key=node-role.kubernetes.io/control-plane"
+    --set "tolerations[0].operator=Exists"
+    --set "tolerations[0].effect=NoSchedule"
+    --set updateStrategy.rollingUpdate.maxUnavailable=1
+    --set updateStrategy.rollingUpdate.maxSurge=0
+  )
+fi
+
 helm repo add traefik https://traefik.github.io/charts --force-update
 helm repo update
 
@@ -36,7 +54,7 @@ helm_upgrade_install traefik "$NAMESPACE" traefik/traefik \
   --namespace $NAMESPACE \
   --create-namespace \
   -f "$(dirname "$0")/values.yaml" \
-  --set service.type=LoadBalancer \
+  ${EXPOSE_ARGS[@]+"${EXPOSE_ARGS[@]}"} \
   --set api.dashboard=true \
   --wait --timeout 5m
 

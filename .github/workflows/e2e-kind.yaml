@@ -72,7 +72,7 @@ jobs:
           done
 
       - name: Promote v1.1.0 through dev -> staging -> prod
-        # env-promotion's last check, newer-release-reached-prod, is declared
+        # env-promotion's newer-release-reached-prod check is declared
         # `pending: true`: it only passes once a release newer than the v1.0.0
         # baseline has reached prod, so `verify` on a freshly activated scenario
         # can never exit 0. Walk the drill the way a learner does — that is what
@@ -80,7 +80,7 @@ jobs:
         # image, load it into the cluster, roll it out per environment, and
         # record the release in each env's ConfigMap.
         run: |
-          bash scenarios/env-promotion/scripts/build-image.sh v1.1.0
+          bash scenarios/env-promotion/scripts/build-image.sh v1.1.0 --app go-api --namespace go-api
           promoted_from=""
           for env_name in dev staging prod; do
             ns="env-${env_name}"
@@ -89,6 +89,16 @@ jobs:
             kubectl -n "$ns" patch cm env-metadata --type=merge -p "{\"data\":{\"declared_tag\":\"v1.1.0\",\"promoted_from\":\"${promoted_from}\",\"promoted_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}"
             promoted_from="$env_name"
           done
+
+      - name: Roll prod back from a release that cannot land
+        # rollback-was-exercised is `pending: true` too: it passes once prod serves
+        # a ReplicaSet older than its newest. v9.9.9 is never built, so undo returns
+        # to v1.1.0; it waits for the v9.9.9 ReplicaSet, or undo would pick v1.0.0.
+        run: |
+          kubectl -n env-prod set image deployment/go-api go-api=go-api:v9.9.9
+          timeout 60 bash -c 'until kubectl -n env-prod get rs -o jsonpath="{.items[*].spec.template.spec.containers[0].image}" | grep -q "go-api:v9.9.9"; do sleep 1; done'
+          kubectl -n env-prod rollout undo deployment/go-api
+          kubectl -n env-prod rollout status deployment/go-api --timeout=180s
 
       - name: Verify scenario checks pass
         # --watch so the last of the superseded pods finishing termination reads

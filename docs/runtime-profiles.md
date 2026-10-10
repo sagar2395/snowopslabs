@@ -58,6 +58,11 @@ the project root and receive configuration through the environment (golden rule
   busy it falls back to free ports (8080/8443 and up), and labctl reads this
   record so every URL, printed hint and check uses the real port. `down.sh`
   removes the record.
+- kind reaches the ingress through **host ports, not a load balancer**. `up.sh`
+  maps the host's 80/443 to the control-plane node and labels it
+  `ingress-ready=true`; kind has no load balancer, so on `PROFILE=kind` Traefik
+  binds `hostPort` 80/443 on that node
+  ([R05](runbooks/R05-platform-components.md#helm-truths-this-repo-has-been-bitten-by)).
 - The record also holds the lab's **domain suffix**, which it keeps across
   restarts. A lab still on a legacy default (`k3d.local`, `kind.local`) is moved
   to `<cluster>.localhost` by `labctl init`: `runtimes/_lib/move-domain.sh`

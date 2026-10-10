@@ -85,6 +85,15 @@ helm uninstall <release> -n <namespace>       # pending-install
 helm rollback <release> -n <namespace>        # pending-upgrade / pending-rollback
 ```
 
+**`helm --wait` waits for a LoadBalancer Service to get an address, and kind
+never gives one.** kind has no load balancer, so a `LoadBalancer` Service stays
+`<pending>` and the install fails after its timeout with
+`context deadline exceeded` while the pods are `Running`. On `PROFILE=kind`,
+`platform/ingress/traefik/install.sh` makes the Service `ClusterIP` and binds
+host ports 80/443 on the `ingress-ready` control-plane node, the one
+`runtimes/kind/up.sh` maps to the host. The Traefik chart reads the type from
+`service.spec.type`; it ignores `service.type`.
+
 **A scenario that adopts a platform release must not uninstall it on teardown.**
 
 **A pod's `.status.containerStatuses[].image` reports whichever tag the kubelet
