@@ -161,12 +161,15 @@ func NewEngine(projectRoot, domainSuffix, profile string, monitoringNamespace ..
 	return e
 }
 
-// List returns all discovered scenarios in catalog order.
+// List returns all discovered scenarios in catalog order. Each result is
+// a copy of the cached scenario with Active filled in: the cached values
+// are never written, so concurrent callers cannot race on them.
 func (e *Engine) List() []*Scenario {
 	var result []*Scenario
 	for _, s := range e.scenarios {
-		s.Active = e.isActive(s.Name)
-		result = append(result, s)
+		out := *s
+		out.Active = e.isActive(s.Name)
+		result = append(result, &out)
 	}
 	sort.Slice(result, func(i, j int) bool {
 		return catalogLess(result[i].Category, result[i].DisplayName, result[i].Name,
@@ -187,14 +190,17 @@ func catalogLess(catA, dispA, nameA, catB, dispB, nameB string) bool {
 	return nameA < nameB
 }
 
-// Get returns a scenario by name.
+// Get returns a scenario by name. The result is a copy of the cached
+// scenario with Active filled in: the cached value itself is never
+// written, so concurrent callers cannot race on it.
 func (e *Engine) Get(name string) (*Scenario, error) {
 	s, ok := e.scenarios[name]
 	if !ok {
 		return nil, fmt.Errorf("scenario %q not found", name)
 	}
-	s.Active = e.isActive(name)
-	return s, nil
+	out := *s
+	out.Active = e.isActive(name)
+	return &out, nil
 }
 
 // Preflight checks that a scenario can be activated: the runtime, the

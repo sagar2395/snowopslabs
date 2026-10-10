@@ -31,6 +31,10 @@ Effort is in engineering days and is an estimate, not a commitment.
 | [B17](#b17--api-request-bodies-are-unbounded) | API request bodies are unbounded | API | 0.25 |
 | [B18](#b18--internalcli-runs-on-package-level-state) | `internal/cli` runs on package-level state | CLI | 3–4 |
 | [B19](#b19--smaller-go-clean-ups) | Smaller Go clean-ups | Go | 1–2 |
+| [B20](#b20--installsh-leaves-a-fresh-mac-stuck-on-path) | `install.sh` leaves a fresh Mac stuck on `PATH` | install | 0.5 |
+| [B21](#b21--init-floods-the-screen-with-metricsk8sio-discovery-errors) | `init` floods the screen with `metrics.k8s.io` discovery errors | platform | 0.5–1 |
+| [B22](#b22--cost-right-sizing-cannot-activate-on-a-2-cpu-lab) | cost-right-sizing cannot activate on a 2 CPU lab | content | 0.5–1 |
+| [B23](#b23--scenario-explore-links-point-at-dashboards-that-do-not-exist-yet) | Scenario Explore links point at dashboards that do not exist yet | UI, content | 0.5 |
 
 ---
 
@@ -505,4 +509,83 @@ Each is small, safe and independent:
   without changing it.
 
 **Start at.** The file named in each bullet.
+
+---
+
+## B20 — `install.sh` leaves a fresh Mac stuck on `PATH`
+
+**Problem.** On a fresh macOS user `install.sh` prints "`~/.local/bin` is not on
+your PATH. Add this line to ~/.bashrc or ~/.zshrc" and the export line. A fresh
+Mac has no `~/.zshrc`, and hand-writing the `echo … >> ~/.zshrc` gets the nested
+quotes wrong easily, which breaks every new shell with `.zshrc:2: unmatched "`.
+
+**Found.** Recording the macOS setup video: about seven minutes went on this
+step (a Google search, two broken `echo` lines, a fix in `vi`).
+
+**Proposed approach.** Detect the login shell from `$SHELL` and print one exact
+command that is safe to paste: `echo 'export PATH="$HOME/.local/bin:$PATH"' >>
+~/.zshrc && source ~/.zshrc` (`~/.bash_profile` for bash on macOS, `~/.bashrc`
+on Linux). Say that the file is created if it is missing. Never edit the file
+for the user.
+
+**Start at.** `install.sh` (the `case ":$PATH:"` block), the README Install
+section, `docs/getting-started/macos.md`, the install tests in `src/test/shell`.
+
+## B21 — `init` floods the screen with `metrics.k8s.io` discovery errors
+
+**Problem.** A clean `labctl init` prints dozens of lines such as
+`E0929 … memcache.go:287] couldn't get resource list for metrics.k8s.io/v1beta1:
+the server is currently unable to handle the request` and `… monitoring.coreos.com/v1:
+the server could not find the requested resource` while Traefik and
+kube-prometheus-stack install. They come from client-go API discovery in helm
+and kubectl while the metrics APIService and the new CRDs are not served yet.
+They are harmless, but a first-time user reads them as failure.
+
+**Found.** Recording the macOS setup video, on a new k3d cluster.
+
+**Proposed approach.** Find which calls trigger discovery. Wait for the
+`v1beta1.metrics.k8s.io` APIService to be Available before those installs, or
+filter only these known discovery lines from stderr and keep them under
+`--verbose`. Real errors must still show.
+
+**Start at.** `platform/ingress/traefik/install.sh`,
+`platform/monitoring/metrics/prometheus/install.sh`, `platform/_lib/helm.sh`,
+[R05](runbooks/R05-platform-components.md).
+
+## B22 — cost-right-sizing cannot activate on a 2 CPU lab
+
+**Problem.** `scenario up cost-right-sizing --deploy-prereqs` fails after five
+minutes in the inflate stage with `error: timed out waiting for the condition`
+(`Waiting for deployment "go-api" rollout to finish: 1 old replicas are pending
+termination`). `inflate.sh` sets go-api's CPU request to `2000m`. On the minimum
+lab (2 CPU / 4 GB Docker, which the README says runs one scenario at a time), no
+node has 2 CPUs free once the platform runs, so the new pod stays Pending and
+the rollout never finishes.
+
+**Found.** Recording the UI and CLI tour for the setup video, on a 2 CPU / 4 GB
+colima.
+
+**Proposed approach.** Size the inflated request from what the lab can
+schedule (for example a share of the node's allocatable CPU, still far above
+the right-sized 50m), or inflate replicas' memory and a smaller CPU request that
+fits. Add the scenario's real peak to its resources check so `up` refuses early
+instead of timing out. Re-run the scenario review on a 2 CPU lab.
+
+**Start at.** `scenarios/cost-right-sizing/scripts/inflate.sh`, the scenario's
+resource figures in [Resources](resources.md).
+
+## B23 — Scenario Explore links point at dashboards that do not exist yet
+
+**Problem.** The Explore tab of an inactive scenario links to its Grafana
+dashboard (for example `/d/autoscaling-under-load`). The dashboard is installed
+only when the scenario activates, so the link opens Grafana's "Not found" page.
+
+**Found.** Recording the UI tour for the setup video.
+
+**Proposed approach.** Show dashboard links as "available after you activate
+this scenario" (disabled) while the scenario is inactive, or link to the
+dashboards list instead.
+
+**Start at.** The scenario details panel in `src/ui/src/`, and the explore
+links in each `scenario.yaml`.
 
