@@ -3,6 +3,8 @@ set -euo pipefail
 
 NAMESPACE="${MONITORING_NAMESPACE:-monitoring}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../../_lib/helm.sh
+. "$(cd "$SCRIPT_DIR/../.." && pwd)/_lib/helm.sh"
 VALUES_FILE="$(mktemp "${TMPDIR:-/tmp}/grafana-values.XXXXXX")"
 trap 'rm -f "$VALUES_FILE"' EXIT
 
@@ -37,7 +39,7 @@ GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-admin}"
 
 # Install or upgrade Grafana with dynamic ingress host
 echo "Installing Grafana chart..."
-helm upgrade --install grafana grafana-community/grafana \
+helm_upgrade_install grafana "$NAMESPACE" grafana-community/grafana \
   --namespace "$NAMESPACE" \
   --create-namespace \
   --version "$GRAFANA_CHART_VERSION" \

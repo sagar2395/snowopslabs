@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=../../../_lib/helm.sh
+. "$(cd "$(dirname "$0")/../../.." && pwd)/_lib/helm.sh"
 
 NAMESPACE="${MONITORING_NAMESPACE:-monitoring}"
 DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-${CLUSTER_NAME:-snowops}.localhost}"
@@ -15,7 +17,7 @@ helm repo update
 # Install Prometheus Stack
 echo "Installing kube-prometheus-stack chart..."
 HELM_ARGS=(
-  upgrade --install prometheus prometheus-community/kube-prometheus-stack
+  prometheus-community/kube-prometheus-stack
   --version "$KUBE_PROMETHEUS_STACK_VERSION"
   --namespace "$NAMESPACE"
   --create-namespace
@@ -29,7 +31,7 @@ if [ -n "${ALERT_WEBHOOK_URL:-}" ]; then
   echo "Routing lab-fault alerts to ${ALERT_WEBHOOK_URL}"
   HELM_ARGS+=(--set-string "alertmanager.config.receivers[1].webhook_configs[0].url=${ALERT_WEBHOOK_URL}")
 fi
-helm "${HELM_ARGS[@]}"
+helm_upgrade_install prometheus "$NAMESPACE" "${HELM_ARGS[@]}"
 
 # Wait for Prometheus to be ready (StatefulSet, not Deployment)
 echo "Waiting for Prometheus to be ready..."

@@ -4,7 +4,8 @@
 
 # helm_upgrade_install <release> <namespace> [helm args...]
 #
-# `helm upgrade --install` that survives a chart upgrade changing an immutable
+# `helm upgrade --install` that first clears a release stuck in a pending state
+# (helm_clear_pending), and survives a chart upgrade changing an immutable
 # StatefulSet field. Most of a StatefulSet's spec (volumeClaimTemplates,
 # serviceName, selector) cannot be changed in place, so a chart major bump fails
 # with:
@@ -19,6 +20,8 @@ helm_upgrade_install() {
   release="$1"
   namespace="$2"
   shift 2
+
+  helm_clear_pending "$release" "$namespace" || return 1
 
   out_file="$(mktemp "${TMPDIR:-/tmp}/helm-out.XXXXXX")"
   if helm upgrade --install "$release" "$@" 2>&1 | tee "$out_file"; then
@@ -49,4 +52,29 @@ helm_upgrade_install() {
   kubectl delete statefulset "$sts" --namespace "$namespace" --cascade=orphan --ignore-not-found
 
   helm upgrade --install "$release" "$@"
+}
+
+# helm_clear_pending <release> <namespace>
+#
+# Clears a release left in a pending-* state by a helm process that died
+# mid-operation (the API server dropped the connection, or the run was
+# interrupted), which otherwise blocks every later upgrade with "another
+# operation (install/upgrade/rollback) is in progress". A pending install never
+# deployed, so it is uninstalled; a pending upgrade or rollback is rolled back
+# to the previous revision. A release in any other state is left alone.
+helm_clear_pending() {
+  release="$1"
+  namespace="$2"
+
+  status="$(helm status "$release" --namespace "$namespace" 2>/dev/null | sed -n 's/^STATUS: //p')"
+  case "$status" in
+    pending-install)
+      echo "Release '${release}' is stuck in ${status}; uninstalling it before installing again..."
+      helm uninstall "$release" --namespace "$namespace" --wait
+      ;;
+    pending-upgrade | pending-rollback)
+      echo "Release '${release}' is stuck in ${status}; rolling back to its previous revision..."
+      helm rollback "$release" --namespace "$namespace" --wait
+      ;;
+  esac
 }

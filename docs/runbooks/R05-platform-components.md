@@ -70,6 +70,21 @@ another scenario first.
 deleting the controller with `--cascade=orphan` — pods and PVCs survive — and
 retrying.
 
+**A helm process that dies mid-operation leaves the release pending.** When the
+apiserver drops the connection (a `TLS handshake timeout` on a memory-starved
+lab) or the run is interrupted, the release stays in `pending-install`,
+`pending-upgrade` or `pending-rollback`, and every later upgrade fails with
+`another operation (install/upgrade/rollback) is in progress`.
+`helm_upgrade_install` clears it first: a pending install is uninstalled (it
+never deployed), a pending upgrade or rollback is rolled back to the previous
+revision. By hand:
+
+```bash
+helm status <release> -n <namespace>          # STATUS: pending-*
+helm uninstall <release> -n <namespace>       # pending-install
+helm rollback <release> -n <namespace>        # pending-upgrade / pending-rollback
+```
+
 **A scenario that adopts a platform release must not uninstall it on teardown.**
 
 **A pod's `.status.containerStatuses[].image` reports whichever tag the kubelet

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# shellcheck source=../../_lib/helm.sh
+. "$(cd "$(dirname "$0")/../.." && pwd)/_lib/helm.sh"
 
 TRAEFIK_CHART_VERSION="${TRAEFIK_CHART_VERSION:-41.4.0}"
 
@@ -29,7 +31,7 @@ helm repo add traefik https://traefik.github.io/charts --force-update
 helm repo update
 
 # use a values file for configurability; default values live in this repo
-helm upgrade --install traefik traefik/traefik \
+helm_upgrade_install traefik "$NAMESPACE" traefik/traefik \
   --version "$TRAEFIK_CHART_VERSION" \
   --namespace $NAMESPACE \
   --create-namespace \

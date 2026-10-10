@@ -5,6 +5,8 @@ INGRESS_NGINX_CHART_VERSION="${INGRESS_NGINX_CHART_VERSION:-4.15.1}"
 
 NAMESPACE="ingress-nginx"
 SCRIPT_DIR="$(dirname "$0")"
+# shellcheck source=../../_lib/helm.sh
+. "$(cd "$SCRIPT_DIR/../.." && pwd)/_lib/helm.sh"
 
 echo "Installing Nginx Ingress Controller..."
 
@@ -15,7 +17,7 @@ helm repo update
 
 # Install or upgrade Nginx Ingress Controller
 echo "Installing ingress-nginx chart..."
-helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+helm_upgrade_install ingress-nginx "$NAMESPACE" ingress-nginx/ingress-nginx \
   --version "$INGRESS_NGINX_CHART_VERSION" \
   --namespace $NAMESPACE \
   --create-namespace \
