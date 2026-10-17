@@ -1,18 +1,18 @@
 {
   "vars": {
-    "DomainSuffix": "snowops-e2e.localhost",
+    "DomainSuffix": "snowops.localhost",
     "IngressClass": "traefik",
-    "IngressURLSuffix": "snowops-e2e.localhost",
+    "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
-    "SinceActivation": "3m",
+    "SinceActivation": "4m",
     "WorkloadMetric": "http_server_request_duration_seconds",
     "WorkloadName": "go-api",
     "WorkloadNamespace": "go-api",
     "WorkloadPort": "8080",
     "WorkloadService": "go-api.go-api.svc.cluster.local"
   },
-  "prometheusURL": "http://prometheus.snowops-e2e.localhost",
+  "prometheusURL": "http://prometheus.snowops.localhost",
   "kubectl": {
     "get deployment/go-api --namespace go-api -o jsonpath={.status.readyReplicas}": {
       "out": "1"
@@ -28,15 +28,15 @@
     },
     "prometheus/api/v1/query?query=%28sum%28rate%28container_cpu_cfs_throttled_periods_total%7Bnamespace%3D%22go-api%22%2Ccontainer%3D%22go-api%22%7D%5B5m%5D%29%29+%2F+clamp_min%28sum%28rate%28container_cpu_cfs_periods_total%7Bnamespace%3D%22go-api%22%2Ccontainer%3D%22go-api%22%7D%5B5m%5D%29%29%2C+0.001%29%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791984235.847,\"0\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224669.481,\"0\"]}]}}"
     },
     "prometheus/api/v1/query?query=count%28container_cpu_allocation%7Bnamespace%3D%22go-api%22%7D%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791984235.657,\"2\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224669.220,\"2\"]}]}}"
     },
-    "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B3m%5D%29%29+or+vector%280%29": {
+    "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B4m%5D%29%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791984235.662,\"24.708546666666667\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224669.222,\"18.819129583333332\"]}]}}"
     }
   },
   "results": {

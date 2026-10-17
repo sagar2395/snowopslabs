@@ -1,0 +1,40 @@
+{
+  "vars": {
+    "DomainSuffix": "snowops.localhost",
+    "IngressClass": "traefik",
+    "IngressURLSuffix": "snowops.localhost",
+    "LokiRetentionPeriod": "168h",
+    "MonitoringNamespace": "monitoring",
+    "SinceActivation": "3m",
+    "WorkloadMetric": "http_server_request_duration_seconds",
+    "WorkloadName": "go-api",
+    "WorkloadNamespace": "go-api",
+    "WorkloadPort": "8080",
+    "WorkloadService": "go-api.go-api.svc.cluster.local"
+  },
+  "prometheusURL": "http://prometheus.snowops.localhost",
+  "kubectl": {
+    "get deployment/chaos-controller-manager --namespace chaos-mesh -o jsonpath={.status.readyReplicas}": {
+      "out": "1"
+    },
+    "get poddisruptionbudget/go-api-pdb --namespace go-api -o jsonpath={.status.disruptionsAllowed}": {
+      "out": "2"
+    }
+  },
+  "http": {
+    "go-api/health": {
+      "status": 200,
+      "body": "{\"status\":\"ok\"}\n"
+    },
+    "prometheus/api/v1/query?query=max%28up%7Bjob%3D%22chaos-mesh-controller-manager%22%7D%29+or+vector%280%29": {
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224605.025,\"1\"]}]}}"
+    }
+  },
+  "results": {
+    "chaos-controller-ready": true,
+    "chaos-metrics-scraped": true,
+    "workload-healthy": true,
+    "workload-survives-pod-loss": true
+  }
+}

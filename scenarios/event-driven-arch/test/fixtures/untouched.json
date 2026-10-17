@@ -1,8 +1,8 @@
 {
   "vars": {
-    "DomainSuffix": "snowops-e2e.localhost",
+    "DomainSuffix": "snowops.localhost",
     "IngressClass": "traefik",
-    "IngressURLSuffix": "snowops-e2e.localhost",
+    "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
     "SinceActivation": "1m",
@@ -12,13 +12,13 @@
     "WorkloadPort": "8080",
     "WorkloadService": "go-api.go-api.svc.cluster.local"
   },
-  "prometheusURL": "http://prometheus.snowops-e2e.localhost",
+  "prometheusURL": "http://prometheus.snowops.localhost",
   "kubectl": {
     "get deployment/orders-consumer --namespace kafka -o jsonpath={.spec.replicas}": {
       "out": "1"
     },
     "get deployment/orders-producer --namespace kafka -o jsonpath={.status.readyReplicas}": {
-      "out": "1"
+      "out": ""
     },
     "get kafka/lab-kafka --namespace kafka -o jsonpath={.status.conditions[?(@.type==\"Ready\")].status}": {
       "out": "True"
@@ -42,11 +42,11 @@
     },
     "prometheus/api/v1/query?query=max_over_time%28%28sum%28kafka_consumergroup_lag%7Bconsumergroup%3D%22order-processors%22%2Ctopic%3D%22orders%22%7D%29+or+vector%280%29%29%5B1m%3A1m%5D%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791982814.235,\"0\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224629.233,\"0\"]}]}}"
     },
     "prometheus/api/v1/query?query=min_over_time%28%28max%28kafka_consumergroup_members%7Bconsumergroup%3D%22order-processors%22%7D%29+or+vector%280%29%29%5B2m%3A15s%5D%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791982814.193,\"0\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224629.177,\"0\"]}]}}"
     }
   },
   "results": {

@@ -1,8 +1,8 @@
 {
   "vars": {
-    "DomainSuffix": "snowops-e2e.localhost",
+    "DomainSuffix": "snowops.localhost",
     "IngressClass": "traefik",
-    "IngressURLSuffix": "snowops-e2e.localhost",
+    "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MaxReplicas": "6",
     "MaxTailAmplification": "10",
@@ -16,7 +16,7 @@
     "WorkloadPort": "8080",
     "WorkloadService": "go-api.go-api.svc.cluster.local"
   },
-  "prometheusURL": "http://prometheus.snowops-e2e.localhost",
+  "prometheusURL": "http://prometheus.snowops.localhost",
   "kubectl": {
     "get deployment/keda-operator --namespace keda -o jsonpath={.status.readyReplicas}": {
       "out": "1"

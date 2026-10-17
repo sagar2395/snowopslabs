@@ -1,0 +1,37 @@
+{
+  "vars": {
+    "DomainSuffix": "snowops.localhost",
+    "IngressClass": "traefik",
+    "IngressURLSuffix": "snowops.localhost",
+    "LokiRetentionPeriod": "168h",
+    "MonitoringNamespace": "monitoring",
+    "SinceActivation": "1m",
+    "WorkloadMetric": "http_server_request_duration_seconds",
+    "WorkloadName": "go-api",
+    "WorkloadNamespace": "go-api",
+    "WorkloadPort": "8080",
+    "WorkloadService": "go-api.go-api.svc.cluster.local"
+  },
+  "prometheusURL": "http://prometheus.snowops.localhost",
+  "kubectl": {
+    "get deployment/data-writer --namespace go-api -o jsonpath={.status.readyReplicas}": {
+      "out": "1"
+    },
+    "get deployment/go-api --namespace go-api -o jsonpath={.status.readyReplicas}": {
+      "out": "1"
+    },
+    "get namespace/go-api -o name": {
+      "out": "namespace/go-api\n"
+    },
+    "get persistentvolumeclaim/restore-data --namespace go-api -o name": {
+      "out": "persistentvolumeclaim/restore-data\n"
+    }
+  },
+  "http": {},
+  "results": {
+    "data-writer-running": true,
+    "restore-data-pvc-present": true,
+    "workload-namespace-exists": true,
+    "workload-running": true
+  }
+}

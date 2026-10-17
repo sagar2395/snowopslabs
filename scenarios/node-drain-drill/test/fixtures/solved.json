@@ -1,19 +1,19 @@
 {
   "vars": {
     "AvailabilitySLO": "0.995",
-    "DomainSuffix": "snowops-e2e.localhost",
+    "DomainSuffix": "snowops.localhost",
     "IngressClass": "traefik",
-    "IngressURLSuffix": "snowops-e2e.localhost",
+    "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
-    "SinceActivation": "1m",
+    "SinceActivation": "2m",
     "WorkloadMetric": "http_server_request_duration_seconds",
     "WorkloadName": "go-api",
     "WorkloadNamespace": "go-api",
     "WorkloadPort": "8080",
     "WorkloadService": "go-api.go-api.svc.cluster.local"
   },
-  "prometheusURL": "http://prometheus.snowops-e2e.localhost",
+  "prometheusURL": "http://prometheus.snowops.localhost",
   "kubectl": {
     "get deployment/go-api --namespace go-api -o jsonpath={.status.readyReplicas}": {
       "out": "3"
@@ -26,13 +26,13 @@
     }
   },
   "http": {
-    "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%2Chttp_response_status_code%21~%225..%22%7D%5B1m%5D%29%29+%2F+sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B1m%5D%29%29": {
+    "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%2Chttp_response_status_code%21~%225..%22%7D%5B2m%5D%29%29+%2F+sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B2m%5D%29%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791984320.998,\"1\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224497.642,\"1\"]}]}}"
     },
-    "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B1m%5D%29%29": {
+    "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B2m%5D%29%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791984320.918,\"5.318753333333333\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224497.531,\"0.5359191666666666\"]}]}}"
     }
   },
   "results": {

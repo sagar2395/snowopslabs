@@ -1,8 +1,8 @@
 {
   "vars": {
-    "DomainSuffix": "snowops-e2e.localhost",
+    "DomainSuffix": "snowops.localhost",
     "IngressClass": "traefik",
-    "IngressURLSuffix": "snowops-e2e.localhost",
+    "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
     "SinceActivation": "3m",
@@ -12,7 +12,7 @@
     "WorkloadPort": "8080",
     "WorkloadService": "go-api.go-api.svc.cluster.local"
   },
-  "prometheusURL": "http://prometheus.snowops-e2e.localhost",
+  "prometheusURL": "http://prometheus.snowops.localhost",
   "kubectl": {
     "get deployment/chaos-controller-manager --namespace chaos-mesh -o jsonpath={.status.readyReplicas}": {
       "out": "1"
@@ -28,7 +28,7 @@
     },
     "prometheus/api/v1/query?query=max%28up%7Bjob%3D%22chaos-mesh-controller-manager%22%7D%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791980978.073,\"1\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224605.025,\"1\"]}]}}"
     }
   },
   "results": {

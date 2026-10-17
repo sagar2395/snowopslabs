@@ -1,9 +1,9 @@
 {
   "vars": {
     "AvailabilitySLO": "0.995",
-    "DomainSuffix": "snowops-e2e.localhost",
+    "DomainSuffix": "snowops.localhost",
     "IngressClass": "traefik",
-    "IngressURLSuffix": "snowops-e2e.localhost",
+    "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
     "SinceActivation": "1m",
@@ -13,7 +13,7 @@
     "WorkloadPort": "8080",
     "WorkloadService": "go-api.go-api.svc.cluster.local"
   },
-  "prometheusURL": "http://prometheus.snowops-e2e.localhost",
+  "prometheusURL": "http://prometheus.snowops.localhost",
   "kubectl": {
     "get deployment/go-api --namespace go-api -o jsonpath={.status.readyReplicas}": {
       "out": "3"

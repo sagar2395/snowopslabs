@@ -1,0 +1,39 @@
+{
+  "vars": {
+    "DomainSuffix": "snowops.localhost",
+    "IngressClass": "traefik",
+    "IngressURLSuffix": "snowops.localhost",
+    "LokiRetentionPeriod": "168h",
+    "MonitoringNamespace": "monitoring",
+    "SinceActivation": "1m",
+    "WorkloadMetric": "http_server_request_duration_seconds",
+    "WorkloadName": "go-api",
+    "WorkloadNamespace": "go-api",
+    "WorkloadPort": "8080",
+    "WorkloadService": "go-api.go-api.svc.cluster.local"
+  },
+  "prometheusURL": "http://prometheus.snowops.localhost",
+  "kubectl": {
+    "get deployment/argocd-server --namespace argocd -o jsonpath={.status.readyReplicas}": {
+      "out": "1"
+    },
+    "get deployment/git-server --namespace gitops -o jsonpath={.status.readyReplicas}": {
+      "out": "1"
+    },
+    "get deployment/gitops-demo --namespace gitops-demo -o jsonpath={.status.readyReplicas}": {
+      "out": "2"
+    }
+  },
+  "http": {
+    "prometheus/api/v1/query?query=count%28argocd_app_info%29": {
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224460.371,\"2\"]}]}}"
+    }
+  },
+  "results": {
+    "argocd-server-ready": true,
+    "demo-workload-running": true,
+    "git-server-ready": true,
+    "sync-metrics-scraped": true
+  }
+}

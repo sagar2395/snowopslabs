@@ -1,0 +1,63 @@
+{
+  "vars": {
+    "DomainSuffix": "snowops.localhost",
+    "IngressClass": "traefik",
+    "IngressURLSuffix": "snowops.localhost",
+    "LokiRetentionPeriod": "168h",
+    "MonitoringNamespace": "monitoring",
+    "SinceActivation": "5m",
+    "WorkloadMetric": "http_server_request_duration_seconds",
+    "WorkloadName": "go-api",
+    "WorkloadNamespace": "go-api",
+    "WorkloadPort": "8080",
+    "WorkloadService": "go-api.go-api.svc.cluster.local"
+  },
+  "prometheusURL": "http://prometheus.snowops.localhost",
+  "kubectl": {
+    "get deployment/orders-consumer --namespace kafka -o jsonpath={.spec.replicas}": {
+      "out": "3"
+    },
+    "get deployment/orders-producer --namespace kafka -o jsonpath={.status.readyReplicas}": {
+      "out": "3"
+    },
+    "get kafka/lab-kafka --namespace kafka -o jsonpath={.status.conditions[?(@.type==\"Ready\")].status}": {
+      "out": "True"
+    },
+    "get kafkatopic/orders --namespace kafka -o jsonpath={.status.conditions[?(@.type==\"Ready\")].status}": {
+      "out": "True"
+    }
+  },
+  "http": {
+    "prometheus/api/v1/query?query=clamp_min%28sum%28kafka_consumergroup_lag%7Bconsumergroup%3D%22order-processors%22%2Ctopic%3D%22orders%22%7D%29%2C+0%29": {
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224894.398,\"180\"]}]}}"
+    },
+    "prometheus/api/v1/query?query=count%28kafka_consumergroup_lag%7Btopic%3D%22orders%22%7D%29": {
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224894.352,\"3\"]}]}}"
+    },
+    "prometheus/api/v1/query?query=count%28kafka_server_replicamanager_partitioncount%29": {
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224894.351,\"1\"]}]}}"
+    },
+    "prometheus/api/v1/query?query=max_over_time%28%28sum%28kafka_consumergroup_lag%7Bconsumergroup%3D%22order-processors%22%2Ctopic%3D%22orders%22%7D%29+or+vector%280%29%29%5B5m%3A1m%5D%29": {
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224894.397,\"1870\"]}]}}"
+    },
+    "prometheus/api/v1/query?query=min_over_time%28%28max%28kafka_consumergroup_members%7Bconsumergroup%3D%22order-processors%22%7D%29+or+vector%280%29%29%5B2m%3A15s%5D%29": {
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224894.353,\"3\"]}]}}"
+    }
+  },
+  "results": {
+    "backlog-drained": true,
+    "backlog-was-observed": true,
+    "broker-metrics-scraped": true,
+    "consumer-group-at-full-width": true,
+    "consumer-lag-metrics-scraped": true,
+    "consumers-within-partition-ceiling": true,
+    "kafka-cluster-ready": true,
+    "orders-topic-ready": true,
+    "producers-still-ramped": true
+  }
+}

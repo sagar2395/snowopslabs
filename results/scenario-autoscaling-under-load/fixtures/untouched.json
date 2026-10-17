@@ -1,0 +1,55 @@
+{
+  "vars": {
+    "DomainSuffix": "snowops.localhost",
+    "IngressClass": "traefik",
+    "IngressURLSuffix": "snowops.localhost",
+    "LokiRetentionPeriod": "168h",
+    "MaxReplicas": "6",
+    "MaxTailAmplification": "10",
+    "MinReplicas": "1",
+    "MonitoringNamespace": "monitoring",
+    "SinceActivation": "1m",
+    "Threshold": "25",
+    "WorkloadMetric": "http_server_request_duration_seconds",
+    "WorkloadName": "go-api",
+    "WorkloadNamespace": "go-api",
+    "WorkloadPort": "8080",
+    "WorkloadService": "go-api.go-api.svc.cluster.local"
+  },
+  "prometheusURL": "http://prometheus.snowops.localhost",
+  "kubectl": {
+    "get deployment/keda-operator --namespace keda -o jsonpath={.status.readyReplicas}": {
+      "out": "1"
+    },
+    "get hpa/keda-hpa-go-api --namespace go-api -o jsonpath={.status.currentReplicas}": {
+      "out": "",
+      "err": "kubectl: exit status 1: Error from server (NotFound): horizontalpodautoscalers.autoscaling \"keda-hpa-go-api\" not found"
+    },
+    "get hpa/keda-hpa-go-api --namespace go-api -o name": {
+      "out": "",
+      "err": "kubectl: exit status 1: Error from server (NotFound): horizontalpodautoscalers.autoscaling \"keda-hpa-go-api\" not found"
+    },
+    "get scaledobject/go-api --namespace go-api -o name": {
+      "out": "",
+      "err": "kubectl: exit status 1: Error from server (NotFound): scaledobjects.keda.sh \"go-api\" not found"
+    }
+  },
+  "http": {
+    "prometheus/api/v1/query?query=%28sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%2Chttp_response_status_code%3D~%225..%22%7D%5B1m%5D%29%29+or+vector%280%29%29+%2F+clamp_min%28sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B1m%5D%29%29%2C+0.001%29": {
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[]}}"
+    },
+    "prometheus/api/v1/query?query=histogram_quantile%280.99%2C+sum%28rate%28http_server_request_duration_seconds_bucket%7Bapp%3D%22go-api%22%7D%5B1m%5D%29%29+by+%28le%29%29+%2F+clamp_min%28histogram_quantile%280.50%2C+sum%28rate%28http_server_request_duration_seconds_bucket%7Bapp%3D%22go-api%22%7D%5B1m%5D%29%29+by+%28le%29%29%2C+0.001%29": {
+      "status": 200,
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[]}}"
+    }
+  },
+  "results": {
+    "keda-hpa-created": false,
+    "keda-operator-ready": true,
+    "latency-did-not-degrade": false,
+    "no-errors-under-load": false,
+    "scaledobject-present": false,
+    "workload-scaled-above-floor": false
+  }
+}

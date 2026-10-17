@@ -1,8 +1,8 @@
 {
   "vars": {
-    "DomainSuffix": "snowops-e2e.localhost",
+    "DomainSuffix": "snowops.localhost",
     "IngressClass": "traefik",
-    "IngressURLSuffix": "snowops-e2e.localhost",
+    "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
     "SinceActivation": "1m",
@@ -12,7 +12,7 @@
     "WorkloadPort": "8080",
     "WorkloadService": "go-api.go-api.svc.cluster.local"
   },
-  "prometheusURL": "http://prometheus.snowops-e2e.localhost",
+  "prometheusURL": "http://prometheus.snowops.localhost",
   "kubectl": {
     "get certificate/go-api-tls --namespace go-api -o jsonpath={.status.conditions[?(@.type=='Ready')].status}": {
       "out": "",
@@ -31,16 +31,16 @@
   "http": {
     "prometheus/api/v1/query?query=count%28kyverno_policy_results_total%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791981631.662,\"86\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[]}}"
     },
     "prometheus/api/v1/query?query=min%28up%7Bkubernetes_namespace%3D%22go-api%22%2Cjob%3D%22go-api%22%7D%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1791981631.660,\"1\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1792224580.075,\"1\"]}]}}"
     }
   },
   "results": {
     "cert-manager-ready": true,
-    "kyverno-metrics-scraped": true,
+    "kyverno-metrics-scraped": false,
     "kyverno-ready": true,
     "lab-ca-issued": true,
     "workload-scrape-not-blocked": true,

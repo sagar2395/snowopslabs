@@ -1,8 +1,8 @@
 {
   "vars": {
-    "DomainSuffix": "snowops-e2e.localhost",
+    "DomainSuffix": "snowops.localhost",
     "IngressClass": "traefik",
-    "IngressURLSuffix": "snowops-e2e.localhost",
+    "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
     "SinceActivation": "1m",
@@ -12,7 +12,7 @@
     "WorkloadPort": "8080",
     "WorkloadService": "go-api.go-api.svc.cluster.local"
   },
-  "prometheusURL": "http://prometheus.snowops-e2e.localhost",
+  "prometheusURL": "http://prometheus.snowops.localhost",
   "kubectl": {
     "get configmap/env-metadata --namespace env-prod -o jsonpath={.data.declared_tag}": {
       "out": "v1.0.0"
@@ -21,10 +21,10 @@
       "out": "1"
     },
     "get deployment/go-api --namespace env-prod -o jsonpath={.status.readyReplicas}": {
-      "out": "1"
+      "out": ""
     },
     "get deployment/go-api --namespace env-staging -o jsonpath={.status.readyReplicas}": {
-      "out": "1"
+      "out": ""
     },
     "get namespace/env-dev -o name": {
       "out": "namespace/env-dev\n"
@@ -43,7 +43,7 @@
     "env-staging-namespace-exists": true,
     "newer-release-reached-prod": false,
     "workload-running-in-dev": true,
-    "workload-running-in-prod": true,
-    "workload-running-in-staging": true
+    "workload-running-in-prod": false,
+    "workload-running-in-staging": false
   }
 }
