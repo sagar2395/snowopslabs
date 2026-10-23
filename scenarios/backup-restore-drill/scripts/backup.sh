@@ -43,12 +43,14 @@ echo "==> Backing up namespace '${NS}' (${RESOURCES})"
 #   - the last-applied-configuration annotation (noise)
 #   - Service spec.clusterIP(s) so the restore gets a fresh allocation
 # and we skip objects that controllers recreate or that are environment-bound:
-#   - the default ServiceAccount, its token Secrets, and Helm release Secrets.
+#   - the default ServiceAccount, its token Secrets, and Helm release Secrets;
+#   - the kube-root-ca.crt ConfigMap, which Kubernetes puts in every namespace.
 kubectl get "$RESOURCES" -n "$NS" -o json 2>/dev/null |
   jq '
       .items
       | map(select(
             (.kind == "ServiceAccount" and .metadata.name == "default") or
+            (.kind == "ConfigMap" and .metadata.name == "kube-root-ca.crt") or
             (.kind == "Secret" and (.type == "kubernetes.io/service-account-token")) or
             (.kind == "Secret" and (.type == "helm.sh/release.v1"))
           | not))
