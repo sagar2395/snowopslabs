@@ -58,6 +58,74 @@ older labctl kept in the clone's `.labctl/` is moved there on first use.
 make cli-build        # builds bin/labctl with the UI embedded
 ```
 
+## Shell completion
+
+`labctl` can generate shell tab-completion for zsh, bash, fish, and PowerShell.
+
+### zsh
+
+macOS uses zsh by default. To enable completion for every session:
+
+```bash
+mkdir -p ~/.zsh/completion
+labctl completion zsh > ~/.zsh/completion/_labctl
+cat << 'EOF' >> ~/.zshrc
+fpath=(~/.zsh/completion $fpath)
+autoload -U compinit; compinit
+EOF
+source ~/.zshrc
+```
+
+If `~/.zshrc` does not exist on a fresh macOS installation, creating it with the commands above enables `compinit` and loads `labctl` completions.
+
+To load completion in the current session only:
+
+```bash
+autoload -U compinit; compinit; source <(labctl completion zsh)
+```
+
+### bash
+
+Completion needs the `bash-completion` package. On Linux, install it with
+`apt install bash-completion` (Debian/Ubuntu) or `dnf install bash-completion`
+(Fedora/RHEL).
+
+On Linux:
+
+```bash
+# Current session
+source <(labctl completion bash)
+
+# Every new session
+mkdir -p ~/.local/share/bash-completion/completions
+labctl completion bash > ~/.local/share/bash-completion/completions/labctl
+```
+
+On macOS, the stock `/bin/bash` 3.2 cannot load cobra's completion script, and
+`source <(...)` fails quietly there. Install Homebrew's `bash-completion@2`,
+then add the caveat line it prints to `~/.bash_profile`:
+
+```bash
+brew install bash-completion@2
+echo '[[ -r "$(brew --prefix)/etc/profile.d/bash_completion.sh" ]] && source "$(brew --prefix)/etc/profile.d/bash_completion.sh"' >> ~/.bash_profile
+```
+
+```bash
+labctl completion bash > "$(brew --prefix)/etc/bash_completion.d/labctl"
+```
+
+### fish
+
+```bash
+labctl completion fish > ~/.config/fish/completions/labctl.fish
+```
+
+### PowerShell
+
+```powershell
+labctl completion powershell | Out-String | Invoke-Expression
+```
+
 ## Global flags
 
 | Flag | Default | Description |
