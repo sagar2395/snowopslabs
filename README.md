@@ -168,6 +168,7 @@ cd snowopslabs
 `stable` always points at the latest release; to pin one, clone with
 `--branch v1.5.0` instead. `install.sh` downloads the `labctl` binary that
 matches your clone into `~/.local/bin`, verifies its checksum and needs no sudo.
+To enable shell tab-completion, see [Shell completion](docs/reference/cli/index.md#shell-completion).
 It also records where your clone is, so `labctl` works from any directory. It
 prints the line to add to your shell profile if `~/.local/bin` is not on your
 `PATH` yet.

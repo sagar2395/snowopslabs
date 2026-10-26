@@ -29,6 +29,61 @@ older labctl kept in the clone's `.labctl/` is moved there on first use.
 make cli-build        # builds bin/labctl with the UI embedded
 ```
 
+## Shell completion
+
+`labctl` can generate shell tab-completion for zsh, bash, fish, and PowerShell.
+
+### zsh
+
+macOS uses zsh by default. To enable completion for every session:
+
+```bash
+mkdir -p ~/.zsh/completion
+labctl completion zsh > ~/.zsh/completion/_labctl
+cat << 'EOF' >> ~/.zshrc
+fpath=(~/.zsh/completion $fpath)
+autoload -U compinit; compinit
+EOF
+source ~/.zshrc
+```
+
+If `~/.zshrc` does not exist on a fresh macOS installation, creating it with the commands above enables `compinit` and loads `labctl` completions.
+
+To load completion in the current session only:
+
+```bash
+source <(labctl completion zsh)
+```
+
+### bash
+
+On Linux:
+
+```bash
+# Current session
+source <(labctl completion bash)
+
+# Every new session
+mkdir -p ~/.local/share/bash-completion/completions
+labctl completion bash > ~/.local/share/bash-completion/completions/labctl
+```
+
+On macOS with Homebrew bash:
+
+```bash
+labctl completion bash > $(brew --prefix)/etc/bash_completion.d/labctl
+```
+
+### fish and PowerShell
+
+```bash
+# fish
+labctl completion fish > ~/.config/fish/completions/labctl.fish
+
+# PowerShell
+labctl completion powershell | Out-String | Invoke-Expression
+```
+
 ## Global flags
 
 | Flag | Default | Description |
