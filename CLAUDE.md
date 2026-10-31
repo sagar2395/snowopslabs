@@ -64,6 +64,17 @@ refactoring any Go code, and follow the skills it routes to. Where a skill and
 [GO-CONVENTIONS](docs/GO-CONVENTIONS.md) differ, GO-CONVENTIONS wins (e.g. error
 text says what to do next).
 
+## Sub-agents and models
+
+Plan and judge in the main session. Send search, log reading and test runs to the `scout` agent (Haiku) and
+scoped implementation, tests and docs to the `worker` agent (Sonnet): [.claude/agents](.claude/agents).
+
+- Delegate when the output is large and the conclusion small, or when tasks are independent (spawn them
+  in parallel, in one message). Do not delegate one edit or a few tool calls.
+- The brief names the files, what done looks like and the report format. Two writers never share a file.
+- Check the diff or the test result before calling the work done. Do not re-read what an agent summarised.
+- When an agent fails, move up one tier once (Haiku to Sonnet, Sonnet to Opus), never straight to Opus.
+
 ## Hard rules
 
 The full set is in [AGENT-CONTEXT](docs/AGENT-CONTEXT.md#invariants). The ones
