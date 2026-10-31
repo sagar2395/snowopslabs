@@ -234,3 +234,35 @@ func TestGoldenTranscripts_EachBelongsToATest(t *testing.T) {
 		}
 	}
 }
+
+// --verbose reaches scripts as LABCTL_VERBOSE=1, both through the run engine
+// and through the web UI's executor, so scripts keep the output they trim by
+// default (platform/_lib/helm.sh).
+func TestVerbose_ReachesScripts(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"scenario", "up", "drill"}, ""},
+		{[]string{"scenario", "up", "drill", "--verbose"}, "1"},
+	} {
+		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Setenv("LABCTL_VERBOSE", "")
+			l := newTerminal(t)
+			writeDrill(t, l)
+			l.Write(t, "scenarios/drill/setup.sh", "#!/usr/bin/env bash\necho \"${LABCTL_VERBOSE:-}\" >\"$(dirname \"$0\")/VERBOSE\"\n")
+			l.mustRun(tc.args...)
+
+			data, err := os.ReadFile(filepath.Join(l.Root, "scenarios/drill/VERBOSE"))
+			if err != nil {
+				t.Fatalf("the setup script did not run: %v", err)
+			}
+			if got := strings.TrimSpace(string(data)); got != tc.want {
+				t.Errorf("setup script saw LABCTL_VERBOSE=%q, want %q", got, tc.want)
+			}
+			if got := scriptExec.GetEnv("LABCTL_VERBOSE"); got != tc.want {
+				t.Errorf("web UI executor has LABCTL_VERBOSE=%q, want %q", got, tc.want)
+			}
+		})
+	}
+}

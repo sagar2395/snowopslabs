@@ -141,3 +141,99 @@ teardown() {
   run awk '/^metrics:/ { m = 1; next } m && /^[^ ]/ { m = 0 } m && /^  service:/ { s = 1; next } s && /^  [^ ]/ { s = 0 } s && /enabled: true/ { print; found = 1 } END { exit !found }' "$values"
   [ "$status" -ne 0 ] || { echo "metrics.service.enabled is true in ${values#"$ROOT"/}"; false; }
 }
+
+# client-go in helm and kubectl prints an error for each API group the
+# apiserver cannot serve yet: the metrics API while metrics-server starts, and
+# the CRDs a chart has just installed. labctl shows them only with --verbose.
+discovery_noise_stub() {
+  stub_script "$1" <<'EOF'
+case "$*" in
+  upgrade* | apply* | rollout*)
+    echo "E1029 10:00:00.000000    4242 memcache.go:287] couldn't get resource list for metrics.k8s.io/v1beta1: the server is currently unable to handle the request" >&2
+    echo "E1029 10:00:01.000000    4242 memcache.go:265] \"Unhandled Error\" err=\"couldn't get resource list for monitoring.coreos.com/v1: the server could not find the requested resource\" logger=\"UnhandledError\"" >&2
+    if [ -n "${TOOL_FAILS:-}" ]; then
+      echo "Error: $1 failed: the real problem" >&2
+      exit 1
+    fi
+    echo "$1 done"
+    ;;
+esac
+EOF
+}
+
+@test "helm and kubectl discovery errors are left out of the install output" {
+  discovery_noise_stub helm
+  discovery_noise_stub kubectl
+  for c in ingress/traefik monitoring/metrics/prometheus; do
+    reset_calls
+    run bash "$ROOT/platform/$c/install.sh"
+    [ "$status" -eq 0 ] || { echo "$c: $output"; false; }
+    [[ "$output" == *"upgrade done"* ]] || { echo "$c: $output"; false; }
+    [[ "$output" != *"couldn't get resource list"* ]] || { echo "$c: $output"; false; }
+  done
+}
+
+@test "a real helm error still shows and still fails the install" {
+  discovery_noise_stub helm
+  TOOL_FAILS=1 run bash "$ROOT/platform/monitoring/metrics/prometheus/install.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Error: upgrade failed: the real problem"* ]] || false
+  [[ "$output" != *"couldn't get resource list"* ]] || false
+}
+
+@test "a real kubectl error still shows and still fails the install" {
+  discovery_noise_stub kubectl
+  TOOL_FAILS=1 run bash "$ROOT/platform/monitoring/metrics/prometheus/install.sh"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Error: apply failed: the real problem"* ]] || false
+  [[ "$output" != *"couldn't get resource list"* ]] || false
+}
+
+@test "LABCTL_VERBOSE=1 keeps the discovery errors" {
+  discovery_noise_stub helm
+  discovery_noise_stub kubectl
+  LABCTL_VERBOSE=1 run bash "$ROOT/platform/ingress/traefik/install.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"memcache.go:287] couldn't get resource list for metrics.k8s.io/v1beta1"* ]] || false
+  [[ "$output" == *"couldn't get resource list for monitoring.coreos.com/v1: the server could not find"* ]] || false
+}
+
+# The first upgrade fails on an immutable StatefulSet field; the retry runs
+# after the controller is deleted. Both print discovery errors.
+statefulset_retry_helm() {
+  stub_script helm <<'EOF'
+case "$*" in
+  upgrade*)
+    echo "E1029 10:00:00.000000    4242 memcache.go:287] couldn't get resource list for metrics.k8s.io/v1beta1: the server is currently unable to handle the request" >&2
+    if [ ! -f "$STUB_DIR/retried" ]; then
+      touch "$STUB_DIR/retried"
+      echo "Error: UPGRADE FAILED: cannot patch \"loki\" with kind StatefulSet: StatefulSet.apps \"loki\" is invalid: spec: Forbidden: updates to statefulset spec for fields other than 'replicas', 'ordinals', 'template' are forbidden" >&2
+      exit 1
+    fi
+    if [ -n "${RETRY_FAILS:-}" ]; then
+      echo "Error: UPGRADE FAILED: the retry failed too" >&2
+      exit 1
+    fi
+    echo "upgrade done"
+    ;;
+esac
+EOF
+}
+
+@test "the StatefulSet retry works with the discovery filter in place" {
+  statefulset_retry_helm
+  run bash -c 'set -euo pipefail; . "$1/platform/_lib/helm.sh"; helm_upgrade_install loki logging grafana-community/loki --namespace logging' _ "$ROOT"
+  [ "$status" -eq 0 ]
+  assert_called kubectl "delete statefulset loki --namespace logging --cascade=orphan"
+  assert_call_count helm 2 "upgrade --install loki"
+  [[ "$output" == *"upgrade done"* ]] || false
+  [[ "$output" != *"couldn't get resource list"* ]] || false
+}
+
+@test "a failed StatefulSet retry still fails and shows helm's error" {
+  statefulset_retry_helm
+  RETRY_FAILS=1 run bash -c 'set -euo pipefail; . "$1/platform/_lib/helm.sh"; helm_upgrade_install loki logging grafana-community/loki --namespace logging' _ "$ROOT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"the retry failed too"* ]] || false
+  [[ "$output" != *"couldn't get resource list"* ]] || false
+}

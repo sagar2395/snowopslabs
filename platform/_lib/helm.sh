@@ -23,8 +23,10 @@ helm_upgrade_install() {
 
   helm_clear_pending "$release" "$namespace" || return 1
 
+  # out_file keeps helm's raw output for the StatefulSet check below; only
+  # what is shown goes through the discovery filter.
   out_file="$(mktemp "${TMPDIR:-/tmp}/helm-out.XXXXXX")"
-  if helm upgrade --install "$release" "$@" 2>&1 | tee "$out_file"; then
+  if helm upgrade --install "$release" "$@" 2>&1 | tee "$out_file" | discovery_noise_filter; then
     rm -f "$out_file"
     return 0
   fi
@@ -51,7 +53,34 @@ helm_upgrade_install() {
   echo "Deleting the controller with --cascade=orphan (pods and PVCs stay up) and retrying..."
   kubectl delete statefulset "$sts" --namespace "$namespace" --cascade=orphan --ignore-not-found
 
-  helm upgrade --install "$release" "$@"
+  quiet_discovery helm upgrade --install "$release" "$@"
+}
+
+# discovery_noise_filter
+#
+# Copies stdin to stdout without client-go's API discovery errors, which helm
+# and kubectl print while the apiserver cannot serve an API group yet (the
+# metrics API while metrics-server starts, or CRDs a chart has just installed):
+#
+#   E1029 ... memcache.go:287] couldn't get resource list for metrics.k8s.io/v1beta1: the server is currently unable to handle the request
+#
+# They are harmless but read as failure. LABCTL_VERBOSE=1 (labctl --verbose)
+# keeps every line. Lines go out as they arrive, so a long install still streams.
+discovery_noise_filter() {
+  if [ "${LABCTL_VERBOSE:-}" = "1" ]; then
+    cat
+    return
+  fi
+  grep --line-buffered -Ev "couldn't get resource list for [^ :]+: the server (is currently unable to handle the request|could not find the requested resource)" || [ $? -eq 1 ]
+}
+
+# quiet_discovery <command> [args...]
+#
+# Runs a command with discovery_noise_filter on its stderr only. Its stdout,
+# its other stderr lines and its exit status are unchanged.
+quiet_discovery() {
+  { "$@" 2>&1 1>&3 3>&- | discovery_noise_filter >&2 3>&-; rc="${PIPESTATUS[0]}"; } 3>&1
+  return "$rc"
 }
 
 # helm_clear_pending <release> <namespace>

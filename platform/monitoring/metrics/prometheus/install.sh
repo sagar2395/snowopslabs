@@ -39,7 +39,7 @@ kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus -n "
 
 # Create Prometheus Ingress with dynamic domain
 echo "Creating Prometheus ingress for ${DOMAIN_SUFFIX}..."
-cat <<EOF | kubectl apply -f -
+quiet_discovery kubectl apply -f - <<EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -65,7 +65,7 @@ EOF
 # Alertmanager ingress: labctl incident status queries the Alertmanager API
 # from the host to report whether a fault's expected alert fired.
 echo "Creating Alertmanager ingress for ${DOMAIN_SUFFIX}..."
-cat <<EOF | kubectl apply -f -
+quiet_discovery kubectl apply -f - <<EOF
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

@@ -34,7 +34,7 @@ make cli-build        # builds bin/labctl with the UI embedded
 | Flag | Default | Description |
 |---|---|---|
 | `--project-dir` | auto-detected | The lab (a snowopslabs clone) to use; see [Install](#install) for how it is found otherwise |
-| `-v, --verbose` | `false` | Debug logging: config load, script exec, API calls |
+| `-v, --verbose` | `false` | Debug logging: config load, script exec, API calls. Scripts get `LABCTL_VERBOSE=1` and keep the client-go discovery errors they hide by default ([R05](../../runbooks/R05-platform-components.md#helm-truths-this-repo-has-been-bitten-by)) |
 | `--app` | `APP_NAME` | The application scenarios and faults act on for this command. Challenges and learning paths refuse it: they are graded against the default app |
 | `--version` | - | Print the build version |
 

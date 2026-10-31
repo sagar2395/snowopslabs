@@ -112,6 +112,11 @@ var rootCmd = &cobra.Command{
 		scriptExec.SetEnv("STORAGE_CLASS", cfg.StorageClass)
 		scriptExec.SetEnv("PROFILE", cfg.Profile)
 		scriptExec.SetEnv("MONITORING_NAMESPACE", cfg.MonitoringNamespace)
+		// --verbose keeps the output scripts trim by default, such as the
+		// client-go discovery errors platform/_lib/helm.sh filters.
+		if verbose {
+			scriptExec.SetEnv("LABCTL_VERBOSE", "1")
+		}
 		reg = platform.NewRegistryWithNamespace(cfg.ProjectRoot, cfg.MonitoringNamespace)
 		reg.StateRoot = cfg.StateDir
 		// The workload binding both engines resolve {{.Workload*}} against.

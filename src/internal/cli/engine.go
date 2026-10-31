@@ -62,7 +62,7 @@ func shutdownEngine(eng *run.Engine) error {
 // the same values scriptExec passes, since scripts read their settings from
 // the environment and never source .env.
 func scriptEnv() map[string]string {
-	return map[string]string{
+	env := map[string]string{
 		"CLUSTER_NAME":         cfg.ClusterName,
 		"DOMAIN_SUFFIX":        cfg.DomainSuffix,
 		"HTTP_PORT":            cfg.HTTPPort,
@@ -80,6 +80,10 @@ func scriptEnv() map[string]string {
 		"WORKLOAD_PORT":      scenes.Workload.Port,
 		"WORKLOAD_METRIC":    scenes.Workload.Metric,
 	}
+	if verbose {
+		env["LABCTL_VERBOSE"] = "1"
+	}
+	return env
 }
 
 // runEngineOperation starts the engine, then submits and streams one operation.

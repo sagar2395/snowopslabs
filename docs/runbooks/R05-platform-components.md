@@ -94,6 +94,17 @@ host ports 80/443 on the `ingress-ready` control-plane node, the one
 `runtimes/kind/up.sh` maps to the host. The Traefik chart reads the type from
 `service.spec.type`; it ignores `service.type`.
 
+**helm and kubectl print discovery errors while an API group is not served
+yet.** On a new cluster, client-go logs
+`couldn't get resource list for metrics.k8s.io/v1beta1: the server is currently unable to handle the request`
+until metrics-server is up, and `... monitoring.coreos.com/v1: the server could
+not find the requested resource` while the CRDs a chart has just installed
+register. They are harmless. `helm_upgrade_install` leaves them out of what it
+shows (its StatefulSet check still reads the raw output), and `quiet_discovery`
+in `platform/_lib/helm.sh` does the same for a kubectl call's stderr. Other
+errors still show. `labctl --verbose` keeps them; for a script run by hand, set
+`LABCTL_VERBOSE=1`.
+
 **Helm 4 upgrades apply server-side and refuse fields kubectl owns.** After a
 `kubectl set env` or `kubectl patch`, `helm upgrade` fails with
 `Apply failed with 1 conflict: conflict with "kubectl-set"`. Helm 3's

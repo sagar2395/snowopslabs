@@ -59,11 +59,11 @@ helm_upgrade_install traefik "$NAMESPACE" traefik/traefik \
   --wait --timeout 5m
 
 echo "Waiting for Traefik to be ready..."
-kubectl rollout status deployment/traefik -n $NAMESPACE --timeout=120s
+quiet_discovery kubectl rollout status deployment/traefik -n $NAMESPACE --timeout=120s
 
 # Create IngressRoute for Traefik Dashboard
 DOMAIN_SUFFIX="${DOMAIN_SUFFIX:-${CLUSTER_NAME:-snowops}.localhost}"
-cat <<EOF | kubectl apply -f -
+quiet_discovery kubectl apply -f - <<EOF
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
