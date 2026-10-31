@@ -5,7 +5,7 @@
     "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
-    "SinceActivation": "3m",
+    "SinceActivation": "4m",
     "WorkloadMetric": "http_server_request_duration_seconds",
     "WorkloadName": "go-api",
     "WorkloadNamespace": "go-api",
@@ -28,7 +28,7 @@
     },
     "prometheus/api/v1/query?query=max%28up%7Bjob%3D%22chaos-mesh-controller-manager%22%7D%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093283.580,\"1\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441259.566,\"1\"]}]}}"
     }
   },
   "results": {

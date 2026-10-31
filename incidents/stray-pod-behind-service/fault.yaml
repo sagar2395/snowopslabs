@@ -1,5 +1,5 @@
 name: stray-pod-behind-service
-verified: false
+verified: true
 displayName: "Stray pod behind the Service: a fraction of requests fail"
 description: "The pager says {{.WorkloadName}} is burning its availability SLO: a steady fraction of requests fails, not all of them. Every pod is Running and Ready, nothing was deployed, and the app's own error-rate panel is flat. Clients see the errors; the app's metrics do not."
 category: network

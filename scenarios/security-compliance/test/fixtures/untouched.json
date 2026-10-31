@@ -31,11 +31,11 @@
   "http": {
     "prometheus/api/v1/query?query=count%28kyverno_policy_results_total%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093491.759,\"40\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441220.311,\"38\"]}]}}"
     },
     "prometheus/api/v1/query?query=min%28up%7Bkubernetes_namespace%3D%22go-api%22%2Cjob%3D%22go-api%22%7D%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093491.751,\"1\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441220.309,\"1\"]}]}}"
     }
   },
   "results": {

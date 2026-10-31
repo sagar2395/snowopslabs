@@ -45,11 +45,11 @@
     },
     "prometheus/api/v1/query?query=count%28max_over_time%28ALERTS%7Bscenario%3D%22observability-sre%22%2Calertstate%3D%22firing%22%7D%5B4m%5D%29%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093477.678,\"1\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441443.089,\"1\"]}]}}"
     },
     "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B5m%5D%29%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093477.417,\"5.331206055555555\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441442.710,\"6.750849044444443\"]}]}}"
     }
   },
   "results": {

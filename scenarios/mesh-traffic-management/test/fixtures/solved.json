@@ -21,15 +21,15 @@
   "http": {
     "prometheus/api/v1/query?query=%28sum%28rate%28istio_requests_total%7Bdestination_service_name%3D%22go-api-canary%22%2Creporter%3D%22destination%22%2Cdestination_version%3D%22v2%22%7D%5B5m%5D%29%29+%2F+sum%28rate%28istio_requests_total%7Bdestination_service_name%3D%22go-api-canary%22%2Creporter%3D%22destination%22%7D%5B5m%5D%29%29%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093196.376,\"0.1396042616124333\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441168.425,\"0.15216277912321044\"]}]}}"
     },
     "prometheus/api/v1/query?query=histogram_quantile%280.99%2C+sum+by+%28le%29+%28rate%28istio_request_duration_milliseconds_bucket%7Bdestination_service_name%3D%22go-api-canary%22%2Creporter%3D%22source%22%2Cdestination_version%3D%22v2%22%7D%5B5m%5D%29%29%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093196.378,\"2459.3439748279393\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441168.427,\"2462.4305245950363\"]}]}}"
     },
     "prometheus/api/v1/query?query=sum%28rate%28istio_requests_total%7Bdestination_service_name%3D%22go-api-canary%22%2Creporter%3D%22destination%22%2Cdestination_version%3D%22v2%22%7D%5B5m%5D%29%29+%2F+sum%28rate%28istio_requests_total%7Bdestination_service_name%3D%22go-api-canary%22%2Creporter%3D%22destination%22%7D%5B5m%5D%29%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093196.377,\"0.13960391397930827\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441168.426,\"0.15216241062033944\"]}]}}"
     }
   },
   "results": {

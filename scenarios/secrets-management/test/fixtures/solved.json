@@ -30,7 +30,7 @@
   "http": {
     "prometheus/api/v1/query?query=max%28externalsecret_status_condition%7Bname%3D%22go-api-secret%22%2Ccondition%3D%22Ready%22%2Cstatus%3D%22True%22%7D%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093252.466,\"1\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441462.631,\"1\"]}]}}"
     }
   },
   "results": {

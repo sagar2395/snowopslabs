@@ -28,11 +28,11 @@
   "http": {
     "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%2Chttp_response_status_code%21~%225..%22%7D%5B2m%5D%29%29+%2F+sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B2m%5D%29%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093163.987,\"1\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441519.185,\"1\"]}]}}"
     },
     "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B2m%5D%29%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093163.916,\"0.61424\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441519.078,\"0.5601708333333334\"]}]}}"
     }
   },
   "results": {

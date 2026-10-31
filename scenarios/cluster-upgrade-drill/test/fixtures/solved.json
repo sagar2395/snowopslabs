@@ -6,7 +6,7 @@
     "IngressURLSuffix": "snowops.localhost",
     "LokiRetentionPeriod": "168h",
     "MonitoringNamespace": "monitoring",
-    "SinceActivation": "3m",
+    "SinceActivation": "4m",
     "WorkloadMetric": "http_server_request_duration_seconds",
     "WorkloadName": "go-api",
     "WorkloadNamespace": "go-api",
@@ -28,7 +28,7 @@
   "http": {
     "prometheus/api/v1/query?query=sum%28rate%28http_server_request_duration_seconds_count%7Bapp%3D%22go-api%22%7D%5B10m%5D%29%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093473.917,\"0.5587161111111111\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441288.845,\"1.742292777777778\"]}]}}"
     }
   },
   "results": {

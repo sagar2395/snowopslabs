@@ -28,7 +28,7 @@
     },
     "prometheus/api/v1/query?query=max%28up%7Bjob%3D%22chaos-mesh-controller-manager%22%7D%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093111.363,\"0\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441073.053,\"0\"]}]}}"
     }
   },
   "results": {

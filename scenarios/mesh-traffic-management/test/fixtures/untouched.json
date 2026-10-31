@@ -21,7 +21,7 @@
   "http": {
     "prometheus/api/v1/query?query=%28sum%28rate%28istio_requests_total%7Bdestination_service_name%3D%22go-api-canary%22%2Creporter%3D%22destination%22%2Cdestination_version%3D%22v2%22%7D%5B5m%5D%29%29+%2F+sum%28rate%28istio_requests_total%7Bdestination_service_name%3D%22go-api-canary%22%2Creporter%3D%22destination%22%7D%5B5m%5D%29%29%29+or+vector%280%29": {
       "status": 200,
-      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793093127.737,\"0\"]}]}}"
+      "body": "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":{},\"value\":[1793441099.835,\"0\"]}]}}"
     },
     "prometheus/api/v1/query?query=histogram_quantile%280.99%2C+sum+by+%28le%29+%28rate%28istio_request_duration_milliseconds_bucket%7Bdestination_service_name%3D%22go-api-canary%22%2Creporter%3D%22source%22%2Cdestination_version%3D%22v2%22%7D%5B5m%5D%29%29%29": {
       "status": 200,
