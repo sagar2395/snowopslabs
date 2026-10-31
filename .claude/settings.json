@@ -1,0 +1,12 @@
+{
+  "model": "opusplan",
+  "permissions": {
+    "deny": [
+      "Read(./bin/**)",
+      "Read(./dist/**)",
+      "Read(./coverage.out)",
+      "Read(./src/ui/dist/**)",
+      "Read(./src/ui/node_modules/**)"
+    ]
+  }
+}
