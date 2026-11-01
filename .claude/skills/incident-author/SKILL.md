@@ -84,8 +84,9 @@ A fault with `expectAlert` must ship `alerts/rule.yaml`: a PrometheusRule
 labelled `release: prometheus` so kube-prometheus-stack loads it, whose alert
 carries `labfault: "true"` so Alertmanager routes it to the pager.
 
-`inject.sh` arms it (tolerating a missing monitoring stack), `resolve.sh`
-disarms it, and `labctl incident status` reports whether the page fired by
+`inject.sh` arms it with `render_rule` (tolerating a missing monitoring
+stack; a silent inject renames the rule and group to `labfault-silent`, so
+`resolve.sh` deletes both names), `resolve.sh` disarms it, and `labctl incident status` reports whether the page fired by
 querying `ALERTMANAGER_URL`.
 
 ## Verify your work

@@ -540,3 +540,37 @@ func TestDetection(t *testing.T) {
 		})
 	}
 }
+
+func TestInject_SilentFlagReachesTheScript(t *testing.T) {
+	tests := []struct {
+		name   string
+		silent bool
+		want   string
+	}{
+		{"silent inject tells the script", true, "1"},
+		{"visible inject leaves it clear", false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e, root := testEngine(t, "fault-a")
+			out := filepath.Join(root, "silent.out")
+			script := "#!/bin/sh\nprintf '%s' \"$FAULT_SILENT\" > " + out + "\n"
+			if err := os.WriteFile(filepath.Join(root, "incidents", "fault-a", "inject.sh"), []byte(script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			ex := executor.New(root)
+			// A silent inject earlier on the same executor must not leak into this one.
+			ex.SetEnv("FAULT_SILENT", "1")
+			if _, err := e.Inject("fault-a", ex, false, tt.silent); err != nil {
+				t.Fatalf("Inject: %v", err)
+			}
+			got, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tt.want {
+				t.Fatalf("FAULT_SILENT = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

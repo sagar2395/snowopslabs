@@ -16,7 +16,7 @@ clean_up() {
   fault_state_clear "$FAULT"
   kubectl -n "$NS" annotate svc "$SVC" \
     "$MARK-" "$MARK-original-selector-" --overwrite >/dev/null 2>&1 || true
-  kubectl delete prometheusrule "$MARK" -n "$MON_NS" --ignore-not-found >/dev/null 2>&1 || true
+  kubectl delete prometheusrule "$MARK" labfault-silent -n "$MON_NS" --ignore-not-found >/dev/null 2>&1 || true
 }
 
 # Resolve also runs after a hand fix passes the check, so it leaves a Service

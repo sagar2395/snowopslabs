@@ -102,7 +102,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 MON_NS="${MONITORING_NAMESPACE:-monitoring}"
 # shellcheck source=incidents/_lib/render.sh
 . "$LIB/render.sh"
-render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - 2>/dev/null ||
+render_rule "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - 2>/dev/null ||
   echo "Note: alert rule not installed (monitoring stack missing?) - continuing without paging."
 
 # A literal "0" means the same as unset here, and it is a state an older resolve

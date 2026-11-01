@@ -29,7 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$LIB/render.sh"
 # shellcheck source=incidents/_lib/state.sh
 . "$LIB/state.sh"
-render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - 2>/dev/null ||
+render_rule "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - 2>/dev/null ||
   echo "Note: alert rule not installed (monitoring stack missing?) - continuing without paging."
 
 # Record the PORT the workload shipped so resolve puts back exactly that; "none"

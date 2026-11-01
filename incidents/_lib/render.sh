@@ -21,3 +21,16 @@ render_targeted() {
     -e "s|\${TARGET_WORKLOAD}|${TARGET_WORKLOAD:-${WORKLOAD_NAME:-go-api}}|g" \
     "$1"
 }
+
+# render_rule <file> - print an incident's PrometheusRule rendered for this
+# lab. In a silent inject (FAULT_SILENT set) the rule and its group take the
+# neutral name labfault-silent, because Prometheus' Alerts page shows both and
+# the incident's name would give the drill away. resolve.sh deletes that name
+# too. The alert names stay: they describe the symptom, as a real page does.
+render_rule() {
+  if [ -n "${FAULT_SILENT:-}" ]; then
+    render_targeted "$1" | sed -e 's|^\( *\(- \)\{0,1\}name:\) labfault-.*$|\1 labfault-silent|'
+  else
+    render_targeted "$1"
+  fi
+}

@@ -280,13 +280,37 @@ line_of() {
     reset_calls
     resolve "$fault"
     [ "$status" -eq 0 ] || { echo "$fault: $output"; return 1; }
-    assert_called kubectl "delete prometheusrule labfault-$fault -n monitoring"
+    assert_called kubectl "delete prometheusrule labfault-$fault labfault-silent -n monitoring"
   done < <(faults)
   while IFS='|' read -r fault _; do
     reset_calls
     resolve "$fault"
     assert_called kubectl "-n kube-system delete configmap labfault-$fault --ignore-not-found"
   done < <(recording_faults)
+}
+
+@test "a silent inject arms its page under a neutral rule and group name" {
+  while IFS='|' read -r fault _; do
+    : >"$STUB_DIR/applied-monitoring.yaml"
+    FAULT_SILENT=1 inject "$fault"
+    [ "$status" -eq 0 ] || { echo "$fault: $output"; return 1; }
+    rule="$STUB_DIR/applied-monitoring.yaml"
+    if grep -v '^ *#' "$rule" | grep -q "$fault"; then
+      echo "$fault names itself in its rule:"
+      grep -n "$fault" "$rule"
+      return 1
+    fi
+    [ "$(grep -c -e 'name: labfault-silent$' "$rule")" -eq 2 ] || { echo "$fault: rule and group not renamed"; return 1; }
+    grep -q 'alert: LabFault' "$rule" || { echo "$fault lost its alert"; return 1; }
+  done < <(faults)
+}
+
+@test "an inject that is not silent keeps the rule named after the fault" {
+  while IFS='|' read -r fault _; do
+    : >"$STUB_DIR/applied-monitoring.yaml"
+    inject "$fault"
+    [ "$(grep -c -e "name: labfault-$fault\$" "$STUB_DIR/applied-monitoring.yaml")" -eq 2 ] || { echo "$fault"; return 1; }
+  done < <(faults)
 }
 
 @test "inject and resolve act on the bound workload, never on the default app" {
