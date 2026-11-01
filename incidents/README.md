@@ -103,7 +103,18 @@ rendered through the shared helper before `kubectl` sees them:
 ```sh
 # shellcheck source=/dev/null
 . "$(cd "$SCRIPT_DIR/../_lib" && pwd)/render.sh"
-render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f -
+render_targeted "$SCRIPT_DIR/manifests/policy.yaml" | kubectl apply -f -
+```
+
+An alert rule goes through `render_rule` instead. It renders the same way, and
+in a `--silent` inject (`FAULT_SILENT` set) it also renames the PrometheusRule
+and its group to `labfault-silent`, because Prometheus' Alerts page shows both
+and the fault's name would give the drill away. `resolve.sh` deletes the rule
+under both names:
+
+```sh
+render_rule "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f -
+kubectl delete prometheusrule "labfault-$FAULT" labfault-silent -n "$MON_NS" --ignore-not-found
 ```
 
 ```yaml

@@ -42,7 +42,7 @@ fault_state_clear "$FAULT"
 clear_marks "$NS" "$DEPLOY" "$MARK" "$MARK-original-port"
 
 MON_NS="${MONITORING_NAMESPACE:-monitoring}"
-kubectl delete prometheusrule "$MARK" -n "$MON_NS" --ignore-not-found 2>/dev/null || true
+kubectl delete prometheusrule "$MARK" labfault-silent -n "$MON_NS" --ignore-not-found 2>/dev/null || true
 
 echo "Waiting for the rollout to complete..."
 kubectl -n "$NS" rollout status "deploy/$DEPLOY" --timeout=120s || true

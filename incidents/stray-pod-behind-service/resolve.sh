@@ -17,7 +17,7 @@ POD="$(fault_state_get "$FAULT" pod)"
 echo "Removing the diagnostic pod..."
 kubectl -n "$NS" delete pod "$POD" --ignore-not-found >/dev/null 2>&1 || true
 fault_state_clear "$FAULT"
-kubectl delete prometheusrule "$MARK" -n "$MON_NS" --ignore-not-found >/dev/null 2>&1 || true
+kubectl delete prometheusrule "$MARK" labfault-silent -n "$MON_NS" --ignore-not-found >/dev/null 2>&1 || true
 
 echo "Stopping the traffic generator this fault started..."
 bash "$PROJECT_ROOT/src/services/traffic/stop.sh" >/dev/null 2>&1 || true

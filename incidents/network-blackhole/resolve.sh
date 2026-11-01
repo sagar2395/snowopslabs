@@ -26,7 +26,7 @@ fi
 kubectl delete networkpolicy "labfault-$FAULT" -n "$NS" --ignore-not-found >/dev/null 2>&1 || true
 
 fault_state_clear "$FAULT"
-kubectl delete prometheusrule "labfault-$FAULT" -n "$MON_NS" --ignore-not-found >/dev/null 2>&1 || true
+kubectl delete prometheusrule "labfault-$FAULT" labfault-silent -n "$MON_NS" --ignore-not-found >/dev/null 2>&1 || true
 
 # Removing the policy lets new connections through immediately, but the ingress
 # controller may still be holding failed ones. Wait for the backend to settle

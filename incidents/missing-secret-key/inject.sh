@@ -53,7 +53,7 @@ VALUE="$(kubectl -n "$NS" get secret "$SECRET" -o "jsonpath={.data.$KEY}" 2>/dev
 # Arm the paging rule first so the on-call drill measures real detection.
 # Tolerate a missing prometheus operator: the fault still works unpaged.
 MON_NS="${MONITORING_NAMESPACE:-monitoring}"
-render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - >/dev/null 2>&1 ||
+render_rule "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - >/dev/null 2>&1 ||
   echo "Note: alert rule not installed (monitoring stack missing?) - continuing without paging."
 
 fault_state_save "$FAULT" "env=$ENV_NAME" "secret=$SECRET" "original-key=$KEY" "new-key=$NEW_KEY"

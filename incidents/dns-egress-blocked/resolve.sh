@@ -40,7 +40,7 @@ fi
 fault_state_clear "$FAULT"
 
 MON_NS="${MONITORING_NAMESPACE:-monitoring}"
-kubectl delete prometheusrule "$MARK" -n "$MON_NS" --ignore-not-found 2>/dev/null || true
+kubectl delete prometheusrule "$MARK" labfault-silent -n "$MON_NS" --ignore-not-found 2>/dev/null || true
 
 # inject.sh started the load that shows the errors, so resolve stops it. This
 # also stops a run the user started themselves.

@@ -69,7 +69,7 @@ render_targeted "$SCRIPT_DIR/manifests/burner.yaml" |
 
 # Arm the page. The alert watches node CPU, not this namespace: on-call is told
 # a node is saturated and has to go and find out by whom, which is the drill.
-render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - >/dev/null 2>&1 ||
+render_rule "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - >/dev/null 2>&1 ||
   echo "Note: the alert rule could not be applied - is kube-prometheus-stack installed?" >&2
 
 echo "Done. It may take a few minutes for the effect to show up in your metrics."

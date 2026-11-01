@@ -56,7 +56,7 @@ else
 fi
 
 MON_NS="${MONITORING_NAMESPACE:-monitoring}"
-render_targeted "$SCRIPT_DIR/alerts/rule.yaml" |
+render_rule "$SCRIPT_DIR/alerts/rule.yaml" |
   kubectl apply -n "$MON_NS" -f - >/dev/null 2>&1 ||
   echo "Note: alert rule not installed (monitoring stack missing?) - continuing without paging."
 

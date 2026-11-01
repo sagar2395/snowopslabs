@@ -37,7 +37,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$LIB/render.sh"
 # shellcheck source=incidents/_lib/state.sh
 . "$LIB/state.sh"
-render_targeted "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - >/dev/null 2>&1 ||
+render_rule "$SCRIPT_DIR/alerts/rule.yaml" | kubectl apply -n "$MON_NS" -f - >/dev/null 2>&1 ||
   echo "Note: alert rule not installed (monitoring stack missing?) - continuing without paging."
 
 echo "Applying a configuration change to $NS/$SVC..."

@@ -550,9 +550,12 @@ func (e *Engine) Inject(name string, exec *executor.Executor, force, silent bool
 		}
 	}
 	label := "Inject incident: " + f.Name
+	silentFlag := ""
 	if silent {
 		label = ""
+		silentFlag = "1"
 	}
+	exec.SetEnv("FAULT_SILENT", silentFlag)
 	if err := e.runFaultScript(f, "inject.sh", label, exec); err != nil {
 		return f, fmt.Errorf("injecting %s: %w", f.Name, err)
 	}

@@ -61,7 +61,7 @@ kubectl -n "$NS" annotate deploy "$DEPLOY" \
   --overwrite >/dev/null 2>&1 || true
 
 MON_NS="${MONITORING_NAMESPACE:-monitoring}"
-kubectl delete prometheusrule "$MARK" -n "$MON_NS" --ignore-not-found 2>/dev/null || true
+kubectl delete prometheusrule "$MARK" labfault-silent -n "$MON_NS" --ignore-not-found 2>/dev/null || true
 
 # inject.sh started the load that makes the limit bite, so resolve owns stopping
 # it. This also stops a run the user started themselves - say so rather than
