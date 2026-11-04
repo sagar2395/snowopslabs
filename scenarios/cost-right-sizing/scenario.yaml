@@ -2,7 +2,7 @@ apiVersion: scenario.snowops.net/v2
 name: cost-right-sizing
 verified: true
 displayName: "Cost & Capacity: Right-Sizing Over-Provisioned Resources"
-description: "{{.WorkloadName}} arrives reserving 2000m CPU and 1Gi of memory - forty times what it uses. Drive real traffic, read the gap between reserved and used on the dashboard and in OpenCost, then right-size the requests. Grading has two sides: a request over the waste ceiling fails, and so does one under the peak the workload actually reached, because under-provisioning is how workloads get throttled and OOM-killed."
+description: "{{.WorkloadName}} arrives reserving up to 2000m CPU and 1Gi of memory (as much as the lab's nodes can schedule) - many times what it uses. Drive real traffic, read the gap between reserved and used on the dashboard and in OpenCost, then right-size the requests. Grading has two sides: a request over the waste ceiling fails, and so does one under the peak the workload actually reached, because under-provisioning is how workloads get throttled and OOM-killed."
 category: cost
 prerequisites:
   platform:
@@ -21,13 +21,13 @@ runtimes:
 
 objectives:
   - "Read the waste: compare {{.WorkloadName}}'s reserved CPU/memory against what it actually uses under load, on the dashboard and in OpenCost"
-  - "Right-size the requests down from 2000m/1Gi - above the observed peak, under the waste ceiling. Both bounds are graded"
+  - "Right-size the inflated requests down - above the observed peak, under the waste ceiling. Both bounds are graded"
   - "Keep {{.WorkloadName}} healthy and un-throttled while doing it"
   - "Know which knob does what: requests drive scheduling and billing, limits cap usage and are what actually throttles"
 
 stages:
   - name: inflate
-    description: Over-provision {{.WorkloadName}}'s CPU/memory requests 40×/32× (the 'before' state to observe in OpenCost)
+    description: Over-provision {{.WorkloadName}}'s CPU/memory requests up to 40×/32×, as much as the lab's nodes can schedule (the 'before' state to observe in OpenCost)
     components:
       # A script (not a bare helm component) because we mutate the EXISTING
       # {{.WorkloadName}} Deployment in place with `kubectl set resources` - the exact
@@ -139,7 +139,7 @@ references:
 
 snippets:
   - label: "The over-provisioned 'before' state, and how it is applied"
-    description: "inflate.sh is the exact inverse of the fix you are about to perform: one 'kubectl set resources' putting the requests 40x/32x above what the workload needs. Read it to see precisely what was done to the Deployment."
+    description: "inflate.sh is the exact inverse of the fix you are about to perform: one 'kubectl set resources' putting the requests up to 40x/32x above what the workload needs, sized to what the lab's nodes can schedule. Read it to see precisely what was done to the Deployment."
     path: scripts/inflate.sh
 
 explore:
@@ -174,7 +174,7 @@ explore:
     - "Grafana → the linked Pod Resources dashboard: compare the flat 'requests' line against the much lower 'usage' line - that gap is the waste. After right-sizing, requests should drop toward actual usage."
     - "OpenCost uses on-prem pricing defaults in k3d (~$0.048/CPU-hr, ~$0.006/GB-hr). Numbers are relative - useful for comparing before vs after, not real invoices."
     - "Requests drive Kubernetes scheduling and cloud node billing. Limits cap container usage but don't affect node cost. Right-sizing requests is where the savings are."
-    - "2000m CPU request = 2 vCPUs reserved per pod even at idle. At ~$0.048/vCPU-hr that's ~$2.30/pod/day before any actual load - for a {{.WorkloadName}} serving <1 RPS."
+    - "A 2000m CPU request (what inflate.sh asks for when a node has room) = 2 vCPUs reserved per pod even at idle. At ~$0.048/vCPU-hr that's ~$2.30/pod/day before any actual load - for a {{.WorkloadName}} serving <1 RPS."
     - "Grading has two sides. A request over the waste ceiling fails, and so does one BELOW what the workload actually uses - measured with kubectl top, not assumed. Right-sizing is not \"make the number small\": an under-provisioned request means throttling, and for memory it means the kernel OOM-kills the container."
     - "After right-sizing, the deployment rolls out a new pod with the new requests - the old over-provisioned pod terminates cleanly."
     - "Tear down with 'labctl scenario down cost-right-sizing'. inflate.sh records the sizing the workload arrived with in an annotation, and teardown restores it - {{.WorkloadName}} is shared with every other scenario, so leaving it at whatever this drill ended on would break the next one."

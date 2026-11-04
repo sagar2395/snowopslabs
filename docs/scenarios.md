@@ -855,8 +855,8 @@ something live state alone cannot see:
 
 **Category:** cost
 
-**The exercise:** the bound workload arrives reserving 2000m CPU and 1Gi of
-memory - roughly forty times what it uses. Drive real traffic, read the gap
+**The exercise:** the bound workload arrives reserving up to 2000m CPU and 1Gi
+of memory - many times what it uses. Drive real traffic, read the gap
 between reserved and used, then right-size the requests.
 
 **What it stages:**
@@ -864,7 +864,10 @@ between reserved and used, then right-size the requests.
   `kubectl set resources`: the exact inverse of the fix, and records the sizing
   the workload arrived with in an annotation so teardown can restore it. It
   mutates the running Deployment directly rather than via a Helm upgrade, so it
-  works no matter how the workload was deployed.
+  works no matter how the workload was deployed. The request is three quarters
+  of what the roomiest node has free, capped at 2000m CPU and 1Gi; when that is
+  under 500m or 512Mi it stops at once and says what to free, instead of
+  waiting on a pod that cannot schedule.
 - A ServiceMonitor for OpenCost, so its cost figures reach Prometheus instead of
   living only inside its own UI
 - A dashboard plotting requests against usage, CPU efficiency, OpenCost

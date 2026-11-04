@@ -24,7 +24,7 @@ against:
 |---|---|---|
 | backup-restore-drill | 2.2 GB | |
 | env-promotion | 2.4 GB | |
-| cost-right-sizing | 2.4 GB | OpenCost |
+| cost-right-sizing | 2.4 GB | OpenCost; on 2 CPUs the inflated request shrinks to what one node can schedule |
 | autoscaling-under-load | 2.7 GB | KEDA |
 | secrets-management | 2.7 GB | Vault, External Secrets |
 | mesh-traffic-management | 2.8 GB | Istio or Linkerd; best with 4 CPUs |
