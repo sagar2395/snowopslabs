@@ -34,14 +34,25 @@ existing one. Smaller known problems are tracked as
 
 ## Next
 
-- **More content.** New faults and scenarios drawn from real failures.
-- **A smoother first run.** Fewer surprises on small machines and fresh
-  installs; see the
-  [open bugs](https://github.com/sagar2395/snowopslabs/issues?q=is%3Aissue+is%3Aopen+label%3Abug).
-- **Web UI on the run engine.** UI actions go through the same durable,
-  cancellable runs as the CLI.
-- **Team mode packaging.** An easier way to run the shared server for a game
-  day.
+All of this is **Planned**. Each milestone lists its open issues, and most are
+open to contributors. To ask for something new, open an issue; maintainers tag
+requests `community-request`, and 👍 votes on them show what people want most.
+
+- **[First run](https://github.com/sagar2395/snowopslabs/milestone/1).** Install
+  to a first resolved fault in under 30 minutes on macOS, Linux, WSL2 and
+  Codespaces. This covers one guided path, fixes for small machines and
+  restarts, UI actions on the same durable, cancellable runs as the CLI, and a
+  way to tell whether people finish: a feedback link, and a proposal for usage
+  counts that stay off unless you turn them on.
+- **[Platform catalog](https://github.com/sagar2395/snowopslabs/milestone/2).**
+  New scenarios for what platform engineers build and run: zero-downtime
+  deploys, Postgres failover, multi-tenant guardrails, a golden path for new
+  services, progressive delivery, disaster recovery with volume data and a move
+  to Gateway API, along with new faults.
+- **[Team game day](https://github.com/sagar2395/snowopslabs/milestone/3).** An
+  easier way to install the shared server, a guide to running a game day,
+  sessions that survive a restart, results you can export, and a shareable
+  result card marked as self-reported.
 
 ## Later
 
