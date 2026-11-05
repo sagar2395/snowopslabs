@@ -15,11 +15,21 @@ agent_names() {
 
 # shellcheck source=runtimes/_lib/lab-images.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib/lab-images.sh"
+# shellcheck source=runtimes/_lib/docker.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib/docker.sh"
 
 current="$(agent_names | grep -c . || true)"
 if [ "$current" -ge "$TOTAL" ]; then
   echo "Cluster '$CLUSTER_NAME' already has $current agent node(s)."
   exit 0
+fi
+
+# Each new agent offers the scheduler one share of Docker's memory, split over
+# the server and TOTAL agents, rather than all of it.
+node_args=()
+reserved="$(node_memory_reserved $((TOTAL + 1)))"
+if [ -n "$reserved" ]; then
+  node_args+=(--k3s-arg "--kubelet-arg=system-reserved=memory=${reserved}Mi")
 fi
 
 i=0
@@ -34,7 +44,8 @@ while [ "$current" -lt "$TOTAL" ]; do
     continue
   fi
   echo "Adding agent node ${node}..."
-  k3d node create "$name" --cluster "$CLUSTER_NAME" --role agent --wait --timeout 300s
+  # The +-expansion keeps bash 3.2 (macOS) quiet about an empty array under set -u.
+  k3d node create "$name" --cluster "$CLUSTER_NAME" --role agent ${node_args[@]+"${node_args[@]}"} --wait --timeout 300s
   docker exec "$node" sysctl -w fs.inotify.max_user_instances=512 >/dev/null 2>&1 || true
   added="$added $node"
   current=$((current + 1))

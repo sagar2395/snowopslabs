@@ -44,7 +44,10 @@ CPU and memory, then either
 with `exit=0` (`(see the notes above)` is appended when there are notes), or a
 problems section listing what is genuinely missing on your machine with a
 non-zero exit. A Docker engine below 2 CPU / 4 GB, or a stopped daemon other
-than colima, is a problem; its line ends with the command that fixes it.
+than colima, is a problem; its line ends with the command that fixes it. With
+the lab's cluster up and its pods requesting more than 85% of Docker's memory,
+a note says how much they request and how to stop a scenario; it does not
+change the exit code.
 
 🔍 Whatever the outcome, check the table itself:
 

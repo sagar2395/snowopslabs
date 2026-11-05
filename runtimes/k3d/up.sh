@@ -280,6 +280,16 @@ create_cluster() {
     echo "Pinning k3s version to ${K3S_VERSION}"
     create_args+=(--image "rancher/k3s:${K3S_VERSION}")
   fi
+  # Each node offers the scheduler an even share of Docker's memory rather than
+  # all of it. An existing cluster keeps its settings until it is recreated.
+  local reserved
+  reserved="$(node_memory_reserved $((AGENTS + 1)))"
+  if [ -n "$reserved" ]; then
+    create_args+=(--k3s-arg "--kubelet-arg=system-reserved=memory=${reserved}Mi@server:*;agent:*")
+  elif [ "$AGENTS" -gt 0 ]; then
+    echo "WARNING: could not read Docker's memory, so each node offers all of it to the scheduler." >&2
+    echo "  'labctl doctor' warns when the pods' memory requests come close to Docker's memory." >&2
+  fi
 
   # Pull the images first, with progress and a stall timeout: k3d pulls them
   # silently, so a stalled download would otherwise look like a hang.

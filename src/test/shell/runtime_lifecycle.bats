@@ -53,6 +53,50 @@ docker_recovers_after_restart() {
   assert_called k3d "cluster create"
 }
 
+@test "k3d up gives each node an even share of Docker's memory" {
+  stub_when k3d "cluster list" 1 # not found
+  stub_when docker "MemTotal" 0 "8589934592" # 8 GiB
+  AGENTS=1 run bash "$ROOT/runtimes/k3d/up.sh" testcluster
+  [ "$status" -eq 0 ]
+  # Two nodes of 4096 MiB each: every kubelet holds back the other 4096 MiB.
+  # assert_called reads a grep pattern, hence the escaped node filter.
+  assert_called k3d '--k3s-arg --kubelet-arg=system-reserved=memory=4096Mi@server:\*;agent:\*'
+}
+
+@test "k3d up splits Docker's memory over the server and every agent" {
+  stub_when k3d "cluster list" 1 # not found
+  stub_when docker "MemTotal" 0 "8589934592" # 8 GiB
+  AGENTS=2 run bash "$ROOT/runtimes/k3d/up.sh" testcluster
+  [ "$status" -eq 0 ]
+  # Three nodes of 2730 MiB each.
+  assert_called k3d 'system-reserved=memory=5462Mi@server:\*;agent:\*'
+}
+
+@test "k3d up reserves nothing for a single-node cluster" {
+  stub_when k3d "cluster list" 1 # not found
+  stub_when docker "MemTotal" 0 "8589934592"
+  AGENTS=0 run bash "$ROOT/runtimes/k3d/up.sh" testcluster
+  [ "$status" -eq 0 ]
+  assert_called k3d "cluster create"
+  refute_called k3d "system-reserved"
+}
+
+@test "k3d up creates the cluster with a warning when Docker's memory cannot be read" {
+  stub_when k3d "cluster list" 1 # not found
+  AGENTS=1 run bash "$ROOT/runtimes/k3d/up.sh" testcluster
+  [ "$status" -eq 0 ]
+  assert_called k3d "cluster create"
+  refute_called k3d "system-reserved"
+  [[ "$output" == *"could not read Docker's memory"* ]] || false
+}
+
+@test "k3d up leaves an existing cluster's memory settings alone" {
+  stub_when docker "MemTotal" 0 "8589934592"
+  run bash "$ROOT/runtimes/k3d/up.sh" testcluster
+  [ "$status" -eq 0 ]
+  refute_called k3d "system-reserved"
+}
+
 @test "k3d up never deletes an existing cluster whose API does not answer" {
   # An existing cluster holds the user's apps and scenarios. up.sh restarts it
   # in order and, if it still does not answer, stops and leaves rebuilding to

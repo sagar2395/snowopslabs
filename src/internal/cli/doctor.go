@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strconv"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -79,6 +80,11 @@ func runDoctor(ctx context.Context, out io.Writer, runner toolchain.Runner) erro
 	}
 	if docker.note != "" {
 		notes = append(notes, docker.note)
+	}
+	if labErr == nil && docker.res.MemBytes > 0 {
+		if note := memoryRequestsNote(ctx, runner, lab, docker.res); note != "" {
+			notes = append(notes, note)
+		}
 	}
 	suffix, local := labDomain(lab, labErr)
 	if !local && !hostsBlockPresent() {
@@ -185,11 +191,13 @@ func statusLabel(r toolchain.CheckResult) string {
 }
 
 // dockerReport is doctor's view of the Docker engine: a summary line, plus at
-// most one blocking problem or one note.
+// most one blocking problem or one note, and the resources when it could read
+// them.
 type dockerReport struct {
 	line    string
 	problem string
 	note    string
+	res     capacity.Resources
 }
 
 // dockerCapacity checks the Docker engine against capacity.Floor. A missing
@@ -213,12 +221,47 @@ func dockerCapacity(ctx context.Context, runner toolchain.Runner, p capacity.Pla
 		return dockerReport{line: "unknown", note: fmt.Sprintf("Could not read Docker's CPU and memory: %v", err)}
 	}
 	if short := capacity.Shortfall(res, capacity.Floor); short != "" {
-		return dockerReport{line: res.String(), problem: fmt.Sprintf(
+		return dockerReport{line: res.String(), res: res, problem: fmt.Sprintf(
 			"%s\n    Below this the API server runs out of memory and every command fails with\n"+
 				"    \"TLS handshake timeout\". Fix:\n    %s", short, host.ResizeHint(capacity.Floor))}
 	}
 	return dockerReport{line: fmt.Sprintf("%s - meets the minimum (%s). Heavier scenarios say what they need.",
-		res, capacity.Floor)}
+		res, capacity.Floor), res: res}
+}
+
+// requestsWarnShare is the share of Docker's memory the pods' memory requests
+// may reach before doctor warns. Past it, new pods soon stay Pending, or, on a
+// cluster whose nodes each offer all of Docker's memory, the VM runs out.
+const requestsWarnShare = 0.85
+
+// memoryRequestsNote warns when the memory requests of the pods on the lab's
+// local cluster come close to what the Docker engine has. It says nothing when
+// the lab runs elsewhere or its cluster does not answer.
+func memoryRequestsNote(ctx context.Context, runner toolchain.Runner, lab string, res capacity.Resources) string {
+	cfg, err := config.Load(lab)
+	if err != nil {
+		return ""
+	}
+	if cfg.Profile != "k3d" && cfg.Profile != "kind" {
+		return ""
+	}
+	requested, err := capacity.Requested(ctx, runner, cfg.Profile+"-"+cfg.ClusterName)
+	if err != nil {
+		return ""
+	}
+	engineMiB := int(res.MemBytes / (1 << 20))
+	if float64(requested) < requestsWarnShare*float64(engineMiB) {
+		return ""
+	}
+	return fmt.Sprintf("The lab's pods ask for %s GB of memory, %d%% of Docker's %s GB. New pods may\n"+
+		"    not fit. Stop a scenario you are done with ('labctl scenario down <name>') first.",
+		formatMiB(requested), requested*100/engineMiB, formatMiB(engineMiB))
+}
+
+// formatMiB formats MiB as GB with one decimal, the way doctor shows Docker's
+// memory.
+func formatMiB(mib int) string {
+	return strconv.FormatFloat(float64(mib)/1024, 'f', 1, 64)
 }
 
 func init() {

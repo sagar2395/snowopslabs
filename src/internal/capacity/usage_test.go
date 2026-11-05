@@ -123,3 +123,94 @@ func TestUsedMiB(t *testing.T) {
 		})
 	}
 }
+
+func TestRequested(t *testing.T) {
+	tests := []struct {
+		name     string
+		fake     *toolchain.Fake
+		expected int
+		wantErr  bool
+	}{
+		{
+			name:     "sums every container's memory request",
+			fake:     toolchain.NewFake().WhenArgsContain("get pods", "512Mi\n1Gi\n\n256Mi\n", 0),
+			expected: 1792,
+		},
+		{
+			name: "no pods ask for nothing",
+			fake: toolchain.NewFake().WhenArgsContain("get pods", "", 0),
+		},
+		{
+			name:    "a cluster that does not answer is an error",
+			fake:    toolchain.NewFake().WhenArgsContain("get pods", "", 1),
+			wantErr: true,
+		},
+		{
+			name:    "an unreadable request is an error",
+			fake:    toolchain.NewFake().WhenArgsContain("get pods", "lots\n", 0),
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Requested(t.Context(), tt.fake, "k3d-lab")
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Requested error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if got != tt.expected {
+				t.Errorf("Requested = %d, want %d", got, tt.expected)
+			}
+		})
+	}
+
+	t.Run("asks the given context for pods that have not finished", func(t *testing.T) {
+		f := toolchain.NewFake()
+		if _, err := Requested(t.Context(), f, "k3d-lab"); err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"--context k3d-lab", "status.phase!=Succeeded,status.phase!=Failed"} {
+			if !f.Called(want) {
+				t.Errorf("kubectl should be called with %q, calls: %v", want, f.CallStrings())
+			}
+		}
+	})
+
+	t.Run("missing kubectl is an error", func(t *testing.T) {
+		f := toolchain.NewFake()
+		f.LookPathErr = errors.New("not found")
+		f.Available = map[string]string{}
+		if _, err := Requested(t.Context(), f, "k3d-lab"); err == nil {
+			t.Error("want an error")
+		}
+	})
+}
+
+func TestMemoryBytes(t *testing.T) {
+	tests := []struct {
+		quantity string
+		expected float64
+		wantErr  bool
+	}{
+		{quantity: "128Mi", expected: 128 << 20},
+		{quantity: "1.5Gi", expected: 1.5 * (1 << 30)},
+		{quantity: "64Ki", expected: 64 << 10},
+		{quantity: "1G", expected: 1e9},
+		{quantity: "500M", expected: 5e8},
+		{quantity: "1e9", expected: 1e9},
+		{quantity: "1048576", expected: 1 << 20},
+		{quantity: "2000m", expected: 2},
+		{quantity: "Mi", wantErr: true},
+		{quantity: "ten", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.quantity, func(t *testing.T) {
+			got, err := memoryBytes(tt.quantity)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("memoryBytes(%q) error = %v, wantErr %v", tt.quantity, err, tt.wantErr)
+			}
+			if got != tt.expected {
+				t.Errorf("memoryBytes(%q) = %v, want %v", tt.quantity, got, tt.expected)
+			}
+		})
+	}
+}

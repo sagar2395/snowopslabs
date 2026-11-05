@@ -277,6 +277,24 @@ name_used_by() {
   esac
 }
 
+# node_memory_reserved <nodes> - the memory, in MiB, each of <nodes> cluster
+# nodes holds back from its kubelet. The nodes are containers on one Docker
+# engine and each kubelet reports all of the engine's memory as allocatable, so
+# without a reservation the scheduler fills every node as if it had the whole
+# VM. Holding back all but an even share makes the nodes' allocatable memory
+# add up to what the engine has. Prints nothing for a single node or when the
+# engine's memory cannot be read.
+node_memory_reserved() {
+  local nodes="$1" total
+  total="$(docker info --format '{{.MemTotal}}' 2>/dev/null || true)"
+  case "$total" in
+    '' | *[!0-9]*) return 0 ;;
+  esac
+  [ "$nodes" -gt 1 ] || return 0
+  total=$((total / 1048576))
+  printf '%s' $((total - total / nodes))
+}
+
 # forget_cluster <cluster> - drop the record when the cluster is deleted, so a
 # new cluster starts from the configured ports again.
 forget_cluster() {

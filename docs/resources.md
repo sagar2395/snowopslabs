@@ -83,6 +83,20 @@ A drill that needs a second agent node gets one while it runs; `scenario down`
 removes it once no active scenario needs it. The dashboard's Docker card shows
 how much of the memory the lab may use is taken.
 
+## How the nodes share memory
+
+The k3d nodes are containers on one Docker engine, and each node's kubelet sees
+all of the engine's memory. `labctl init` therefore has each node hold the rest
+back (`system-reserved`), so on an 8 GB Docker with the default server and one
+agent, each node offers the scheduler about 4 GB and the two add up to what
+Docker has. A drill's extra agent gets one share of Docker's memory split over
+the server and every agent. Without this, every node would offer the whole VM,
+and the scheduler would keep placing pods until the VM ran out of memory.
+
+A cluster built before this change keeps offering the whole VM on every node
+until it is rebuilt with `labctl reset`. On any cluster, `labctl doctor` warns
+when the memory the pods request passes 85% of Docker's memory.
+
 ## Giving Docker more
 
 | Setup | How |
