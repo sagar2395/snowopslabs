@@ -61,7 +61,9 @@ that Docker is running with at least the lab's minimum of 2 CPU / 4 GB. Each
 problem is reported with why it matters and the exact command that fixes it on
 your setup. Exits non-zero when anything required is missing, Docker is not
 running, or Docker is too small, so it is safe as a script gate. A stopped
-colima is only a note: `labctl init` starts it.
+colima is only a note: `labctl init` starts it. When the lab's k3d or kind
+cluster answers, a note also warns once the memory its pods request passes 85%
+of Docker's memory, and names the command that stops a scenario.
 
 On WSL2, `doctor` adds a dedicated **WSL notes** section. It checks whether the
 lab directory is on a Windows mount (any path under `/mnt/`) where 9p bridge

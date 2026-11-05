@@ -294,6 +294,62 @@ func TestStatusLabel(t *testing.T) {
 	}
 }
 
+func TestMemoryRequestsNote(t *testing.T) {
+	lab := t.TempDir()
+	for _, d := range []string{"scenarios", "runtimes/k3d", "runtimes/incluster"} {
+		if err := os.MkdirAll(filepath.Join(lab, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("SNOWOPS_HOME", t.TempDir())
+	t.Setenv("CLUSTER_NAME", "")
+	engine := capacity.Resources{CPUs: 4, MemBytes: 8 << 30} // 8 GiB
+
+	fake := func(requests string, exit int) *toolchain.Fake {
+		f := toolchain.NewFake()
+		f.Available = map[string]string{"kubectl": "/usr/bin/kubectl"}
+		f.WhenArgsContain("get pods", requests, exit)
+		return f
+	}
+
+	tests := []struct {
+		name     string
+		profile  string
+		fake     *toolchain.Fake
+		wantNote string
+	}{
+		{
+			name: "requests past 85% of Docker's memory warn", profile: "k3d",
+			fake:     fake("4Gi\n2560Mi\n512Mi\n", 0),
+			wantNote: "ask for 7.0 GB of memory, 87% of Docker's 8.0 GB",
+		},
+		{name: "requests well within Docker's memory say nothing", profile: "k3d", fake: fake("4Gi\n", 0)},
+		{name: "a cluster that does not answer says nothing", profile: "k3d", fake: fake("", 1)},
+		{name: "a lab that runs elsewhere says nothing", profile: "incluster", fake: fake("8Gi\n", 0)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("PROFILE", tt.profile)
+			note := memoryRequestsNote(t.Context(), tt.fake, lab, engine)
+			if tt.wantNote == "" && note != "" {
+				t.Errorf("note = %q, want none", note)
+			}
+			if tt.wantNote != "" && !strings.Contains(note, tt.wantNote) {
+				t.Errorf("note = %q, want it to contain %q", note, tt.wantNote)
+			}
+		})
+	}
+
+	t.Run("asks the lab's own cluster", func(t *testing.T) {
+		t.Setenv("PROFILE", "k3d")
+		f := fake("", 0)
+		memoryRequestsNote(t.Context(), f, lab, engine)
+		if !f.Called("--context k3d-snowops") {
+			t.Errorf("kubectl should target the lab's context, calls: %v", f.CallStrings())
+		}
+	})
+}
+
 func TestLabDomain(t *testing.T) {
 	lab := t.TempDir()
 	for _, d := range []string{"scenarios", "runtimes/k3d"} {

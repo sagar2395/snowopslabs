@@ -93,3 +93,65 @@ func usedMiB(meminfo string) (int, error) {
 	}
 	return int((total - available) / 1024), nil
 }
+
+// Requested is the memory, in MiB, that the pods on the cluster behind
+// kubeContext ask for: the sum of their containers' memory requests, which the
+// scheduler places against each node's allocatable memory. Pods that have
+// finished do not count.
+func Requested(ctx context.Context, runner toolchain.Runner, kubeContext string) (int, error) {
+	kubectl, err := runner.LookPath("kubectl")
+	if err != nil {
+		return 0, fmt.Errorf("finding kubectl: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+
+	var out bytes.Buffer
+	if _, err := runner.Run(ctx, toolchain.Command{
+		Path: kubectl,
+		Args: []string{
+			"--context", kubeContext, "--request-timeout=10s",
+			"get", "pods", "-A", "--field-selector=status.phase!=Succeeded,status.phase!=Failed",
+			"-o", `jsonpath={range .items[*].spec.containers[*]}{.resources.requests.memory}{"\n"}{end}`,
+		},
+		Stdout: &out,
+	}); err != nil {
+		return 0, fmt.Errorf("listing the lab's pods: %w", err)
+	}
+	var total float64
+	for q := range strings.FieldsSeq(out.String()) {
+		b, err := memoryBytes(q)
+		if err != nil {
+			return 0, err
+		}
+		total += b
+	}
+	return int(total / (1 << 20)), nil
+}
+
+// memorySuffixes are the Kubernetes quantity suffixes a memory request can
+// carry, with the bytes each one stands for.
+var memorySuffixes = []struct {
+	suffix string
+	bytes  float64
+}{
+	{"Ki", 1 << 10}, {"Mi", 1 << 20}, {"Gi", 1 << 30}, {"Ti", 1 << 40}, {"Pi", 1 << 50}, {"Ei", 1 << 60},
+	{"k", 1e3}, {"M", 1e6}, {"G", 1e9}, {"T", 1e12}, {"P", 1e15}, {"E", 1e18}, {"m", 1e-3},
+}
+
+// memoryBytes reads a Kubernetes memory quantity such as "512Mi", "1G" or
+// "1e9" as bytes.
+func memoryBytes(q string) (float64, error) {
+	num, scale := q, 1.0
+	for _, s := range memorySuffixes {
+		if rest, ok := strings.CutSuffix(q, s.suffix); ok {
+			num, scale = rest, s.bytes
+			break
+		}
+	}
+	v, err := strconv.ParseFloat(num, 64)
+	if err != nil {
+		return 0, fmt.Errorf("reading memory request %q: %w", q, err)
+	}
+	return v * scale, nil
+}

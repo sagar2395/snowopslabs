@@ -64,6 +64,24 @@ node/k3d-lab-agent-1-0"
   refute_called k3d "node create"
 }
 
+@test "gives each new agent one share of Docker's memory" {
+  stub_when kubectl "get nodes" 0 "node/k3d-lab-agent-0"
+  stub_when docker "MemTotal" 0 "8589934592" # 8 GiB
+  cd "$WORK"
+  run bash runtimes/k3d/add-agents.sh 2
+  [ "$status" -eq 0 ]
+  # A server and two agents: 2730 MiB each, the other 5462 MiB held back.
+  assert_called k3d "node create lab-agent-1 --cluster lab --role agent --k3s-arg --kubelet-arg=system-reserved=memory=5462Mi --wait"
+}
+
+@test "adds agents as before when Docker's memory cannot be read" {
+  stub_when kubectl "get nodes" 0 "node/k3d-lab-agent-0"
+  cd "$WORK"
+  run bash runtimes/k3d/add-agents.sh 2
+  [ "$status" -eq 0 ]
+  assert_called k3d "node create lab-agent-1 --cluster lab --role agent --wait"
+}
+
 @test "fails when k3d cannot create the node" {
   stub_when kubectl "get nodes" 0 "node/k3d-lab-agent-0"
   stub_when k3d "node create" 1
