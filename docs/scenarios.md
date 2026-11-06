@@ -728,9 +728,12 @@ actually flowing (promql), **success rate >= 99%** across the upgrade window
 > and the load balancer never starts. One dead upstream takes down the whole
 > listener set **including the 6443 mapping the kubeconfig points at**, so the
 > entire lab, API server included, is unreachable. Observed for real on
-> 2026-09-09 after a Docker restart. `roll-node.sh` now repoints the load
-> balancer and restarts it; the rewrite matches whole lines, because node names
-> are prefixes of one another.
+> 2026-09-09 after a Docker restart. k3d updates the list for servers only, so
+> any deleted agent stays in it. `roll-node.sh` and `remove-agents.sh` now
+> replace every name of a missing container with the live nodes of the same
+> role and restart the load balancer, and `labctl init` does the same for a lab
+> already in that state instead of stopping at "API server is not answering"
+> (seen again on 2026-10-21). See [R04 §8](runbooks/R04-lab-lifecycle.md).
 
 
 

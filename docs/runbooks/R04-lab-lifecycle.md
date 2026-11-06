@@ -203,6 +203,17 @@ DRY_RUN=true bash scenarios/cluster-upgrade-drill/scripts/reclaim-stranded-pvcs.
 bash scenarios/cluster-upgrade-drill/scripts/reclaim-stranded-pvcs.sh
 ```
 
+**A deleted agent stays in the load balancer.** k3d keeps the upstream list of
+`k3d-<lab>-serverlb` (`/etc/confd/values.yaml`) up to date for servers only, so
+an agent that is deleted, or replaced under a new name, stays listed. Nothing
+shows until the next Docker restart: nginx then fails with `host not found in
+upstream`, the load balancer restart-loops, and the API server behind it is
+unreachable too. `serverlb_repair` (`runtimes/_lib/k3d-serverlb.sh`) replaces
+every name of a missing container with the live nodes of the same role and
+restarts the load balancer. `roll-node.sh` and `runtimes/k3d/remove-agents.sh`
+run it after deleting a node, and `labctl init` runs it on an existing cluster
+(section 9), so a lab already in that state comes back without `labctl reset`.
+
 Also note that `k3d node create <name>` does not produce a node called `<name>`:
 k3d prefixes `k3d-` and appends its own index, so the created node must be
 discovered by diffing `kubectl get nodes` rather than assumed.
@@ -244,8 +255,10 @@ before the kubelet can correct it, so that node shuts down on every restart.
 `runtimes/k3d/up.sh` handles all of it, so `labctl init` / `make init` is the
 recovery:
 
-1. If the cluster is not healthy (API not answering, a node container with no
-   k3s, or a node not Ready), it restarts the cluster **in order** with
+1. It first repairs a load balancer whose config names a node that no longer
+   exists (section 8), which no restart can fix. If the cluster is then not
+   healthy (API not answering, a node container with no k3s, or a node not
+   Ready), it restarts the cluster **in order** with
    `k3d cluster stop` + `k3d cluster start`: servers first, then agents.
 2. While k3d starts it, the script compares each node container's IP with its
    Node's recorded `InternalIP`, running `kubectl` inside the server so it needs

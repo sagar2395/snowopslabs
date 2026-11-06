@@ -8,6 +8,9 @@ set -euo pipefail
 #
 # Config (env): CLUSTER_NAME (default snowops).
 
+# shellcheck source=runtimes/_lib/k3d-serverlb.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib/k3d-serverlb.sh"
+
 TOTAL="${1:?usage: remove-agents.sh <total-agents>}"
 CLUSTER_NAME="${CLUSTER_NAME:-snowops}"
 
@@ -50,5 +53,12 @@ for node in $added; do
   k3d node delete "$node"
   kubectl delete node "$node" --ignore-not-found >/dev/null
   current=$((current - 1))
+  removed=1
 done
+# A rolled init agent (k3d-NAME-agent-0-0) looks like an added one and can be
+# removed here. k3d keeps an agent's name in the load balancer after deleting it.
+if [ -n "${removed:-}" ] && ! serverlb_repair "$CLUSTER_NAME"; then
+  echo "WARN: could not check the load balancer's config; if the lab becomes" >&2
+  echo "      unreachable after a restart, run 'labctl init'." >&2
+fi
 echo "Cluster '$CLUSTER_NAME' has $current agent node(s)."

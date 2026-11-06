@@ -120,6 +120,28 @@ docker_recovers_after_restart() {
   refute_called k3d "cluster create"
 }
 
+@test "k3d up repairs a load balancer that names a node that no longer exists" {
+  # A removed agent stays in k3d's load balancer config. After a Docker restart
+  # nginx fails on it and the API behind the load balancer never answers.
+  stub_script docker <<STUB
+case "\$*" in
+  "ps -a --filter label=k3d.cluster=testcluster "*)
+    printf 'k3d-testcluster-server-0 server\nk3d-testcluster-agent-1-0 agent\n' ;;
+  "cp k3d-testcluster-serverlb:/etc/confd/values.yaml "*)
+    printf 'ports:\n  80.tcp:\n  - k3d-testcluster-server-0\n  - k3d-testcluster-agent-0-0\n' >"\$3" ;;
+  "cp "*" k3d-testcluster-serverlb:/etc/confd/values.yaml") cp "\$2" "$STUB_DIR/lb-values" ;;
+esac
+exit 0
+STUB
+  run bash "$ROOT/runtimes/k3d/up.sh" testcluster
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"k3d-testcluster-agent-0-0 no longer exists; the load balancer now uses k3d-testcluster-agent-1-0"* ]] || false
+  [ "$(grep -cx '  - k3d-testcluster-agent-1-0' "$STUB_DIR/lb-values")" -eq 1 ]
+  [ "$(grep -cx '  - k3d-testcluster-agent-0-0' "$STUB_DIR/lb-values")" -eq 0 ]
+  assert_called docker "restart k3d-testcluster-serverlb"
+  refute_called k3d "cluster delete"
+}
+
 @test "k3d up restarts a node container whose k3s has died" {
   # After a Docker/Colima restart the node containers come back with different
   # bridge IPs and k3s exits at once, but k3d's entrypoint keeps the container
