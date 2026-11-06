@@ -1,10 +1,11 @@
 # Incidents: Fault Library
 
-Realistic, **reversible** production faults for game days, on-call practice,
-and (later) graded challenges. Inject one, watch the lab break, practice
+Realistic, **reversible** production faults for game days, on-call practice
+and the timed [challenges](../challenges/README.md). Inject one, watch the lab break, practice
 diagnosing it, fix it, and let the detection check confirm you actually
 fixed it. The commands are in the
-[CLI reference](../docs/reference/cli/incidents.md).
+[CLI reference](../docs/reference/cli/incidents.md), and the learner-facing
+catalog is the [fault library](../docs/incidents.md).
 
 ## The contract
 

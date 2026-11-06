@@ -3,6 +3,35 @@
 `labctl` is the command-line interface for SnowOps Labs. It builds the lab,
 runs scenarios, injects faults and grades your fix.
 
+## Most used commands
+
+```bash
+labctl init                                   # build the lab, or bring it back after a reboot
+labctl status                                 # what is running, and whether it is healthy
+labctl ui                                     # the web dashboard, http://localhost:3939
+labctl scenario up <name> --deploy-prereqs    # start a scenario
+labctl scenario verify <name>                 # grade it
+labctl scenario down <name>                   # stop it
+labctl incident inject <name> --deploy-prereqs
+labctl incident status                        # resolved yet?
+labctl incident hint                          # the next hint
+labctl reset                                  # start again from a clean cluster
+```
+
+## Command map
+
+| Page | Commands |
+|---|---|
+| [Lifecycle](lifecycle.md) | `init` `teardown` `reset` `status` `doctor` `setup-tools` `check` `hosts` `runtime` `lab` `runs` |
+| [Applications & services](apps.md) | `app` `service` |
+| [Platform](platform.md) | `platform` |
+| [Scenarios](scenarios.md) | `scenario` `validate` |
+| [Incidents](incidents.md) | `incident` |
+| [Traffic](traffic.md) | `traffic` |
+| [Comparing stacks](compare.md) | `compare` |
+| [Learning & challenges](learning.md) | `learn` `challenge` |
+| [Server, metrics & auth](server.md) | `ui` `users` |
+
 ## Install
 
 ```bash
@@ -37,6 +66,19 @@ make cli-build        # builds bin/labctl with the UI embedded
 | `-v, --verbose` | `false` | Debug logging: config load, script exec, API calls. Scripts get `LABCTL_VERBOSE=1` and keep the client-go discovery errors they hide by default ([R05](../../runbooks/R05-platform-components.md#helm-truths-this-repo-has-been-bitten-by)) |
 | `--app` | `APP_NAME` | The application scenarios and faults act on for this command. Challenges and learning paths refuse it: they are graded against the default app |
 | `--version` | - | Print the build version |
+
+## Exit status and errors
+
+A command exits `0` when it did what it was asked and `1` otherwise, so it is
+safe in scripts and CI. A failing check is a failure: `scenario verify` exits
+`1` while any check fails.
+
+- A mistake in how the command was typed (a missing argument, an unknown flag)
+  prints the error and that command's usage.
+- A command that was typed correctly and then failed prints only the error,
+  with what to run next where there is something to run.
+- A name that does not exist is answered with the command that lists the names
+  that do, such as `see 'labctl scenario list'`.
 
 ## Configuration
 
@@ -124,33 +166,6 @@ cluster's record, wins over `.env`.
 env | grep '^HTTP_PORT='
 cat ~/.snowops/clusters/snowops.env   # the record of the default cluster
 ```
-
-## Exit status and errors
-
-A command exits `0` when it did what it was asked and `1` otherwise, so it is
-safe in scripts and CI. A failing check is a failure: `scenario verify` exits
-`1` while any check fails.
-
-- A mistake in how the command was typed (a missing argument, an unknown flag)
-  prints the error and that command's usage.
-- A command that was typed correctly and then failed prints only the error,
-  with what to run next where there is something to run.
-- A name that does not exist is answered with the command that lists the names
-  that do, such as `see 'labctl scenario list'`.
-
-## Command map
-
-| Page | Commands |
-|---|---|
-| [Lifecycle](lifecycle.md) | `init` `teardown` `reset` `status` `doctor` `setup-tools` `check` `hosts` `runtime` `lab` `runs` |
-| [Applications & services](apps.md) | `app` `service` |
-| [Platform](platform.md) | `platform` |
-| [Scenarios](scenarios.md) | `scenario` `validate` |
-| [Incidents](incidents.md) | `incident` |
-| [Traffic](traffic.md) | `traffic` |
-| [Comparing stacks](compare.md) | `compare` |
-| [Learning & challenges](learning.md) | `learn` `challenge` |
-| [Server, metrics & auth](server.md) | `ui` `users` |
 
 ## CLI or Make
 

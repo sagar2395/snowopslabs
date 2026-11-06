@@ -1,6 +1,6 @@
-# SnowOps Labs Architecture (v2)
+# SnowOps Labs architecture
 
-> The target design. Anything not yet built is marked **Planned** - treat an
+> How the system is built. Anything not yet built is marked **Planned** - treat an
 > unmarked statement as describing the system as it ships. Decisions with
 > alternatives considered live in `docs/adr/`. Product rationale:
 > `docs/PRODUCT.md`. Delivery order: `docs/ROADMAP.md`.

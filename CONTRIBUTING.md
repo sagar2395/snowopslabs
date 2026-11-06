@@ -1,6 +1,6 @@
 # Contributing to SnowOps Labs
 
-Thanks for your interest in **SnowOps Labs** - the flight simulator for platform
+Thanks for your interest in **SnowOps Labs**, the flight simulator for platform
 engineers. This project thrives on community-contributed **scenarios, platform
 modules, documentation, and code**. This guide explains how to contribute and
 what to expect.

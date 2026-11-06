@@ -90,7 +90,7 @@ against your storage allowance until you delete the codespace.
 ## Upgrade
 
 The codespace is a clone of this repository on `stable`. Upgrade it as on any
-machine ([README](../../README.md#upgrade)):
+machine ([Using the lab](using-the-lab.md#upgrade)):
 
 ```bash
 git fetch origin
