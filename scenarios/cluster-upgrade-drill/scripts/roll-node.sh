@@ -207,43 +207,32 @@ if [ -n "${MISSING// /}" ]; then
   echo "           DOCKER_IMAGE_TAG=<tag> bash $(display_path "${PROJECT_ROOT}/src/engine/build/docker.sh") <app> --import" >&2
 fi
 
-# k3d's load balancer holds its nginx upstreams as a fixed list of node names,
-# captured when the cluster was created. Replacing a node changes that name, and
-# nothing updates the list - so the LB keeps pointing at a container that no
-# longer exists.
-#
-# It is invisible while the cluster keeps running, because nginx is already up.
-# On the next restart confd re-renders the config, nginx fails validation on the
-# missing host, and the load balancer never starts:
+# k3d's load balancer holds its nginx upstreams as a list of node names and
+# updates it for servers only, so the name of the agent just deleted is still
+# there. It is invisible while the cluster keeps running, because nginx is
+# already up. On the next restart nginx fails on the missing host and the load
+# balancer never starts:
 #
 #   [emerg] host not found in upstream "k3d-snowops-agent-0:443"
 #
 # One dead upstream takes down the WHOLE listener set, including the 6443 mapping
 # the kubeconfig points at - so the entire lab, API server included, is
 # unreachable until someone repairs it by hand.
+# shellcheck source=runtimes/_lib/k3d-serverlb.sh
+. "$PROJECT_ROOT/runtimes/_lib/k3d-serverlb.sh"
 LB="k3d-${CLUSTER_NAME}-serverlb"
-if docker inspect "$LB" >/dev/null 2>&1; then
-  echo "==> Repointing the cluster load balancer from ${NODE} to ${NEW_NODE}"
-  LB_VALUES="$(mktemp)"
-  if docker cp "${LB}:/etc/confd/values.yaml" "$LB_VALUES" >/dev/null 2>&1; then
-    # Whole-line match: node names are prefixes of one another
-    # (agent-0 vs agent-0-0), so a substring replace corrupts the list.
-    sed "s|^\( *- \)${NODE}\$|\1${NEW_NODE}|" "$LB_VALUES" >"${LB_VALUES}.new"
-    if ! cmp -s "$LB_VALUES" "${LB_VALUES}.new"; then
-      docker cp "${LB_VALUES}.new" "${LB}:/etc/confd/values.yaml" >/dev/null 2>&1 &&
-        docker restart "$LB" >/dev/null 2>&1 &&
-        echo "    load balancer updated and restarted" &&
-        LB_RESTARTED=1
-    else
-      # k3d reuses the name where it can, in which case the existing upstream
-      # entry is already correct and there is nothing to rewrite.
-      echo "    upstream list already names ${NEW_NODE}; nothing to change"
-    fi
-    rm -f "$LB_VALUES" "${LB_VALUES}.new"
-  else
-    echo "    WARN: could not read the load balancer's config; if the lab becomes" >&2
-    echo "          unreachable after a restart, see docs/scenarios.md." >&2
+echo "==> Checking the cluster load balancer's upstreams"
+LB_RESTARTED=0
+if repaired="$(serverlb_repair "$CLUSTER_NAME")"; then
+  if [ -n "$repaired" ]; then
+    echo "$repaired"
+    echo "    load balancer updated and restarted"
+    LB_RESTARTED=1
   fi
+else
+  [ -z "$repaired" ] || echo "$repaired"
+  echo "    WARN: could not update the load balancer's config; if the lab becomes" >&2
+  echo "          unreachable after a restart, see docs/scenarios.md." >&2
 fi
 
 # The load balancer also fronts the API server, so the next kubectl would be

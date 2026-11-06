@@ -27,7 +27,9 @@ STUB
   stub_script docker <<'STUB'
 case "$*" in
   "inspect k3d-lab-serverlb") exit 0 ;;
-  "cp k3d-lab-serverlb:/etc/confd/values.yaml "*) printf 'ports:\n  6443.tcp:\n  - k3d-lab-agent-0\n' >"$3" ;;
+  "ps -a --filter label=k3d.cluster=lab "*) printf 'k3d-lab-server-0 server\nk3d-lab-agent-0-0 agent\n' ;;
+  "cp k3d-lab-serverlb:/etc/confd/values.yaml "*) printf 'ports:\n  80.tcp:\n  - k3d-lab-server-0\n  - k3d-lab-agent-0\n' >"$3" ;;
+  "cp "*" k3d-lab-serverlb:/etc/confd/values.yaml") cp "$2" "$STATE/lb-values" ;;
   "restart k3d-lab-serverlb") touch "$STATE/lb-restarted" ;;
   # The lab's go-api builds: the tag running now, and the one data-writer uses.
   "images --format {{.Repository}}:{{.Tag}} go-api") printf 'go-api:latest\ngo-api:v1.2.0\n' ;;
@@ -64,6 +66,7 @@ teardown() { stub_teardown; }
   READYZ_FAILURES=3 run bash "$SCRIPT" k3d-lab-agent-0
   [ "$status" -eq 0 ] || { echo "$output"; false; }
   [ -f "$STATE/lb-restarted" ]
+  [ "$(cat "$STATE/lb-values")" = "$(printf 'ports:\n  80.tcp:\n  - k3d-lab-server-0\n  - k3d-lab-agent-0-0')" ]
   [ "$(call_count kubectl "get --raw /readyz")" -eq 4 ]
   [[ "$output" == *"replaced by k3d-lab-agent-0-0"* ]] || false
   in_log=$(grep -n "restart k3d-lab-serverlb\|get --raw /readyz" "$STUB_LOG" | head -1)

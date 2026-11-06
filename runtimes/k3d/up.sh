@@ -28,6 +28,8 @@ NODE_CHECK_INTERVAL="${NODE_CHECK_INTERVAL:-10}"
 
 # shellcheck source=../_lib/docker.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib/docker.sh"
+# shellcheck source=../_lib/k3d-serverlb.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib/k3d-serverlb.sh"
 
 ensure_docker_running || exit 1
 
@@ -355,6 +357,14 @@ if k3d cluster list "$CLUSTER_NAME" &>/dev/null; then
   # Rebuild the kubeconfig entry in case it was removed or points at a stale port.
   k3d kubeconfig merge "$CLUSTER_NAME" --kubeconfig-merge-default &>/dev/null || true
   normalize_apiserver_host
+  # A node removed since the last start can leave the load balancer naming a
+  # container that is gone. After a Docker restart that keeps it restart-looping
+  # and the API unreachable, and restarting the cluster does not help.
+  repaired="$(serverlb_repair "$CLUSTER_NAME" || true)"
+  if [ -n "$repaired" ]; then
+    echo "The load balancer named nodes that no longer exist; repaired it:"
+    echo "$repaired"
+  fi
   if ! lab_healthy; then
     restart_in_order
   fi
