@@ -3,8 +3,8 @@
 > Why the product exists: [`PRODUCT.md`](PRODUCT.md). How it fits together:
 > [`architecture/ARCHITECTURE.md`](architecture/ARCHITECTURE.md).
 
-A high-level view of where SnowOps Labs is and where it's going. It's an early
-release: the core loop works, and the rest is built in the open. Priorities
+Where SnowOps Labs is and where it's going. Releases ship on the `stable`
+branch, and the rest is built in the open. Priorities
 shift with feedback, so if something here matters to you,
 [open an issue](https://github.com/sagar2395/snowopslabs/issues) or 👍 an
 existing one. Smaller known problems are tracked as

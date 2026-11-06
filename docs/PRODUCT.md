@@ -51,7 +51,9 @@ tells you objectively whether you achieved the goal.
 neighbours) while traffic flows and alerts fire. Hints are there when you're
 stuck, and time to detect and time to resolve are measured.
 
-**4. Measure.** Learning paths chain scenarios and incidents into a curriculum.
+**4. Measure.** `labctl scenario verify` and `labctl incident status` grade
+the outcome against the live cluster: checks passed, time to resolve, hints
+used. Learning paths chain scenarios and incidents into a curriculum.
 Challenge mode adds a timer and costs you points for hints. Results persist,
 and on a shared deployment a team leaderboard turns a game day into something
 people actually want to win.
@@ -85,8 +87,9 @@ people actually want to win.
    read it back tomorrow.
 6. **Cross-platform.** macOS (Apple Silicon and Intel), modern Linux and WSL2,
    always. No GNU-only flags, no cgo, no hardcoded architectures.
-7. **Fast reset.** Snapshot and restore lab state, so an engineer can retry a
-   scenario in seconds instead of rebuilding a cluster.
+7. **Fast reset.** `labctl lab snapshot` and `labctl lab restore` record and
+   bring back which components, apps and scenarios are active, so an engineer
+   can retry a scenario without rebuilding the cluster by hand.
 
 ## The open-source lab comes first
 

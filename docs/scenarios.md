@@ -12,6 +12,29 @@ concept hands-on, then grades your work with machine-verifiable checks.
 
 This page is the catalog of what ships in the repository.
 
+## At a glance
+
+Docker memory is what a fresh lab needs to run the scenario on its own
+([Resources](resources.md) explains running several at once).
+
+| Scenario | Area | What you practise | Docker memory |
+|---|---|---|---|
+| `observability-sre` | Observability | Wire traces through a collector, follow one request across logs, metrics and traces, and fire an SLO alert | 3.3 GB |
+| `autoscaling-under-load` | Scaling | Watch KEDA scale an app on Prometheus request rate through a spike and back | 2.7 GB |
+| `cost-right-sizing` | Cost | Read reserved against used in OpenCost and size requests to the measured peak | 2.4 GB |
+| `gitops-cicd` | Delivery | Push to a Git repo Argo CD reconciles, then prove self-heal, prune and a broken release fixed in Git | 3.2 GB |
+| `env-promotion` | Delivery | Build versioned images and promote one from dev to staging to prod | 2.4 GB |
+| `mesh-traffic-management` | Networking | Run an Istio canary: weighted split, header-matched fault, STRICT mTLS | 2.8 GB |
+| `security-compliance` | Security | Take Kyverno policies from Audit to Enforce and issue a certificate with cert-manager | 3.1 GB |
+| `secrets-management` | Security | Rotate a Vault secret into a running pod through External Secrets, with no restart | 2.7 GB |
+| `chaos-engineering` | Reliability | Run Chaos Mesh experiments from a hypothesis and fix the weakness they find | 3.2 GB |
+| `event-driven-arch` | Data | Diagnose a Kafka consumer group falling behind and scale it to the partition count | 3.6 GB |
+| `node-drain-drill` | Day-2 operations | Write a PodDisruptionBudget and drain a node under live traffic | 3.0 GB |
+| `cluster-upgrade-drill` | Day-2 operations | Roll worker nodes onto a new Kubernetes version one at a time under load | 2.9 GB |
+| `backup-restore-drill` | Day-2 operations | Back up and restore a namespace, and find where a manifest backup stops | 2.2 GB |
+
+Faults to inject on top of a scenario are in the [fault library](incidents.md).
+
 ## How they work
 
 A scenario is a directory under `scenarios/` containing a `scenario.yaml` that
