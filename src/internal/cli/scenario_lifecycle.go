@@ -43,7 +43,7 @@ func runScenarioOp(cmd *cobra.Command, verb, name string, submit func(context.Co
 		return err
 	}
 	defer cleanup()
-	if err := eng.Start(ctx); err != nil {
+	if err := startEngine(ctx, cmd.OutOrStdout(), eng); err != nil {
 		return err
 	}
 	return streamSubmittedRun(ctx, cmd.OutOrStdout(), st, verb+" "+name, func() (string, error) {
@@ -62,7 +62,7 @@ func runScenarioReset(cmd *cobra.Command, name string) error {
 		return err
 	}
 	defer cleanup()
-	if err := eng.Start(ctx); err != nil {
+	if err := startEngine(ctx, out, eng); err != nil {
 		return err
 	}
 

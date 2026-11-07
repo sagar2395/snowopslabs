@@ -1,0 +1,27 @@
+$ labctl status
+=== Cluster ===
+  Context:  k3d-contract
+  Server:   https://127.0.0.1:<port>
+  Version:  v1.33.6+k3s1
+  Nodes:    2
+  Profile:  k3d
+
+  ! fs.inotify.max_user_instances is 128; the lab needs 512. A Docker VM restart
+    resets it. The next lab, platform, scenario, incident or traffic command
+    raises it.
+  ! k3d-clitest-agent-0 is NotReady while its container is up.
+    k3s logged "too many open files".
+
+  Recover with:
+    for n in $(docker ps --filter label=k3d.cluster=clitest --format '{{.Names}}'); do
+      docker exec "$n" sysctl -w fs.inotify.max_user_instances=512
+    done
+    docker restart k3d-clitest-agent-0
+
+=== Platform ===
+  Ingress:  traefik  [no workloads]
+  Metrics:  prometheus  [no workloads]
+
+=== Apps ===
+  demo-app             replicas=2 ready=2
+  go-api               replicas=2 ready=2

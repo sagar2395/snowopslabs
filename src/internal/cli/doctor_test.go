@@ -381,3 +381,52 @@ func TestLabDomain(t *testing.T) {
 		})
 	}
 }
+
+func TestInotifyNote(t *testing.T) {
+	lab := t.TempDir()
+	for _, d := range []string{"scenarios", "runtimes/k3d", "runtimes/kind"} {
+		if err := os.MkdirAll(filepath.Join(lab, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("SNOWOPS_HOME", t.TempDir())
+	t.Setenv("CLUSTER_NAME", "")
+
+	fake := func(limit string) *toolchain.Fake {
+		f := toolchain.NewFake()
+		f.Available = map[string]string{"docker": "/usr/bin/docker"}
+		f.WhenArgsContain("ps --filter label=k3d.cluster=snowops", "k3d-snowops-server-0\n", 0)
+		f.WhenArgsContain("cat /proc/sys/fs/inotify/max_user_instances", limit, 0)
+		return f
+	}
+
+	tests := []struct {
+		name     string
+		profile  string
+		fake     *toolchain.Fake
+		wantNote string
+	}{
+		{
+			name: "a limit a VM restart reset warns", profile: "k3d", fake: fake("128\n"),
+			wantNote: "fs.inotify.max_user_instances is 128; the lab needs 512",
+		},
+		{name: "the raised limit says nothing", profile: "k3d", fake: fake("512\n")},
+		{name: "a lab that is down says nothing", profile: "k3d", fake: toolchain.NewFake().WhenArgsContain("ps", "", 0)},
+		{name: "kind says nothing", profile: "kind", fake: fake("128\n")},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("PROFILE", tt.profile)
+			note := inotifyNote(t.Context(), tt.fake, lab)
+			if tt.wantNote == "" && note != "" {
+				t.Errorf("note = %q, want none", note)
+			}
+			if tt.wantNote != "" && !strings.Contains(note, tt.wantNote) {
+				t.Errorf("note = %q, want it to contain %q", note, tt.wantNote)
+			}
+			if tt.fake.Called("sysctl") {
+				t.Errorf("doctor must only report, calls: %v", tt.fake.CallStrings())
+			}
+		})
+	}
+}

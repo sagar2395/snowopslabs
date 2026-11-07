@@ -411,6 +411,29 @@ esac`,
 	}
 }
 
+func TestNotReadyNodes(t *testing.T) {
+	stubKubectl(t, `case "$*" in
+  "get nodes --no-headers") printf '%s\n' \
+    'k3d-snowops-server-0   Ready                      control-plane,master   3d   v1.33.6+k3s1' \
+    'k3d-snowops-agent-0    NotReady                   <none>                 3d   v1.33.6+k3s1' \
+    'k3d-snowops-agent-1    Ready,SchedulingDisabled   <none>                 3d   v1.33.6+k3s1' \
+    'k3d-snowops-agent-2    Unknown                    <none>                 3d   v1.33.6+k3s1' ;;
+esac`)
+	got, err := NotReadyNodes(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"k3d-snowops-agent-0", "k3d-snowops-agent-2"}
+	if !slices.Equal(got, want) {
+		t.Errorf("NotReadyNodes = %v, want %v", got, want)
+	}
+
+	stubKubectl(t, `exit 1`)
+	if _, err := NotReadyNodes(t.Context()); err == nil {
+		t.Error("expected an error when kubectl fails")
+	}
+}
+
 func TestHelmReleaseDeployed(t *testing.T) {
 	// Only a secret labelled status=deployed counts; a failed install leaves
 	// status=failed, which must not make init skip the install.

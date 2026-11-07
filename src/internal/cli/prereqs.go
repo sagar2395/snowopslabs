@@ -133,7 +133,7 @@ func installPlatformPrereqs(ctx context.Context, out io.Writer, prereqs []string
 		return err
 	}
 	defer cleanup()
-	if err := eng.Start(ctx); err != nil {
+	if err := startEngine(ctx, out, eng); err != nil {
 		return err
 	}
 	for _, pre := range prereqs {

@@ -4,6 +4,8 @@ package cli
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -102,3 +104,56 @@ func TestStatus(t *testing.T) {
 		})
 	}
 }
+
+// A Docker VM restart resets the inotify limit, and k3s on a node dies of it
+// while Docker still shows the node's container up. status names the node, the
+// cause and the recovery, and changes nothing itself.
+func TestStatus_NodeStuckAfterVMRestart(t *testing.T) {
+	l := newTerminal(t)
+	if err := os.Rename(filepath.Join(l.Bin, "kubectl"), filepath.Join(l.Bin, "kubectl.healthy")); err != nil {
+		t.Fatal(err)
+	}
+	l.Stub(t, "kubectl", `#!/bin/sh
+case "$*" in
+  "get nodes --no-headers") printf 'k3d-clitest-server-0 Ready\nk3d-clitest-agent-0 NotReady\n' ;;
+  *) exec "$(dirname "$0")/kubectl.healthy" "$@" ;;
+esac
+`)
+	l.Stub(t, "docker", vmRestartedDocker+`  "logs --tail 200 k3d-clitest-agent-0") echo 'E1107 kubelet: failed to create inotify fd: too many open files' >&2 ;;
+esac
+exit 0
+`)
+
+	r := l.mustRun("status")
+	for _, want := range []string{
+		"fs.inotify.max_user_instances is 128; the lab needs 512",
+		"k3d-clitest-agent-0 is NotReady while its container is up.\n    k3s logged \"too many open files\".",
+		"docker exec \"$n\" sysctl -w fs.inotify.max_user_instances=512",
+		"docker restart k3d-clitest-agent-0",
+	} {
+		if !strings.Contains(r.stdout, want) {
+			t.Errorf("status does not print %q:\n%s", want, r.stdout)
+		}
+	}
+	if strings.Contains(r.stdout, "docker restart k3d-clitest-server-0") {
+		t.Errorf("a Ready node needs no restart:\n%s", r.stdout)
+	}
+	for _, call := range l.Calls(t) {
+		if strings.Contains(call, "sysctl") || strings.Contains(call, "docker restart") {
+			t.Errorf("status must only report, but ran %q", call)
+		}
+	}
+	l.golden("status_node_stuck", r)
+}
+
+// vmRestartedDocker is the start of a docker stand-in for a k3d lab whose
+// Docker VM restarted: the nodes run, and the inotify limit is back at 128.
+// A test closes its case statement.
+const vmRestartedDocker = `#!/bin/sh
+[ -n "${STUB_LOG:-}" ] && printf '%s\t%s\n' docker "$*" >>"$STUB_LOG"
+case "$*" in
+  info) echo "8 16000000000" ;;
+  "ps --filter label=k3d.cluster=clitest --format {{.Names}}")
+    printf 'k3d-clitest-serverlb\nk3d-clitest-agent-0\nk3d-clitest-server-0\n' ;;
+  *"cat /proc/sys/fs/inotify/max_user_instances") echo 128 ;;
+`

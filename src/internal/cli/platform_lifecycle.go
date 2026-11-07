@@ -223,7 +223,7 @@ func platformTeardown(cmd *cobra.Command) error {
 		return nil
 	}
 
-	if err := eng.Start(ctx); err != nil {
+	if err := startEngine(ctx, out, eng); err != nil {
 		return err
 	}
 

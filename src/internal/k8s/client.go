@@ -111,6 +111,26 @@ func GetClusterInfo(ctx context.Context) (*ClusterInfo, error) {
 	return info, nil
 }
 
+// NotReadyNodes returns the names of the cluster's nodes that are not Ready. A
+// cordoned node (Ready,SchedulingDisabled) is Ready.
+func NotReadyNodes(ctx context.Context) ([]string, error) {
+	out, err := kubectl(ctx, "get", "nodes", "--no-headers")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for line := range strings.Lines(out) {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		if state, _, _ := strings.Cut(fields[1], ","); state != "Ready" {
+			names = append(names, fields[0])
+		}
+	}
+	return names, nil
+}
+
 // podListJSON is the minimal JSON structure returned by `kubectl get pods -o json`.
 type podListJSON struct {
 	Items []struct {
