@@ -124,8 +124,16 @@ The UI then shows a login screen, and the API requires a session cookie or
 **403** on operator-only mutations, and scored runs are attributed to the
 authenticated user.
 
-> OIDC and SSO are out of scope. Sessions are held in memory, so restarting the
-> server logs everyone out. Serve behind TLS for anything beyond localhost - the
+Sessions last 12 hours and are kept in the lab database
+(`~/.snowops/snowops.db`), so restarting `labctl ui` keeps everyone logged in;
+logging out ends the session on the server. The database holds a SHA-256 hash
+of each session token, never the token, so a copy of it cannot be used to log
+in. Each request is checked against `users.yaml` as the server read it at
+startup: a session whose user was removed is refused, and a user whose role
+changed gets the new role. If the database cannot be opened, the server logs a
+warning at startup and every login fails until it can.
+
+> OIDC and SSO are out of scope. Serve behind TLS for anything beyond localhost - the
 > cookie is `HttpOnly` and `SameSite=Strict`, and `Secure` only when the request
 > arrived over TLS. See the
 > [security posture](../../architecture/ARCHITECTURE.md#security-posture) for

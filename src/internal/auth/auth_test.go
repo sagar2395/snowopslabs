@@ -236,3 +236,33 @@ func TestStore_Authenticate(t *testing.T) {
 		}
 	})
 }
+
+func TestStore_Lookup(t *testing.T) {
+	hash, _ := HashPassword("pw")
+	path := filepath.Join(t.TempDir(), "users.yaml")
+	if err := os.WriteFile(path, []byte("users:\n  - name: alice\n    role: operator\n    passwordHash: "+hash+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	users, err := LoadStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name     string
+		user     string
+		wantOK   bool
+		wantRole string
+	}{
+		{"a user in the file", "alice", true, RoleOperator},
+		{"a user not in the file", "carol", false, ""},
+		{"an empty name", "", false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u, ok := users.Lookup(tt.user)
+			if ok != tt.wantOK || u.Role != tt.wantRole {
+				t.Errorf("Lookup(%q) = %+v, %v; want role %q, %v", tt.user, u, ok, tt.wantRole, tt.wantOK)
+			}
+		})
+	}
+}

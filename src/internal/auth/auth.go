@@ -249,5 +249,11 @@ func (s *Store) Authenticate(name, password string) (User, bool) {
 	return u, true
 }
 
+// Lookup returns the user named name, if the users file has one.
+func (s *Store) Lookup(name string) (User, bool) {
+	u, ok := s.byName[name]
+	return u, ok
+}
+
 // Count returns the number of loaded users.
 func (s *Store) Count() int { return len(s.byName) }

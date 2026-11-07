@@ -5,10 +5,14 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"errors"
 	"net/http"
-	"sync"
 	"time"
+
+	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
 // CookieName is the session cookie set by the server and read on each request.
@@ -25,85 +29,106 @@ type Session struct {
 	Expires time.Time
 }
 
-// SessionStore is an in-memory session table, safe for concurrent use.
-// Sessions are not saved to disk, so restarting the server logs everyone out.
+// ErrNoSession is returned by Get for an empty, unknown, expired or deleted
+// token: the caller is not logged in.
+var ErrNoSession = errors.New("no valid session")
+
+// errNoDatabase is returned when the server has no lab database to keep
+// sessions in, so nobody can log in.
+var errNoDatabase = errors.New("login sessions are kept in the lab database, which did not open: the server log at startup says why")
+
+// SessionStore issues login sessions and keeps them in the lab database, so a
+// restart of the server keeps everyone logged in. Only a SHA-256 hash of each
+// token is stored.
 type SessionStore struct {
-	mu    sync.Mutex
-	ttl   time.Duration
-	byTok map[string]Session
-	now   func() time.Time // injectable for tests
+	db  *store.Store
+	ttl time.Duration
+	now func() time.Time // injectable for tests
 }
 
-// NewSessionStore creates a session store with the given TTL (<=0 uses the
-// default).
-func NewSessionStore(ttl time.Duration) *SessionStore {
+// NewSessionStore returns a session store backed by db, with the given TTL
+// (<=0 uses the default). A nil db gives a store that refuses every login.
+func NewSessionStore(db *store.Store, ttl time.Duration) *SessionStore {
 	if ttl <= 0 {
 		ttl = DefaultSessionTTL
 	}
-	return &SessionStore{
-		ttl:   ttl,
-		byTok: map[string]Session{},
-		now:   time.Now,
-	}
+	return &SessionStore{db: db, ttl: ttl, now: time.Now}
 }
 
-// Create issues a new session for the user/role and returns its token.
-func (st *SessionStore) Create(user, role string) (Session, error) {
+// hashToken is the key a token is stored under.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// Create issues a new session for the user and role and returns it with its
+// token. Expired sessions are removed first, so the table does not grow.
+func (st *SessionStore) Create(ctx context.Context, user, role string) (Session, error) {
+	if st.db == nil {
+		return Session{}, errNoDatabase
+	}
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return Session{}, err
 	}
-	tok := base64.RawURLEncoding.EncodeToString(raw)
+	now := st.now()
+	if _, err := st.db.DeleteExpiredSessions(ctx, now); err != nil {
+		return Session{}, err
+	}
 	sess := Session{
-		Token:   tok,
+		Token:   base64.RawURLEncoding.EncodeToString(raw),
 		User:    user,
 		Role:    role,
-		Expires: st.now().Add(st.ttl),
+		Expires: now.Add(st.ttl),
 	}
-	st.mu.Lock()
-	st.byTok[tok] = sess
-	st.mu.Unlock()
+	if err := st.db.InsertSession(ctx, store.Session{
+		TokenHash: hashToken(sess.Token),
+		User:      user,
+		Role:      role,
+		CreatedAt: now,
+		ExpiresAt: sess.Expires,
+	}); err != nil {
+		return Session{}, err
+	}
 	return sess, nil
 }
 
-// Get returns the session for a token if it exists and has not expired. Expired
-// sessions are removed lazily.
-func (st *SessionStore) Get(token string) (Session, bool) {
+// Get returns the session for a token if it exists and has not expired, or
+// ErrNoSession. An expired session is deleted when it is found.
+func (st *SessionStore) Get(ctx context.Context, token string) (Session, error) {
 	if token == "" {
-		return Session{}, false
+		return Session{}, ErrNoSession
 	}
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	sess, ok := st.byTok[token]
-	if !ok {
-		return Session{}, false
+	if st.db == nil {
+		return Session{}, errNoDatabase
 	}
-	if !st.now().Before(sess.Expires) {
-		delete(st.byTok, token)
-		return Session{}, false
+	hash := hashToken(token)
+	row, err := st.db.Session(ctx, hash)
+	if errors.Is(err, store.ErrSessionNotFound) {
+		return Session{}, ErrNoSession
 	}
-	return sess, true
-}
-
-// Delete removes a session (logout). It is a no-op for unknown tokens.
-func (st *SessionStore) Delete(token string) {
-	st.mu.Lock()
-	delete(st.byTok, token)
-	st.mu.Unlock()
-}
-
-// Count returns the number of live (non-expired) sessions.
-func (st *SessionStore) Count() int {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	n := 0
-	now := st.now()
-	for _, s := range st.byTok {
-		if now.Before(s.Expires) {
-			n++
+	if err != nil {
+		return Session{}, err
+	}
+	if !st.now().Before(row.ExpiresAt) {
+		if err := st.db.DeleteSession(ctx, hash); err != nil {
+			return Session{}, err
 		}
+		return Session{}, ErrNoSession
 	}
-	return n
+	return Session{Token: token, User: row.User, Role: row.Role, Expires: row.ExpiresAt}, nil
+}
+
+// Delete removes a session (logout). An empty or unknown token is not an
+// error.
+func (st *SessionStore) Delete(ctx context.Context, token string) error {
+	if token == "" {
+		return nil
+	}
+	if st.db == nil {
+		return errNoDatabase
+	}
+	return st.db.DeleteSession(ctx, hashToken(token))
 }
 
 // --- request context helpers -------------------------------------------------
