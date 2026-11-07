@@ -149,7 +149,7 @@ type Status struct {
 	Component string    `json:"component"`
 	State     State     `json:"state"`
 	RunID     string    `json:"runId,omitempty"`
-	Since     time.Time `json:"since,omitempty"`
+	Since     time.Time `json:"since,omitzero"`
 }
 
 // Status reads a component's state from the store, so it is fast and works

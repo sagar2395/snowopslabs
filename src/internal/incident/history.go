@@ -20,7 +20,7 @@ type Record struct {
 	Severity       string    `json:"severity"`
 	Silent         bool      `json:"silent"`
 	InjectedAt     time.Time `json:"injectedAt"`
-	FirstCheckedAt time.Time `json:"firstCheckedAt,omitempty"`
+	FirstCheckedAt time.Time `json:"firstCheckedAt,omitzero"`
 	ResolvedAt     time.Time `json:"resolvedAt"`
 	DetectSeconds  int64     `json:"detectSeconds,omitempty"`
 	ResolveSeconds int64     `json:"resolveSeconds"`

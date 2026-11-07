@@ -145,7 +145,7 @@ type Status struct {
 	State   State     `json:"state"`
 	Runtime string    `json:"runtime,omitempty"` // the runtime the deciding run acted on
 	RunID   string    `json:"runId,omitempty"`   // the run the state was derived from
-	Since   time.Time `json:"since,omitempty"`   // when that run was queued/ended
+	Since   time.Time `json:"since,omitzero"`    // when that run was queued/ended
 	// Live is set only when a live probe was requested and a prober is wired.
 	Live *Liveness `json:"live,omitempty"`
 }
