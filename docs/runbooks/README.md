@@ -53,6 +53,7 @@ When troubleshooting a symptom or validating a specific subsystem, use this inde
 | A platform component fails to install, Helm upgrades fail, or charts conflict | [R05 - Platform components](R05-platform-components.md) | Idempotent platform component installation, Helm upgrade strategies for immutable specs, and service health checks. |
 | I want to practice manual image rollouts and promotion across dev, staging, and prod | [R06 - Multi-env promotion](R06-multi-env-promotion.md) | Multi-namespace delivery pipeline, manual image promotion via `kubectl`, and automated outcome grading. |
 | Dashboards have no data, Loki logs are empty, or traces are missing | [R13 - Observability pipeline](R13-observability-pipeline.md) | End-to-end metrics, logs, and trace telemetry flow for `go-api`, plus Grafana, Loki, and Tempo correlation. |
+| People need to reach one lab over the network | [R11 - Team server](R11-team-server.md) | Auth and HTTPS on a network bind, three logins, sessions across a restart, and a participant kubeconfig. |
 | A first-time user is installing a release on fresh macOS or WSL2 | [R14 - Fresh-machine onboarding](R14-fresh-machine-onboarding.md) | First-time user onboarding on fresh macOS and WSL2 following only the public README. |
 
 ## Index
@@ -72,7 +73,7 @@ Runbooks are written as their wave is implemented.
 | R08 | API & security | W5 | planned |
 | R09 | UI operational walkthrough | W6 | planned |
 | R10 | Learning & assessment | W7 | planned |
-| R11 | Team server | W8 | planned |
+| R11 | [Team server](R11-team-server.md) | W8 | **ready** |
 | R12 | Release verification | W8 | planned |
 | R13 | [Observability pipeline](R13-observability-pipeline.md) | W4 | **ready** |
 | R14 | [Fresh-machine onboarding](R14-fresh-machine-onboarding.md) | W8 | **ready** |
@@ -121,8 +122,10 @@ recover. Judged on whether it is genuinely pleasant, not merely functional.
 **R10 - Learning & assessment.** Complete a learning path entirely in the UI.
 Run a challenge, confirm the score matches the stated rubric.
 
-**R11: Team server.** Helm install on kind, two browsers as two users, confirm
-isolation of runs and consistency of the leaderboard.
+**R11: Team server.** Bring up the single-machine team server with auth and
+HTTPS, log three users in from the network, keep their sessions across a
+restart, and give participants a kubeconfig that verifies the cluster's
+certificate.
 
 **R13: Observability pipeline.** Prove metrics, logs and traces flow end to end
 for `go-api`, that log lines link to their traces, that alert rules are actually
