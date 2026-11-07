@@ -6,6 +6,26 @@ drill           Drill           reliability   repo     inactive
 See what a scenario installs, its objectives and checks:
   labctl scenario info <name>
 
+$ labctl scenario list --output json
+[
+  {
+    "name": "demo-scenario",
+    "displayName": "Demo scenario",
+    "description": "A scenario for demo-app",
+    "category": "reliability",
+    "active": false,
+    "app": "demo-app"
+  },
+  {
+    "name": "drill",
+    "displayName": "Drill",
+    "description": "Practise on demo-app",
+    "category": "reliability",
+    "active": false,
+    "app": "demo-app"
+  }
+]
+
 $ labctl scenario info drill
 Name:        drill
 Display:     Drill
@@ -66,6 +86,26 @@ drill           Drill           reliability   repo     active
 
 See what a scenario installs, its objectives and checks:
   labctl scenario info <name>
+
+$ labctl scenario list -o json
+[
+  {
+    "name": "demo-scenario",
+    "displayName": "Demo scenario",
+    "description": "A scenario for demo-app",
+    "category": "reliability",
+    "active": false,
+    "app": "demo-app"
+  },
+  {
+    "name": "drill",
+    "displayName": "Drill",
+    "description": "Practise on demo-app",
+    "category": "reliability",
+    "active": true,
+    "app": "demo-app"
+  }
+]
 
 $ labctl scenario status
 NAME    CATEGORY      STATUS

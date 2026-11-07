@@ -33,6 +33,16 @@ import (
 // ErrIncidentActive is returned by Inject when another incident is active.
 var ErrIncidentActive = errors.New("an incident is already active")
 
+// ActiveError is ErrIncidentActive with the active fault's name, unless it
+// was injected silently: naming it would give the answer away to anyone who
+// tries a second inject.
+func ActiveError(a *Active) error {
+	if a.Silent {
+		return fmt.Errorf("%w (injected silently, so it is not named): resolve it first, or use --force", ErrIncidentActive)
+	}
+	return fmt.Errorf("%w: %s (resolve it first, or use --force)", ErrIncidentActive, a.Fault)
+}
+
 // ErrNoActive is returned when an operation needs an active incident.
 var ErrNoActive = errors.New("no incident is active")
 
@@ -535,7 +545,7 @@ func (e *Engine) Inject(name string, exec *executor.Executor, force, silent bool
 	if active, err := e.Active(); err != nil {
 		return nil, err
 	} else if active != nil && !force {
-		return nil, fmt.Errorf("%w: %s (resolve it first, or use --force)", ErrIncidentActive, active.Fault)
+		return nil, ActiveError(active)
 	}
 	if err := e.preflight(f); err != nil {
 		return nil, err

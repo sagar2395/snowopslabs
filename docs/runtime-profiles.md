@@ -8,7 +8,7 @@ runs on. v2 ships three, and only three (cloud runtimes were cut - see
 |---|---|---|
 | `k3d` | k3s in Docker, multi-node, ports mapped to localhost | The default. Fast local laptop cluster; the whole demo loop. |
 | `kind` | Kubernetes in Docker | CI and cross-checking; the nightly e2e job runs here. |
-| `incluster` | No cluster of its own - targets the cluster `labctl` already runs in | Team/server mode, where SnowOps Labs is deployed *into* a cluster. |
+| `incluster` | No cluster of its own - targets the cluster the current kubeconfig points at | A lab on a cluster you already run. `labctl` itself still runs on a machine with that kubeconfig: no image or chart for it ships. A team shares a lab through one `labctl ui` ([team server](reference/cli/server.md#running-a-shared-team-server)). |
 
 Select a profile with `PROFILE=<name>` (env or `.env`), e.g.
 `make init PROFILE=kind` or `labctl --project-dir . runtime up` after setting

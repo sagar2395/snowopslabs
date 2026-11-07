@@ -217,6 +217,38 @@ func TestInject_SecondIncidentNeedsForce(t *testing.T) {
 	}
 }
 
+// The refusal of a second inject names the active fault only when it was not
+// injected silently.
+func TestInject_SecondIncidentOverASilentOne(t *testing.T) {
+	tests := []struct {
+		name     string
+		silent   bool
+		wantName bool
+	}{
+		{"an open incident is named", false, true},
+		{"a silent incident is not", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e, root := testEngine(t, "fault-a", "fault-b")
+			ex := executor.New(root)
+			if _, err := e.Inject("fault-a", ex, false, tt.silent); err != nil {
+				t.Fatal(err)
+			}
+			_, err := e.Inject("fault-b", ex, false, false)
+			if !errors.Is(err, ErrIncidentActive) {
+				t.Fatalf("second inject = %v, want ErrIncidentActive", err)
+			}
+			if named := strings.Contains(err.Error(), "fault-a"); named != tt.wantName {
+				t.Errorf("error %q names fault-a = %v, want %v", err, named, tt.wantName)
+			}
+			if !strings.Contains(err.Error(), "--force") {
+				t.Errorf("error %q does not say how to go on", err)
+			}
+		})
+	}
+}
+
 func TestInject_PrereqMissing(t *testing.T) {
 	root := t.TempDir() // no apps/go-api
 	writeFault(t, root, "fault-a")

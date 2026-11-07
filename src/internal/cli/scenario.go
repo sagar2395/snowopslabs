@@ -55,42 +55,65 @@ var scenarioCmd = &cobra.Command{
 	Short: "Manage lab scenarios",
 }
 
-var scenarioListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List available scenarios",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		scenarios := scenes.List()
-		if len(scenarios) == 0 {
-			fmt.Println("No scenarios found in scenarios/ directory.")
-			return nil
-		}
+func scenarioListCmd() *cobra.Command {
+	var output string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List available scenarios",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runScenarioList(cmd.OutOrStdout(), cmd.ErrOrStderr(), output)
+		},
+	}
+	addOutputFlag(cmd, &output, outputTable, outputJSON)
+	return cmd
+}
 
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "NAME\tDISPLAY NAME\tCATEGORY\tSOURCE\tSTATUS")
-		for _, s := range scenarios {
-			status := "inactive"
-			if s.Active {
-				status = "active"
-			}
-			source := s.Source
-			if source == "" {
-				source = "repo"
-			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", s.Name, s.DisplayName, s.Category, source, status)
-		}
-		_ = w.Flush()
-
-		fmt.Println("\nSee what a scenario installs, its objectives and checks:")
-		fmt.Println("  labctl scenario info <name>")
-
+// runScenarioList prints the scenario catalog as a table, or with -o json as
+// the array GET /api/v2/scenarios serves. Load warnings go to errW, so the
+// JSON on out stays parseable.
+func runScenarioList(out, errW io.Writer, output string) error {
+	if err := checkOutput(output, outputTable, outputJSON); err != nil {
+		return err
+	}
+	defer func() {
 		if errs := scenes.LoadErrors(); len(errs) > 0 {
-			fmt.Fprintf(os.Stderr, "\nWarning: %d scenario(s) failed to load (run with -v for details):\n", len(errs))
+			fmt.Fprintf(errW, "\nWarning: %d scenario(s) failed to load (run with -v for details):\n", len(errs))
 			for key, err := range errs {
-				fmt.Fprintf(os.Stderr, "  %s: %v\n", key, err)
+				fmt.Fprintf(errW, "  %s: %v\n", key, err)
 			}
 		}
+	}()
+	if output == outputJSON {
+		items := scenes.Status()
+		if items == nil {
+			items = []scenariopkg.ScenarioStatus{}
+		}
+		return writeJSON(out, items)
+	}
+
+	scenarios := scenes.List()
+	if len(scenarios) == 0 {
+		fmt.Fprintln(out, "No scenarios found in scenarios/ directory.")
 		return nil
-	},
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "NAME\tDISPLAY NAME\tCATEGORY\tSOURCE\tSTATUS")
+	for _, s := range scenarios {
+		status := "inactive"
+		if s.Active {
+			status = "active"
+		}
+		source := s.Source
+		if source == "" {
+			source = "repo"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", s.Name, s.DisplayName, s.Category, source, status)
+	}
+	_ = w.Flush()
+
+	fmt.Fprintln(out, "\nSee what a scenario installs, its objectives and checks:")
+	fmt.Fprintln(out, "  labctl scenario info <name>")
+	return nil
 }
 
 var scenarioUpCmd = &cobra.Command{
@@ -625,7 +648,7 @@ func init() {
 	scenarioUpCmd.Flags().StringToStringVar(&scenarioUpParams, "set", nil, "override a scenario parameter (repeatable): --set Name=value, matching the parameter name exactly (e.g. --set Threshold=15 --set MaxReplicas=4)")
 
 	scenarioCmd.AddCommand(scenarioNewCmd)
-	scenarioCmd.AddCommand(scenarioListCmd)
+	scenarioCmd.AddCommand(scenarioListCmd())
 	scenarioCmd.AddCommand(scenarioUpCmd)
 	scenarioCmd.AddCommand(scenarioDownCmd)
 	scenarioCmd.AddCommand(scenarioResetCmd)

@@ -2,7 +2,10 @@
 
 package results
 
-import "sort"
+import (
+	"sort"
+	"time"
+)
 
 // LeaderboardEntry is the per-user aggregate used by the team leaderboard. It
 // rolls up every scored run in the store for one user.
@@ -10,24 +13,34 @@ type LeaderboardEntry struct {
 	User                string `json:"user"`
 	TotalScore          int    `json:"totalScore"`          // sum of challenge scores (>=0 only)
 	ChallengesCompleted int    `json:"challengesCompleted"` // challenge runs with outcome=passed
-	IncidentsResolved   int    `json:"incidentsResolved"`   // incident runs resolved (manual or auto)
+	IncidentsResolved   int    `json:"incidentsResolved"`   // incident runs fixed by hand; the escape hatch does not count
 	ModulesCompleted    int    `json:"modulesCompleted"`    // learn module completions
 	HintsUsed           int    `json:"hintsUsed"`           // total hints across all runs
-	AvgMTTRSeconds      int64  `json:"avgMttrSeconds"`      // mean time-to-resolve over resolved incidents
+	AvgMTTRSeconds      int64  `json:"avgMttrSeconds"`      // mean time to resolve over incidents fixed by hand
 	Runs                int    `json:"runs"`                // total recorded runs
 }
 
-// Leaderboard aggregates all records by user and returns them ranked. The
+// Leaderboard aggregates the records of runs that started at or after since
+// (all of them when since is zero) by user and returns them ranked. The
 // ranking favours, in order: higher total score, more challenges completed,
 // then a lower average incident MTTR (faster responders break ties). Users with
 // no incidents are not penalised on the MTTR tie-breaker (they only reach it
 // when score and challenge counts already tie).
-func (s *Store) Leaderboard() ([]LeaderboardEntry, error) {
+func (s *Store) Leaderboard(since time.Time) ([]LeaderboardEntry, error) {
 	recs, err := s.All()
 	if err != nil {
 		return nil, err
 	}
-	return BuildLeaderboard(recs), nil
+	if since.IsZero() {
+		return BuildLeaderboard(recs), nil
+	}
+	var kept []Record
+	for _, r := range recs {
+		if !r.StartedAt.Before(since) {
+			kept = append(kept, r)
+		}
+	}
+	return BuildLeaderboard(kept), nil
 }
 
 // BuildLeaderboard computes the ranked leaderboard from a record slice. It is
@@ -64,7 +77,9 @@ func BuildLeaderboard(recs []Record) []LeaderboardEntry {
 				a.entry.ChallengesCompleted++
 			}
 		case KindIncident:
-			if r.Outcome == "resolved" || r.Outcome == "auto-resolved" {
+			// An incident ended with the escape hatch was not fixed, and the
+			// person who pressed it should not gain a resolution or an MTTR.
+			if r.Outcome == OutcomeResolved {
 				a.entry.IncidentsResolved++
 				if r.Elapsed > 0 {
 					a.mttrTotal += r.Elapsed

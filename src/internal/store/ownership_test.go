@@ -537,7 +537,7 @@ func TestMigrationChecksOwners(t *testing.T) {
 
 func TestMigrationRequiresOfflineStore(t *testing.T) {
 	st := newStore(t)
-	if _, err := st.db.ExecContext(t.Context(), `DELETE FROM schema_migrations WHERE version = 3`); err != nil {
+	if _, err := st.db.ExecContext(t.Context(), `DELETE FROM schema_migrations WHERE version >= 3`); err != nil {
 		t.Fatal(err)
 	}
 	opened, err := Open(t.Context(), st.Path())

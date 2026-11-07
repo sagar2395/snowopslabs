@@ -81,7 +81,6 @@ var knownProblemSlugs = []string{
 	"recovery_required",
 	"request_too_large",
 	"resolve_failed",
-	"session_error",
 	"too_many_requests",
 	"unauthorized",
 	"unavailable",

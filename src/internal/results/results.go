@@ -152,31 +152,48 @@ func (s *Store) ByKind(kind string) ([]Record, error) {
 }
 
 func (s *Store) query(kind string) ([]Record, error) {
+	all, _, err := s.Read()
+	if err != nil || kind == "" {
+		return all, err
+	}
+	var recs []Record
+	for _, r := range all {
+		if r.Kind == kind {
+			recs = append(recs, r)
+		}
+	}
+	return recs, nil
+}
+
+// Path returns the location of the results file.
+func (s *Store) Path() string { return s.path }
+
+// Read returns every record in chronological order, and the 1-based numbers
+// of the lines that are not a valid record, which it skips. A missing file
+// has no records.
+func (s *Store) Read() (recs []Record, damaged []int, err error) {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, err
+		return nil, nil, err
 	}
-	var recs []Record
-	for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
-		if line == "" {
+	for i, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "" {
 			continue
 		}
 		var r Record
 		if err := json.Unmarshal([]byte(line), &r); err != nil {
-			continue // skip corrupt lines
-		}
-		if kind != "" && r.Kind != kind {
+			damaged = append(damaged, i+1)
 			continue
 		}
 		recs = append(recs, r)
 	}
-	sort.Slice(recs, func(i, j int) bool {
+	sort.SliceStable(recs, func(i, j int) bool {
 		return recs[i].StartedAt.Before(recs[j].StartedAt)
 	})
-	return recs, nil
+	return recs, damaged, nil
 }
 
 // Progress returns the latest module completion record per path/module name,

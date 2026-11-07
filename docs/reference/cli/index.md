@@ -26,7 +26,7 @@ labctl reset                                  # start again from a clean cluster
 | [Applications & services](apps.md) | `app` `service` |
 | [Platform](platform.md) | `platform` |
 | [Scenarios](scenarios.md) | `scenario` `validate` |
-| [Incidents](incidents.md) | `incident` |
+| [Incidents](incidents.md) | `incident` `results` |
 | [Traffic](traffic.md) | `traffic` |
 | [Comparing stacks](compare.md) | `compare` |
 | [Learning & challenges](learning.md) | `learn` `challenge` |

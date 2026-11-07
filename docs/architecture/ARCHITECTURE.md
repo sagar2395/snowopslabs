@@ -311,14 +311,15 @@ Server mode is opt-in but hardened by default:
   an older `users.yaml` keeps working.
 - Session cookies are `HttpOnly` and `SameSite=Strict`, and `Secure` when the
   request arrived over TLS.
+- Sessions are kept in the SQLite `sessions` table under a SHA-256 hash of the
+  token, so they survive a restart and a copy of the database cannot be
+  replayed as a cookie. Expired rows are removed.
 - Rate limiting and constant-time comparison on the auth path.
 - Role separation: `participant` is refused every mutation an `operator` may
   make.
 
 **Planned, not built.** Do not rely on these:
 
-- Sessions are held in an in-memory table, so every session is dropped on
-  restart. Persisting them in SQLite is planned.
 - There are no CSRF tokens. The `SameSite=Strict` cookie is the only
   cross-site mitigation today.
 - There is no audit trail of mutating operations beyond the run store, which

@@ -42,6 +42,7 @@ page collects them by symptom. `labctl doctor` checks your machine, and
 | `labctl init` still prints `.k3d.local` URLs after you updated the clone | The `labctl` on your `PATH` is an older one, usually the release `install.sh` put in `~/.local/bin`, while `make cli-build` writes `./bin/labctl`. Run `./bin/labctl init`, or `make cli-install` to replace the installed one (`command -v labctl` shows which runs). A `labctl ui` started before the move shows the old URLs until you restart it. |
 | `a kind cluster named 'snowops' already exists` (or k3d) | Lab names are unique per machine, because URLs and lab state are keyed by them. Set `CLUSTER_NAME` in `.env` to another name. |
 | A pod you just started resolves names or connects where a NetworkPolicy should block it | On k3s the policy controller starts enforcing on a new pod a moment after it starts, so a test in its first second gets through. Wait a few seconds first: `kubectl run … -- sh -c 'sleep 5; nslookup <name>'`. |
+| With `LABCTL_AUTH=true`, every login answers `internal_error` and the server log says `auth enabled but the lab database did not open` | Sessions are kept in `~/.snowops/snowops.db`, and the server could not open it. The `run store unavailable` line above it in the log says why: most often the database was written by a newer `labctl` (upgrade this one) or the directory is not writable. Fix that and restart `labctl ui`. |
 
 ## Windows (WSL2)
 

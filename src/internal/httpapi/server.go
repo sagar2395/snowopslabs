@@ -129,7 +129,10 @@ func NewServer(cfg *config.Config, exec *executor.Executor, registry *platform.R
 	}
 	if auth.Enabled() {
 		s.authEnabled = true
-		s.sessions = auth.NewSessionStore(0)
+		s.sessions = auth.NewSessionStore(s.runStore, 0)
+		if s.runStore == nil {
+			slog.Warn("auth enabled but the lab database did not open; nobody can log in until it does")
+		}
 		s.loginLimit = newLoginLimiter(loginMaxAttempts, loginWindow)
 		// An unreadable users file leaves an empty store; the server logs a
 		// warning at start and keeps running.

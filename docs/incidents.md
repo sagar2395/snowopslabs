@@ -28,6 +28,9 @@ labctl incident inject --random --silent      # a surprise fault, name hidden
 labctl incident inject --random --seed 42     # the same pick for everyone on the team
 ```
 
+[Running a game day](game-day.md) covers a whole team session on one shared
+lab: roles, the day before, rounds, rescuing a round and the review.
+
 ## The faults
 
 What you see when you start. The cause is what you have to find, so it is not

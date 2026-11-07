@@ -214,7 +214,7 @@ export const api = {
   getResultsByKind:(kind: string) => req<ResultRecord[]>(`/results/${enc(kind)}`),
 
   // ── Leaderboard ─────────────────────────────────────────────────────────────
-  getLeaderboard:  ()             => req<LeaderboardEntry[]>('/leaderboard'),
+  getLeaderboard:  (since?: string) => req<LeaderboardEntry[]>(since ? `/leaderboard?since=${encodeURIComponent(since)}` : '/leaderboard'),
 
   getComparisons:  ()             => req<Comparison[]>('/comparisons'),
 

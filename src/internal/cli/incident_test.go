@@ -5,6 +5,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -145,6 +146,30 @@ func TestTidyAfterFix(t *testing.T) {
 // app is broken and the detection check fails.
 const faultMarker = "incidents/" + labtest.Fault + "/BROKEN"
 
+// activeFaultsJSON parses `incident list -o json`, which must be a JSON array
+// and nothing else, and returns the names it marks active.
+func activeFaultsJSON(t *testing.T, r cliResult) []string {
+	t.Helper()
+	var items []struct {
+		Name     string `json:"name"`
+		Severity string `json:"severity"`
+		Active   bool   `json:"active"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &items); err != nil {
+		t.Fatalf("incident list -o json is not a JSON array: %v\n%s", err, r.stdout)
+	}
+	if len(items) == 0 || items[0].Severity == "" {
+		t.Fatalf("incident list -o json lists no faults, or drops their fields:\n%s", r.stdout)
+	}
+	var active []string
+	for _, it := range items {
+		if it.Active {
+			active = append(active, it.Name)
+		}
+	}
+	return active
+}
+
 // The whole game day at the terminal: inject, look, take hints, fix it by
 // hand, be told it is fixed, then use the escape hatch on a second run.
 func TestIncident_Journey(t *testing.T) {
@@ -158,6 +183,9 @@ func TestIncident_Journey(t *testing.T) {
 	}
 
 	step("incident", "list")
+	if got := activeFaultsJSON(t, step("incident", "list", "-o", "json")); len(got) != 0 {
+		t.Errorf("incident list -o json marks %v active before any inject", got)
+	}
 	step("incident", "info", labtest.Fault)
 	step("incident", "status")
 	step("incident", "history")
@@ -167,6 +195,9 @@ func TestIncident_Journey(t *testing.T) {
 		t.Fatal("inject reported success but did not break the lab")
 	}
 	step("incident", "list")
+	if got := activeFaultsJSON(t, step("incident", "list", "-o", "json")); len(got) != 1 || got[0] != labtest.Fault {
+		t.Errorf("incident list -o json marks %v active, want only %s", got, labtest.Fault)
+	}
 	if r := step("incident", "status"); !strings.Contains(r.stdout, "NOT RESOLVED") {
 		t.Errorf("status on a broken lab does not say NOT RESOLVED:\n%s", r.stdout)
 	}
@@ -236,7 +267,15 @@ func TestIncident_SilentModeNeverNamesTheFault(t *testing.T) {
 			t.Errorf("silent status leaks detection detail %q:\n%s", leak, status.stdout)
 		}
 	}
-	hidden := []cliResult{inject, status, l.mustRun("incident", "list"), l.mustRun("incident", "hint")}
+	second := l.run("incident", "inject", "other-fault")
+	if second.exitCode() != 1 || !strings.Contains(second.stderr, "not named") {
+		t.Errorf("a second inject over a silent incident = exit %d, %q; want it refused without the name", second.exitCode(), second.stderr)
+	}
+	asJSON := l.mustRun("incident", "list", "-o", "json")
+	if got := activeFaultsJSON(t, asJSON); len(got) != 0 {
+		t.Errorf("incident list -o json marks the silent fault active: %v", got)
+	}
+	hidden := []cliResult{inject, status, l.mustRun("incident", "list"), l.mustRun("incident", "hint"), asJSON, second}
 	for _, r := range hidden {
 		out := r.stdout + r.stderr
 		if strings.Contains(out, injected+" started") || strings.Contains(out, "incident.inject "+injected) {
@@ -299,6 +338,7 @@ func TestIncident_Failures(t *testing.T) {
 		{"inject a fault that does not exist", nil, []string{"incident", "inject", "ghost"}, "see 'labctl incident list'"},
 		{"info on a fault that does not exist", nil, []string{"incident", "info", "ghost"}, "see 'labctl incident list'"},
 		{"resolve a fault that does not exist", nil, []string{"incident", "resolve", "ghost"}, "see 'labctl incident list'"},
+		{"list in a format that does not exist", nil, []string{"incident", "list", "-o", "csv"}, `unknown output format "csv": use -o table or -o json`},
 		{"random pick in a category with no faults", nil, []string{"incident", "inject", "--random", "--category", "storage"}, "storage"},
 		{"a second inject while one is active",
 			func(_ *testing.T, l *terminal) { l.mustRun("incident", "inject", labtest.Fault) },

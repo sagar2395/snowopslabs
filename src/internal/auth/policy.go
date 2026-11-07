@@ -19,6 +19,18 @@ var operatorOnlyPrefixes = []string{
 	"/runs",
 }
 
+// operatorOnlyIncidentAction reports whether path starts or ends an incident.
+// One incident runs at a time for the whole team, so the facilitator injects
+// it and decides when the escape hatch ends it; participants check status
+// and take hints.
+func operatorOnlyIncidentAction(sub string) bool {
+	rest, ok := strings.CutPrefix(sub, "/incidents/")
+	if !ok {
+		return false
+	}
+	return rest == "resolve" || rest == "inject-random" || strings.HasSuffix(rest, "/inject")
+}
+
 // RequiresOperator reports whether only an operator may send a request with
 // this method to this API path. GET and OPTIONS never need the operator role.
 // /api and /api/v2 paths are treated the same.
@@ -27,6 +39,9 @@ func RequiresOperator(method, path string) bool {
 		return false
 	}
 	sub := apiSubPath(path)
+	if operatorOnlyIncidentAction(sub) {
+		return true
+	}
 	for _, p := range operatorOnlyPrefixes {
 		if sub == p || strings.HasPrefix(sub, p+"/") {
 			return true

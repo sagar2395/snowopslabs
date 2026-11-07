@@ -88,10 +88,21 @@ func (s *Server) handleResultsByKind(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, recs)
 }
 
-// GET /api/v2/leaderboard - per-user aggregate ranking for team mode.
+// GET /api/v2/leaderboard[?since=<RFC 3339>] - per-user aggregate ranking for
+// team mode, over the runs that started at or after since.
 func (s *Server) handleLeaderboard(w http.ResponseWriter, r *http.Request) {
+	var since time.Time
+	if v := r.URL.Query().Get("since"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			respondError(w, r, http.StatusBadRequest, "invalid_input",
+				"since must be an RFC 3339 time, such as 2026-11-07T09:00:00Z")
+			return
+		}
+		since = t
+	}
 	store := resultsStore(s)
-	board, err := store.Leaderboard()
+	board, err := store.Leaderboard(since)
 	if err != nil {
 		respondInternal(w, r, err)
 		return

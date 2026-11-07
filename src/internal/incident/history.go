@@ -56,9 +56,9 @@ func (e *Engine) finishRun(active *Active, f *Fault, resolvedBy, user string) {
 		detectSeconds = int64(active.FirstCheckedAt.Sub(active.InjectedAt).Seconds())
 	}
 
-	outcome := "resolved"
+	outcome := results.OutcomeResolved
 	if resolvedBy == "auto" {
-		outcome = "auto-resolved"
+		outcome = results.OutcomeAutoResolved
 	}
 
 	r := results.Record{
@@ -71,6 +71,7 @@ func (e *Engine) finishRun(active *Active, f *Fault, resolvedBy, user string) {
 		Score:     -1, // incidents are not scored unless run as a challenge
 		Outcome:   outcome,
 		HintsUsed: active.HintsRevealed,
+		Workload:  active.App,
 		Meta: map[string]any{
 			"category":       f.Category,
 			"severity":       f.Severity,
@@ -92,7 +93,7 @@ func incidentRecordFromResult(r results.Record) Record {
 		ResolveSeconds: r.Elapsed,
 		HintsUsed:      r.HintsUsed,
 	}
-	if r.Outcome == "auto-resolved" {
+	if r.Outcome == results.OutcomeAutoResolved {
 		rec.ResolvedBy = "auto"
 	} else {
 		rec.ResolvedBy = "manual"

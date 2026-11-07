@@ -4,6 +4,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/sagar2395/snowopslabs/internal/auth"
+	"github.com/sagar2395/snowopslabs/internal/store"
 )
 
 // authedServer builds an auth-enabled Server with one operator (alice/pw) and
@@ -29,15 +31,26 @@ func authedServer(t *testing.T) *Server {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store, err := auth.LoadStore(path)
+	users, err := auth.LoadStore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return &Server{
 		authEnabled: true,
-		users:       store,
-		sessions:    auth.NewSessionStore(0),
+		users:       users,
+		sessions:    auth.NewSessionStore(testDB(t), 0),
 	}
+}
+
+// testDB opens a lab database in a temp directory for the session store.
+func testDB(t *testing.T) *store.Store {
+	t.Helper()
+	db, err := store.Open(t.Context(), filepath.Join(t.TempDir(), "snowops.db"))
+	if err != nil {
+		t.Fatalf("opening the test database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
 }
 
 func login(t *testing.T, s *Server, user, pass string) *httptest.ResponseRecorder {
@@ -87,7 +100,7 @@ func TestHandleAuthMe(t *testing.T) {
 
 	t.Run("auth on, with session", func(t *testing.T) {
 		s := authedServer(t)
-		sess, _ := s.sessions.Create("alice", auth.RoleOperator)
+		sess, _ := s.sessions.Create(t.Context(), "alice", auth.RoleOperator)
 		r := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
 		r.AddCookie(&http.Cookie{Name: auth.CookieName, Value: sess.Token})
 		w := httptest.NewRecorder()
@@ -115,7 +128,7 @@ func TestHandleAuthLogin(t *testing.T) {
 		if !c.HttpOnly {
 			t.Error("session cookie must be HttpOnly")
 		}
-		if _, ok := s.sessions.Get(c.Value); !ok {
+		if _, err := s.sessions.Get(t.Context(), c.Value); err != nil {
 			t.Error("session should exist server-side after login")
 		}
 	})
@@ -162,7 +175,7 @@ func TestHandleAuthLogin(t *testing.T) {
 
 func TestHandleAuthLogout(t *testing.T) {
 	s := authedServer(t)
-	sess, _ := s.sessions.Create("alice", auth.RoleOperator)
+	sess, _ := s.sessions.Create(t.Context(), "alice", auth.RoleOperator)
 
 	r := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	r.AddCookie(&http.Cookie{Name: auth.CookieName, Value: sess.Token})
@@ -172,8 +185,8 @@ func TestHandleAuthLogout(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
-	if _, ok := s.sessions.Get(sess.Token); ok {
-		t.Error("session should be deleted after logout")
+	if _, err := s.sessions.Get(t.Context(), sess.Token); !errors.Is(err, auth.ErrNoSession) {
+		t.Errorf("session after logout: %v, want it deleted", err)
 	}
 	c := sessionCookie(w)
 	if c == nil || c.MaxAge >= 0 {
@@ -219,7 +232,7 @@ func TestAuthMiddleware(t *testing.T) {
 
 	t.Run("participant denied operator route", func(t *testing.T) {
 		s := authedServer(t)
-		sess, _ := s.sessions.Create("bob", auth.RoleParticipant)
+		sess, _ := s.sessions.Create(t.Context(), "bob", auth.RoleParticipant)
 		r := httptest.NewRequest(http.MethodPost, "/api/platform/up", nil)
 		r.AddCookie(&http.Cookie{Name: auth.CookieName, Value: sess.Token})
 		w := httptest.NewRecorder()
@@ -231,7 +244,7 @@ func TestAuthMiddleware(t *testing.T) {
 
 	t.Run("participant allowed challenge route", func(t *testing.T) {
 		s := authedServer(t)
-		sess, _ := s.sessions.Create("bob", auth.RoleParticipant)
+		sess, _ := s.sessions.Create(t.Context(), "bob", auth.RoleParticipant)
 		r := httptest.NewRequest(http.MethodPost, "/api/challenges/complete", nil)
 		r.AddCookie(&http.Cookie{Name: auth.CookieName, Value: sess.Token})
 		w := httptest.NewRecorder()
@@ -243,7 +256,7 @@ func TestAuthMiddleware(t *testing.T) {
 
 	t.Run("operator allowed operator route and gets session in context", func(t *testing.T) {
 		s := authedServer(t)
-		sess, _ := s.sessions.Create("alice", auth.RoleOperator)
+		sess, _ := s.sessions.Create(t.Context(), "alice", auth.RoleOperator)
 		r := httptest.NewRequest(http.MethodPost, "/api/platform/up", nil)
 		r.AddCookie(&http.Cookie{Name: auth.CookieName, Value: sess.Token})
 		w := httptest.NewRecorder()
@@ -253,6 +266,89 @@ func TestAuthMiddleware(t *testing.T) {
 		})).ServeHTTP(w, r)
 		if gotUser != "alice" {
 			t.Errorf("context user = %q, want alice", gotUser)
+		}
+	})
+}
+
+// The session gate over persisted sessions: a session from before a restart
+// still works, one whose user was removed or demoted while the server was
+// down is judged by the users file, and a database that fails is a 500,
+// never a way in.
+func TestAuthMiddleware_PersistedSessions(t *testing.T) {
+	okHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	call := func(s *Server, method, path, token string) int {
+		r := httptest.NewRequest(method, path, nil)
+		if token != "" {
+			r.AddCookie(&http.Cookie{Name: auth.CookieName, Value: token})
+		}
+		w := httptest.NewRecorder()
+		s.authMiddleware(okHandler).ServeHTTP(w, r)
+		return w.Code
+	}
+
+	t.Run("a session from before a restart is still logged in", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "snowops.db")
+		open := func() *store.Store {
+			db, err := store.Open(t.Context(), path)
+			if err != nil {
+				t.Fatalf("opening %s: %v", path, err)
+			}
+			t.Cleanup(func() { _ = db.Close() })
+			return db
+		}
+		db := open()
+		before := authedServer(t)
+		before.sessions = auth.NewSessionStore(db, 0)
+		c := sessionCookie(login(t, before, "alice", "pw"))
+		if c == nil {
+			t.Fatal("login set no cookie")
+		}
+		if err := db.Close(); err != nil {
+			t.Fatal(err)
+		}
+
+		after := authedServer(t)
+		after.sessions = auth.NewSessionStore(open(), 0)
+		if got := call(after, http.MethodPost, "/api/v2/platform/up", c.Value); got != http.StatusOK {
+			t.Errorf("status after restart = %d, want 200", got)
+		}
+	})
+
+	t.Run("a removed user's session is refused and deleted", func(t *testing.T) {
+		s := authedServer(t)
+		sess, _ := s.sessions.Create(t.Context(), "carol", auth.RoleOperator)
+		if got := call(s, http.MethodGet, "/api/v2/status", sess.Token); got != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", got)
+		}
+		if _, err := s.sessions.Get(t.Context(), sess.Token); !errors.Is(err, auth.ErrNoSession) {
+			t.Errorf("the removed user's session is still stored: %v", err)
+		}
+	})
+
+	t.Run("the role comes from the users file, not the session", func(t *testing.T) {
+		s := authedServer(t)
+		sess, _ := s.sessions.Create(t.Context(), "bob", auth.RoleOperator)
+		if got := call(s, http.MethodPost, "/api/v2/platform/up", sess.Token); got != http.StatusForbidden {
+			t.Errorf("a participant with an operator session got %d, want 403", got)
+		}
+	})
+
+	t.Run("a database that fails is a 500", func(t *testing.T) {
+		s := authedServer(t)
+		sess, _ := s.sessions.Create(t.Context(), "alice", auth.RoleOperator)
+		db := testDB(t)
+		s.sessions = auth.NewSessionStore(db, 0)
+		_ = db.Close()
+		if got := call(s, http.MethodGet, "/api/v2/status", sess.Token); got != http.StatusInternalServerError {
+			t.Errorf("status = %d, want 500", got)
+		}
+	})
+
+	t.Run("no database refuses login with a 500", func(t *testing.T) {
+		s := authedServer(t)
+		s.sessions = auth.NewSessionStore(nil, 0)
+		if w := login(t, s, "alice", "pw"); w.Code != http.StatusInternalServerError || sessionCookie(w) != nil {
+			t.Errorf("login with no database = %d, cookie %v; want 500 and no cookie", w.Code, sessionCookie(w))
 		}
 	})
 }

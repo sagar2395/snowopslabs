@@ -3,6 +3,7 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,9 +34,13 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		sess, ok := s.sessions.Get(auth.TokenFromRequest(r))
-		if !ok {
+		sess, err := s.currentSession(r)
+		if errors.Is(err, auth.ErrNoSession) {
 			respondError(w, r, http.StatusUnauthorized, "unauthorized", "authentication required")
+			return
+		}
+		if err != nil {
+			respondInternal(w, r, err)
 			return
 		}
 		if !auth.Authorize(sess.Role, r.Method, r.URL.Path) {
@@ -45,6 +50,22 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(auth.WithSession(r.Context(), sess)))
 	})
+}
+
+// currentSession returns the caller's session, or auth.ErrNoSession. Sessions
+// outlive a restart, so a session whose user is no longer in the users file
+// is deleted and refused, and the role is the user's current one.
+func (s *Server) currentSession(r *http.Request) (auth.Session, error) {
+	sess, err := s.sessions.Get(r.Context(), auth.TokenFromRequest(r))
+	if err != nil {
+		return auth.Session{}, err
+	}
+	u, ok := s.users.Lookup(sess.User)
+	if !ok {
+		return auth.Session{}, errors.Join(auth.ErrNoSession, s.sessions.Delete(r.Context(), sess.Token))
+	}
+	sess.Role = u.Role
+	return sess, nil
 }
 
 // isAuthEndpoint reports whether path is one of the auth endpoints, under the
@@ -90,9 +111,13 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, authMeResponse{AuthEnabled: false, Authenticated: true})
 		return
 	}
-	sess, ok := s.sessions.Get(auth.TokenFromRequest(r))
-	if !ok {
+	sess, err := s.currentSession(r)
+	if errors.Is(err, auth.ErrNoSession) {
 		respondJSON(w, http.StatusOK, authMeResponse{AuthEnabled: true, Authenticated: false})
+		return
+	}
+	if err != nil {
+		respondInternal(w, r, err)
 		return
 	}
 	respondJSON(w, http.StatusOK, authMeResponse{
@@ -141,9 +166,9 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if s.loginLimit != nil {
 		s.loginLimit.reset(limitKey)
 	}
-	sess, err := s.sessions.Create(u.Name, u.Role)
+	sess, err := s.sessions.Create(r.Context(), u.Name, u.Role)
 	if err != nil {
-		respondError(w, r, http.StatusInternalServerError, "session_error", "could not create session")
+		respondInternal(w, r, err)
 		return
 	}
 	//nolint:gosec // G124: HttpOnly and SameSite=Strict always apply; Secure
@@ -171,7 +196,10 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]bool{"ok": true})
 		return
 	}
-	s.sessions.Delete(auth.TokenFromRequest(r))
+	if err := s.sessions.Delete(r.Context(), auth.TokenFromRequest(r)); err != nil {
+		respondInternal(w, r, err)
+		return
+	}
 	//nolint:gosec // G124: see the login handler - Secure is conditional on TLS.
 	// Clearing a cookie must repeat the attributes it was set with, or the
 	// browser treats it as a different cookie and leaves the original in place.

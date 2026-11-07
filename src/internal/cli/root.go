@@ -326,4 +326,5 @@ func init() {
 	rootCmd.AddCommand(learnCmd())
 	rootCmd.AddCommand(challengeCmd())
 	rootCmd.AddCommand(validateCmd())
+	rootCmd.AddCommand(resultsCmd())
 }
