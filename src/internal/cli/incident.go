@@ -152,7 +152,7 @@ a reproducible pick across a team.`,
 		if active, aerr := incEng.Active(); aerr != nil {
 			return aerr
 		} else if active != nil && !injectForce {
-			return fmt.Errorf("%w: %s (resolve it first, or use --force)", incident.ErrIncidentActive, active.Fault)
+			return incident.ActiveError(active)
 		}
 		if err := incEng.Preflight(f); err != nil {
 			return err

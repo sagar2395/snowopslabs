@@ -174,5 +174,7 @@ the active incident. While unresolved, the status check contains only
 result is returned. A silent inject from the UI broadcasts no job label or
 script output, and `GET /runs/{id}/logs` for its run answers `403 hidden_run`.
 `inject-random` picks among the faults eligible for the app named in `app`, and
-answers `409 no_eligible_fault` when there are none. `hint` and `resolve` answer
+answers `409 no_eligible_fault` when there are none. A second inject while one
+is active answers `409 incident_active`; for a silent incident the message does
+not name it, and neither does `labctl incident inject`. `hint` and `resolve` answer
 `409 no_active_incident` when nothing is injected.

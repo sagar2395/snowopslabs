@@ -267,11 +267,15 @@ func TestIncident_SilentModeNeverNamesTheFault(t *testing.T) {
 			t.Errorf("silent status leaks detection detail %q:\n%s", leak, status.stdout)
 		}
 	}
+	second := l.run("incident", "inject", "other-fault")
+	if second.exitCode() != 1 || !strings.Contains(second.stderr, "not named") {
+		t.Errorf("a second inject over a silent incident = exit %d, %q; want it refused without the name", second.exitCode(), second.stderr)
+	}
 	asJSON := l.mustRun("incident", "list", "-o", "json")
 	if got := activeFaultsJSON(t, asJSON); len(got) != 0 {
 		t.Errorf("incident list -o json marks the silent fault active: %v", got)
 	}
-	hidden := []cliResult{inject, status, l.mustRun("incident", "list"), l.mustRun("incident", "hint"), asJSON}
+	hidden := []cliResult{inject, status, l.mustRun("incident", "list"), l.mustRun("incident", "hint"), asJSON, second}
 	for _, r := range hidden {
 		out := r.stdout + r.stderr
 		if strings.Contains(out, injected+" started") || strings.Contains(out, "incident.inject "+injected) {

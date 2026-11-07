@@ -339,6 +339,30 @@ func TestListIncidents_SilentModeHidesTheActiveFault(t *testing.T) {
 	}
 }
 
+// A second inject while a silent incident is active is refused without naming
+// it, on both inject routes, so nobody can read the answer out of the 409.
+func TestInject_SecondInjectDoesNotNameASilentIncident(t *testing.T) {
+	s := newContractLab(t)
+	if w := do(s, http.MethodPost, "/incidents/"+labFault+"/inject?app="+labApp+"&silent=true", "", nil); w.Code != http.StatusOK {
+		t.Fatalf("silent inject = %d: %s", w.Code, w.Body)
+	}
+	for _, path := range []string{"/incidents/inject-random?app=" + labApp + "&seed=3", "/incidents/" + labFault + "/inject?app=" + labApp} {
+		w := do(s, http.MethodPost, path, "", nil)
+		if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "incident_active") {
+			t.Fatalf("POST %s = %d %s, want 409 incident_active", path, w.Code, w.Body)
+		}
+		var problem struct {
+			Detail string `json:"detail"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &problem); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(problem.Detail, labFault) || !strings.Contains(problem.Detail, "not named") {
+			t.Errorf("POST %s detail = %q, want it refused without naming the silent incident", path, problem.Detail)
+		}
+	}
+}
+
 // A silent inject from the web UI broadcasts nothing that names the fault: no
 // job label and no script output.
 func TestInject_SilentBroadcastsNothing(t *testing.T) {
