@@ -40,14 +40,18 @@ func NewCard(r Record, by string) (Card, error) {
 	switch r.Kind {
 	case KindIncident:
 		c.Title = "Incident: " + name
-		c.Rows = []CardRow{
-			{"Time to resolve", FormatElapsed(r.Elapsed)},
-			{"Hints used", strconv.Itoa(r.HintsUsed)},
-		}
 		if resolvedBy(r) == ResolvedByEscapeHatch {
-			c.Rows = append(c.Rows, CardRow{"Ended", "escape hatch (labctl incident resolve)"})
+			c.Rows = []CardRow{
+				{"Time before it ended", FormatElapsed(r.Elapsed)},
+				{"Hints used", strconv.Itoa(r.HintsUsed)},
+				{"Ended", "escape hatch (labctl incident resolve)"},
+			}
 		} else {
-			c.Rows = append(c.Rows, CardRow{"Ended", "fixed by hand, detection check passed"})
+			c.Rows = []CardRow{
+				{"Time to resolve", FormatElapsed(r.Elapsed)},
+				{"Hints used", strconv.Itoa(r.HintsUsed)},
+				{"Ended", "fixed by hand, detection check passed"},
+			}
 		}
 		if silent, _ := r.Meta["silent"].(bool); silent {
 			c.Rows = append(c.Rows, CardRow{"Mode", "silent (the fault was not named)"})

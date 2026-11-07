@@ -82,7 +82,7 @@ $ labctl results card dns-outage
 
 | | |
 |---|---|
-| Time to resolve | 5m <dur> |
+| Time before it ended | 5m <dur> |
 | Hints used | 0 |
 | Ended | escape hatch (labctl incident resolve) |
 | Date | <date> |
@@ -95,7 +95,7 @@ $ labctl results card --kind incident --by Team Blue -o svg
 <g font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
 <text x="32" y="40" font-size="14" fill="#94a3b8">SnowOps Labs</text>
 <text x="32" y="68" font-size="22" font-weight="600" fill="#f8fafc">Incident: dns-outage</text>
-<text x="32" y="106" font-size="15" fill="#94a3b8">Time to resolve</text>
+<text x="32" y="106" font-size="15" fill="#94a3b8">Time before it ended</text>
 <text x="202" y="106" font-size="15" fill="#e2e8f0">5m <dur></text>
 <text x="32" y="136" font-size="15" fill="#94a3b8">Hints used</text>
 <text x="202" y="136" font-size="15" fill="#e2e8f0">0</text>

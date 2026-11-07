@@ -39,6 +39,7 @@
     "outcome": "auto-resolved",
     "score": -1,
     "startedAt": "<time>",
-    "user": "learner"
+    "user": "learner",
+    "workload": "demo-app"
   }
 ]

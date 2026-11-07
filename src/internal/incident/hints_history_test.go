@@ -215,12 +215,19 @@ func TestHistory_OutcomeTellsAFixFromTheEscapeHatch(t *testing.T) {
 			if _, err := e.Inject("fault-a", executor.New(root), false, false); err != nil {
 				t.Fatal(err)
 			}
+			active, err := e.Active()
+			if err != nil || active.App == "" {
+				t.Fatalf("active incident = %+v, %v; want it to name its app", active, err)
+			}
 			tt.end(t, e, root)
 			recs, err := e.resultsStore().ByKind(results.KindIncident)
 			if err != nil || len(recs) != 1 {
 				t.Fatalf("results: %v, %d records", err, len(recs))
 			}
 			rows := results.Export(recs, results.ExportFilter{})
+			if recs[0].Workload != active.App {
+				t.Errorf("result workload = %q, want the app the incident ran against, %q", recs[0].Workload, active.App)
+			}
 			if recs[0].Outcome != tt.wantOutcome || rows[0].ResolvedBy != tt.wantResolvedBy {
 				t.Errorf("outcome %q exported as %q; want %q, %q", recs[0].Outcome, rows[0].ResolvedBy, tt.wantOutcome, tt.wantResolvedBy)
 			}

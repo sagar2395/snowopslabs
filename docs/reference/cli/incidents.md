@@ -128,7 +128,7 @@ Fields may be added in a later release; none is renamed or removed.
 | `kind` | `incident`, `challenge`, `scenario`, `module` or `comparison` |
 | `name` | the fault, challenge or scenario; `<path>/<module>` for a module |
 | `user` | who ran it: the logged-in user under `LABCTL_AUTH`, otherwise the OS user (`unknown` when neither is known) |
-| `workload` | the app it ran against, when recorded |
+| `workload` | the app it ran against, when recorded (always, for an incident) |
 | `startedAt`, `endedAt` | RFC 3339, UTC |
 | `elapsedSeconds` | wall-clock seconds; for an incident, time to resolve |
 | `hintsUsed` | hints revealed |

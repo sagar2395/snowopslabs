@@ -71,6 +71,7 @@ func (e *Engine) finishRun(active *Active, f *Fault, resolvedBy, user string) {
 		Score:     -1, // incidents are not scored unless run as a challenge
 		Outcome:   outcome,
 		HintsUsed: active.HintsRevealed,
+		Workload:  active.App,
 		Meta: map[string]any{
 			"category":       f.Category,
 			"severity":       f.Severity,
