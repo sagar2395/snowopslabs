@@ -3,6 +3,7 @@
 package results
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -92,14 +93,15 @@ func TestBuildLeaderboard_EdgeCases(t *testing.T) {
 		}
 	})
 
-	t.Run("auto-resolved incident counts but unscored challenge ignored", func(t *testing.T) {
+	t.Run("the escape hatch is not a resolution, and an unscored challenge is ignored", func(t *testing.T) {
 		recs := []Record{
-			{Kind: KindIncident, User: "dave", Outcome: "auto-resolved", Elapsed: 30},
+			{Kind: KindIncident, User: "dave", Outcome: OutcomeAutoResolved, Elapsed: 30},
+			{Kind: KindIncident, User: "dave", Outcome: OutcomeResolved, Elapsed: 90},
 			{Kind: KindChallenge, User: "dave", Score: -1, Outcome: "aborted"},
 		}
 		lb := BuildLeaderboard(recs)
-		if lb[0].IncidentsResolved != 1 {
-			t.Errorf("auto-resolved should count: %+v", lb[0])
+		if lb[0].IncidentsResolved != 1 || lb[0].AvgMTTRSeconds != 90 {
+			t.Errorf("want 1 incident resolved with a 90s MTTR (the escape hatch left out): %+v", lb[0])
 		}
 		if lb[0].TotalScore != 0 {
 			t.Errorf("negative score must not be added: %+v", lb[0])
@@ -117,12 +119,47 @@ func TestStore_Leaderboard(t *testing.T) {
 	mustAppend(t, store, Record{Kind: KindChallenge, User: "alice", Score: 70, Outcome: "passed", StartedAt: now})
 	mustAppend(t, store, Record{Kind: KindChallenge, User: "bob", Score: 40, Outcome: "passed", StartedAt: now})
 
-	lb, err := store.Leaderboard()
+	lb, err := store.Leaderboard(time.Time{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(lb) != 2 || lb[0].User != "alice" {
 		t.Errorf("Leaderboard = %+v, want alice first", lb)
+	}
+}
+
+// Leaderboard with a start time ranks only the runs that started then or
+// later, so a game day is not buried under a lab's history.
+func TestStore_LeaderboardSince(t *testing.T) {
+	store := NewStore(t.TempDir())
+	start := time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC)
+	mustAppend(t, store, Record{Kind: KindIncident, User: "old-hand", Outcome: OutcomeResolved, Elapsed: 10, StartedAt: start.Add(-24 * time.Hour)})
+	mustAppend(t, store, Record{Kind: KindIncident, User: "alice", Outcome: OutcomeResolved, Elapsed: 53, StartedAt: start})
+	mustAppend(t, store, Record{Kind: KindIncident, User: "bob", Outcome: OutcomeResolved, Elapsed: 120, StartedAt: start.Add(time.Hour)})
+
+	tests := []struct {
+		name  string
+		since time.Time
+		want  []string
+	}{
+		{"all time", time.Time{}, []string{"old-hand", "alice", "bob"}},
+		{"from the start of the day, inclusive", start, []string{"alice", "bob"}},
+		{"after every run", start.Add(2 * time.Hour), nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lb, err := store.Leaderboard(tt.since)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, e := range lb {
+				got = append(got, e.User)
+			}
+			if strings.Join(got, ",") != strings.Join(tt.want, ",") {
+				t.Errorf("Leaderboard = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 

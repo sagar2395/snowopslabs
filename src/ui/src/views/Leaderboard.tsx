@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { api } from '../api/client'
 import { qk } from '../lib/queryClient'
 import { useApiQuery } from '../hooks/useApiQuery'
@@ -16,8 +17,33 @@ function formatMttr(seconds: number) {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+/** The window the board ranks: every run, or only recent ones, so a game day
+ *  is not buried under the lab's history. */
+export type Period = 'all' | 'today' | '4h'
+
+const PERIOD_LABELS: Record<Period, string> = {
+  all: 'All time',
+  today: 'Today',
+  '4h': 'Last 4 hours',
+}
+
+/** The RFC 3339 start of a period, or undefined for all time. */
+export function periodStart(period: Period, now: Date = new Date()): string | undefined {
+  if (period === 'today') {
+    const midnight = new Date(now)
+    midnight.setHours(0, 0, 0, 0)
+    return midnight.toISOString()
+  }
+  if (period === '4h') return new Date(now.getTime() - 4 * 3600 * 1000).toISOString()
+  return undefined
+}
+
 export function Leaderboard(_props: LeaderboardProps) {
-  const { data: entries = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(qk.leaderboard, api.getLeaderboard)
+  const [period, setPeriod] = useState<Period>('all')
+  const { data: entries = [], loading, loaded, loadError, refreshing, reload: load } = useApiQuery(
+    [...qk.leaderboard, period],
+    () => api.getLeaderboard(periodStart(period)),
+  )
 
   if (loading) return <div className="loading" role="status">Loading leaderboard…</div>
 
@@ -47,15 +73,27 @@ export function Leaderboard(_props: LeaderboardProps) {
       <div className="card">
         <div className="card-header">
           <span className="card-title">Leaderboard ({entries.length})</span>
-          <button className="btn btn-sm" onClick={load} disabled={refreshing}>
-            <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
-          </button>
+          <div className="card-tools">
+            <select
+              className="select"
+              value={period}
+              aria-label="Runs to rank"
+              onChange={e => setPeriod(e.target.value as Period)}
+            >
+              {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
+                <option key={p} value={p}>{PERIOD_LABELS[p]}</option>
+              ))}
+            </select>
+            <button className="btn btn-sm" onClick={load} disabled={refreshing}>
+              <Icon name="refresh" size={14} />{refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
         </div>
 
         {entries.length === 0 ? (
           <div className="empty-state">
             <span className="empty-icon"><Icon name="leaderboard" size={24} /></span>
-            <div>No results yet - run a challenge or incident.</div>
+            <div>{period === 'all' ? 'No results yet - run a challenge or incident.' : `No runs in this period (${PERIOD_LABELS[period].toLowerCase()}).`}</div>
           </div>
         ) : (
           <div className="table-scroll">
@@ -66,7 +104,7 @@ export function Leaderboard(_props: LeaderboardProps) {
                   <th>User</th>
                   <th>Total Score</th>
                   <th>Challenges</th>
-                  <th>Incidents</th>
+                  <th title="Incidents fixed by hand; the escape hatch does not count">Incidents</th>
                   <th>Modules</th>
                   <th>Hints</th>
                   <th>Avg MTTR</th>

@@ -101,6 +101,16 @@ labctl results card                                        # Markdown card for y
 labctl results card oom-kill --by "Team Blue" -o svg > card.svg
 ```
 
+REST: `GET /api/v2/results` (newest first), `GET /api/v2/results/{kind}` for
+`incident`, `challenge` or `module`, and `GET /api/v2/leaderboard[?since=]`.
+The leaderboard ranks users by challenge score, then challenges passed, then
+average time to resolve. An incident counts for the user whose status check
+saw it fixed, with the hints the incident used; one ended with the escape
+hatch counts in neither `incidentsResolved` nor `avgMttrSeconds`. `since`, an
+RFC 3339 time, keeps the runs that started then or later; any other value
+answers `400 invalid_input`. The web UI's Leaderboard offers All time, Today
+and Last 4 hours.
+
 ### `labctl results export`
 
 | Flag | Default | Meaning |
