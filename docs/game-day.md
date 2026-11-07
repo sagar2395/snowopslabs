@@ -31,7 +31,8 @@ end.
 
 A participant cannot inject a fault or use the escape hatch: those requests
 answer `403 this action requires the operator role`, so one person cannot end
-a round for everyone. The web UI still shows the buttons.
+a round for everyone. The web UI hides the inject and resolve controls from a
+participant and shows the signed-in name and role in the header.
 
 **One lab is one team.** A lab runs one incident at a time and everyone on it
 shares that incident. Teams that compete need a lab each, on a machine each;
@@ -227,8 +228,9 @@ These do not exist today. Plan around them:
 - No per-team scoring inside one lab, and no second incident at the same time:
   use a lab per team.
 - Hints are counted per round, not per person.
-- Participants see the **Inject** and **Resolve** buttons; pressing one answers
-  that it needs the operator role.
+- The UI hides **Inject** and **Resolve** from participants, but the server is
+  the check: a request from a participant still answers
+  `403 this action requires the operator role`.
 - Grafana and the other lab dashboards are reached through `kubectl
   port-forward`, because lab hostnames end in `.localhost` and resolve on the
   lab machine only.

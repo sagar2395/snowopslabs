@@ -47,12 +47,12 @@ const fault = (name: string, over: Partial<Fault> = {}): Fault => ({
 // requestConfirm that immediately fires onConfirm, so a confirmed action runs.
 const autoConfirm = (req: ConfirmRequest) => { void req.onConfirm() }
 
-function renderIncidents(confirm: (r: ConfirmRequest) => void = vi.fn()) {
+function renderIncidents(confirm: (r: ConfirmRequest) => void = vi.fn(), canOperate?: boolean) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const notify = vi.fn()
   render(
     <QueryClientProvider client={client}>
-      <Incidents notify={notify} requestConfirm={confirm} />
+      <Incidents notify={notify} requestConfirm={confirm} canOperate={canOperate} />
     </QueryClientProvider>,
   )
   return { notify }
@@ -258,5 +258,38 @@ describe('Incidents view', () => {
     )
     await screen.findByText('oom-kill')
     expect(await axe(container)).toHaveNoViolations()
+  })
+})
+
+describe('Incidents view by role', () => {
+  // canOperate is undefined when auth is off (the shell treats that as operator).
+  const roles: [string, boolean | undefined, boolean][] = [
+    ['a participant', false, false],
+    ['an operator', true, true],
+    ['auth turned off', undefined, true],
+  ]
+
+  it.each(roles)('shows inject controls for %s: %s', async (_label, canOperate, shown) => {
+    serveIncidents(twoFaults)
+    renderIncidents(vi.fn(), canOperate)
+    await screen.findByText('oom-kill')
+    // Covers the library's Inject buttons and the idle banner's Inject random.
+    expect(screen.queryAllByRole('button', { name: /^Inject/ }).length > 0).toBe(shown)
+  })
+
+  it.each(roles)('shows the resolve control for %s: %s', async (_label, canOperate, shown) => {
+    serveIncidents({
+      faults: twoFaults.faults,
+      active: { fault: 'oom-kill', injectedAt: new Date().toISOString(), silent: false, hintsRevealed: 0 },
+    })
+    renderIncidents(vi.fn(), canOperate)
+    await screen.findByRole('button', { name: 'Check if resolved' })
+    expect(screen.queryByRole('button', { name: 'Resolve' }) !== null).toBe(shown)
+  })
+
+  it('tells a participant why there is no inject control', async () => {
+    serveIncidents(twoFaults)
+    renderIncidents(vi.fn(), false)
+    expect(await screen.findByText(/Only an operator can inject one/)).toBeInTheDocument()
   })
 })
