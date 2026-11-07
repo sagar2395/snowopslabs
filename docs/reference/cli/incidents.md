@@ -176,5 +176,7 @@ script output, and `GET /runs/{id}/logs` for its run answers `403 hidden_run`.
 `inject-random` picks among the faults eligible for the app named in `app`, and
 answers `409 no_eligible_fault` when there are none. A second inject while one
 is active answers `409 incident_active`; for a silent incident the message does
-not name it, and neither does `labctl incident inject`. `hint` and `resolve` answer
+not name it, and neither does `labctl incident inject`. With auth on, inject,
+`inject-random` and `resolve` are operator-only: a participant gets
+`403 forbidden_role`. Status and hints are open to participants. `hint` and `resolve` answer
 `409 no_active_incident` when nothing is injected.

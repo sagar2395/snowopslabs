@@ -102,8 +102,11 @@ enforces it only when started with `LABCTL_AUTH=true`. These commands edit
 PBKDF2-HMAC-SHA256 hashes still verify, so an existing file keeps working.
 
 Two roles: `operator` (full control) and `participant` (run challenges,
-incidents and learning paths, read status; cannot mutate platform, runtime, lab,
-apps or services).
+scenarios and learning paths, work an incident: check its status and reveal
+hints; read status). A participant cannot change the platform, runtime, lab,
+apps, services or traffic, and cannot inject an incident or end one with the
+escape hatch: the lab runs one incident for the whole team, so starting and
+ending it is the operator's.
 
 ```bash
 labctl users add alice --role operator --password 's3cret'

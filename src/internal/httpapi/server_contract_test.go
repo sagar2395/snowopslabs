@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -370,8 +371,11 @@ func TestContract_Auth(t *testing.T) {
 
 func TestContract_MutationsOutsideLearnerFlowsAreOperatorOnly(t *testing.T) {
 	// A participant drives scenarios, incidents, challenges and learning paths.
-	// Every other route that changes something is an operator's.
+	// Starting and ending the team's one incident is the facilitator's, so
+	// those routes are an operator's, as is every other route that changes
+	// something.
 	learner := []string{"/scenarios", "/incidents", "/challenges", "/learn"}
+	facilitator := []string{"/incidents/{name}/inject", "/incidents/inject-random", "/incidents/resolve"}
 	for _, row := range contract {
 		if row.method == http.MethodGet || strings.HasPrefix(row.route, "/auth/") {
 			continue
@@ -381,6 +385,9 @@ func TestContract_MutationsOutsideLearnerFlowsAreOperatorOnly(t *testing.T) {
 			if strings.HasPrefix(row.route, p) {
 				open = true
 			}
+		}
+		if slices.Contains(facilitator, row.route) {
+			open = false
 		}
 		if open == row.operatorOnly {
 			t.Errorf("%s: operatorOnly=%v, but a route %s the learner flows must be the opposite",

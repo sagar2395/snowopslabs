@@ -74,13 +74,13 @@ var contract = []contractRow{
 	{method: get, route: "/incidents", status: ok},
 	{method: get, route: "/incidents/status", status: ok},
 	{method: get, route: "/incidents/history", status: ok, prepare: playedLab},
-	{method: post, route: "/incidents/{name}/inject", path: "/incidents/demo-fault/inject?app=demo-app", status: ok,
+	{method: post, route: "/incidents/{name}/inject", path: "/incidents/demo-fault/inject?app=demo-app", status: ok, operatorOnly: true,
 		badPath: "/incidents/ghost/inject", problem: "not_found", code: http.StatusNotFound},
-	{method: post, route: "/incidents/inject-random", path: "/incidents/inject-random?app=demo-app&seed=1", status: ok,
+	{method: post, route: "/incidents/inject-random", path: "/incidents/inject-random?app=demo-app&seed=1", status: ok, operatorOnly: true,
 		badPath: "/incidents/inject-random?app=demo-app&category=storage", problem: "no_eligible_fault", code: http.StatusConflict},
 	{method: post, route: "/incidents/hint", status: ok, prepare: injectDemoFault,
 		problem: "no_active_incident", code: http.StatusConflict},
-	{method: post, route: "/incidents/resolve", status: ok, prepare: injectDemoFault,
+	{method: post, route: "/incidents/resolve", status: ok, operatorOnly: true, prepare: injectDemoFault,
 		problem: "no_active_incident", code: http.StatusConflict},
 
 	// ── lab snapshots ──
