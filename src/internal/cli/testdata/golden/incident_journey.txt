@@ -2,6 +2,35 @@ $ labctl incident list
 NAME         CATEGORY   SEVERITY   TARGET              STATUS
 demo-fault   workload   low        demo-app/demo-app
 
+$ labctl incident list -o json
+[
+  {
+    "name": "demo-fault",
+    "displayName": "Demo fault",
+    "description": "demo-app is broken",
+    "verified": false,
+    "category": "workload",
+    "severity": "low",
+    "target": {
+      "namespace": "demo-app",
+      "workload": "demo-app"
+    },
+    "prerequisites": {
+      "apps": [
+        "demo-app"
+      ]
+    },
+    "requirements": {},
+    "detection": {
+      "name": "marker-gone",
+      "type": "script",
+      "script": "checks/resolved.sh",
+      "timeoutSeconds": 5
+    },
+    "active": false
+  }
+]
+
 $ labctl incident info demo-fault
 Name:        demo-fault
 Display:     Demo fault
@@ -35,6 +64,35 @@ Next steps:
 $ labctl incident list
 NAME         CATEGORY   SEVERITY   TARGET              STATUS
 demo-fault   workload   low        demo-app/demo-app   ACTIVE
+
+$ labctl incident list -o json
+[
+  {
+    "name": "demo-fault",
+    "displayName": "Demo fault",
+    "description": "demo-app is broken",
+    "verified": false,
+    "category": "workload",
+    "severity": "low",
+    "target": {
+      "namespace": "demo-app",
+      "workload": "demo-app"
+    },
+    "prerequisites": {
+      "apps": [
+        "demo-app"
+      ]
+    },
+    "requirements": {},
+    "detection": {
+      "name": "marker-gone",
+      "type": "script",
+      "script": "checks/resolved.sh",
+      "timeoutSeconds": 5
+    },
+    "active": true
+  }
+]
 
 $ labctl incident status
 Incident:  demo-fault

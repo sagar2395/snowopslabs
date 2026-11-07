@@ -3,6 +3,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -80,6 +81,7 @@ func TestScenario_Journey(t *testing.T) {
 	}
 
 	ok("scenario", "list")
+	assertScenarioJSON(t, ok("scenario", "list", "--output", "json"), "drill", false)
 	ok("scenario", "info", "drill")
 	ok("scenario", "status")
 
@@ -88,6 +90,7 @@ func TestScenario_Journey(t *testing.T) {
 		t.Fatal("up reported success but did not run the scenario's setup")
 	}
 	ok("scenario", "list")
+	assertScenarioJSON(t, ok("scenario", "list", "-o", "json"), "drill", true)
 	ok("scenario", "status")
 	ok("scenario", "status", "drill")
 
@@ -354,6 +357,7 @@ func TestScenario_Failures(t *testing.T) {
 		{"render a file the scenario does not have", nil, []string{"scenario", "render", "drill", "manifests/ghost.yaml"}, "ghost.yaml"},
 		{"render a file outside the scenario", nil, []string{"scenario", "render", "drill", "../../.env"}, ".env"},
 		{"new with a name that is not a valid scenario name", nil, []string{"scenario", "new", "Bad Name"}, "Bad Name"},
+		{"list in a format that does not exist", nil, []string{"scenario", "list", "-o", "yaml"}, `unknown output format "yaml": use -o table or -o json`},
 		{"up when the app is not deployed",
 			func(_ *testing.T, l *terminal) { l.undeploy(labtest.App) },
 			[]string{"scenario", "up", "drill"}, "labctl app build demo-app && labctl app deploy demo-app"},
@@ -386,6 +390,29 @@ func TestScenario_Failures(t *testing.T) {
 			}
 		})
 	}
+}
+
+// assertScenarioJSON checks that `scenario list -o json` printed a JSON array
+// and nothing else, with name in it and its active state as want.
+func assertScenarioJSON(t *testing.T, r cliResult, name string, active bool) {
+	t.Helper()
+	var items []struct {
+		Name     string `json:"name"`
+		Category string `json:"category"`
+		Active   bool   `json:"active"`
+	}
+	if err := json.Unmarshal([]byte(r.stdout), &items); err != nil {
+		t.Fatalf("scenario list -o json is not a JSON array: %v\n%s", err, r.stdout)
+	}
+	for _, it := range items {
+		if it.Name == name {
+			if it.Active != active || it.Category == "" {
+				t.Errorf("scenario %s in JSON = %+v, want active=%v and a category", name, it, active)
+			}
+			return
+		}
+	}
+	t.Errorf("scenario list -o json does not list %s:\n%s", name, r.stdout)
 }
 
 // A scenario whose install fails is not left looking active.

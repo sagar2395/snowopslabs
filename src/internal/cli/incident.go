@@ -37,39 +37,69 @@ it with real tooling, fix it, and let the detection check confirm the fix.
 'labctl incident resolve' is the escape hatch that always restores the lab.`,
 }
 
-var incidentListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List available faults",
-	RunE: func(cmd *cobra.Command, args []string) error {
-		faults := incEng.List()
-		if len(faults) == 0 {
-			fmt.Println("No faults found in incidents/.")
-			return nil
-		}
-		active, _ := incEng.Active()
-		// A silent incident is not marked: that would name it.
-		hidden := active != nil && active.Silent
+func incidentListCmd() *cobra.Command {
+	var output string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List available faults",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runIncidentList(cmd.OutOrStdout(), cmd.ErrOrStderr(), output)
+		},
+	}
+	addOutputFlag(cmd, &output, outputTable, outputJSON)
+	return cmd
+}
 
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "NAME\tCATEGORY\tSEVERITY\tTARGET\tSTATUS")
-		for _, f := range faults {
-			status := ""
-			if active != nil && active.Fault == f.Name && !hidden {
-				status = "ACTIVE"
-			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s/%s\t%s\n",
-				f.Name, f.Category, f.Severity, f.Target.Namespace, f.Target.Workload, status)
-		}
-		_ = w.Flush()
-		if hidden {
-			fmt.Println("\nAn incident is active (hidden - silent mode). Check it with: labctl incident status")
-		}
+// faultListItem is one fault in `incident list -o json`: the fault as the API
+// serves it, and whether it is the active incident.
+type faultListItem struct {
+	*incident.Fault
+	Active bool `json:"active"`
+}
 
+// runIncidentList prints the fault catalog as a table, or with -o json as an
+// array. A silent incident is never marked active, since that would name it.
+func runIncidentList(out, errW io.Writer, output string) error {
+	if err := checkOutput(output, outputTable, outputJSON); err != nil {
+		return err
+	}
+	defer func() {
 		for key, err := range incEng.LoadErrors() {
-			fmt.Fprintf(os.Stderr, "Warning: fault %s failed to load: %v\n", key, err)
+			fmt.Fprintf(errW, "Warning: fault %s failed to load: %v\n", key, err)
 		}
+	}()
+	faults := incEng.List()
+	active, _ := incEng.Active()
+	hidden := active != nil && active.Silent
+	isActive := func(f *incident.Fault) bool { return active != nil && !hidden && active.Fault == f.Name }
+
+	if output == outputJSON {
+		items := make([]faultListItem, 0, len(faults))
+		for _, f := range faults {
+			items = append(items, faultListItem{Fault: f, Active: isActive(f)})
+		}
+		return writeJSON(out, items)
+	}
+
+	if len(faults) == 0 {
+		fmt.Fprintln(out, "No faults found in incidents/.")
 		return nil
-	},
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "NAME\tCATEGORY\tSEVERITY\tTARGET\tSTATUS")
+	for _, f := range faults {
+		status := ""
+		if isActive(f) {
+			status = "ACTIVE"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s/%s\t%s\n",
+			f.Name, f.Category, f.Severity, f.Target.Namespace, f.Target.Workload, status)
+	}
+	_ = w.Flush()
+	if hidden {
+		fmt.Fprintln(out, "\nAn incident is active (hidden - silent mode). Check it with: labctl incident status")
+	}
+	return nil
 }
 
 var incidentInjectCmd = &cobra.Command{
@@ -418,7 +448,7 @@ func init() {
 	incidentInjectCmd.Flags().Int64Var(&injectSeed, "seed", 0, "seed for --random (reproducible team exercises)")
 	incidentInjectCmd.Flags().StringVar(&injectCategory, "category", "", "restrict --random to a category (workload|network|resources|storage|config)")
 
-	incidentCmd.AddCommand(incidentListCmd)
+	incidentCmd.AddCommand(incidentListCmd())
 	incidentCmd.AddCommand(incidentInfoCmd)
 	incidentCmd.AddCommand(incidentInjectCmd)
 	incidentCmd.AddCommand(incidentStatusCmd)

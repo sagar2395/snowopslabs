@@ -7,6 +7,7 @@ check that confirms when you have actually fixed it. The fault contract is
 
 ```bash
 labctl incident list                          # browse the fault library
+labctl incident list -o json                  # the same as a JSON array, for scripts
 labctl incident info oom-kill                 # details, upstream references, applyable snippets
 labctl incident inject oom-kill               # break the lab on purpose
 labctl incident status                        # run the detection check
@@ -16,6 +17,12 @@ labctl incident history                       # past runs: time-to-check, MTTR, 
 labctl incident resolve                       # escape hatch: undo the active fault
 labctl incident resolve oom-kill              # works even if active state was lost
 ```
+
+`incident list -o json` (`--output json`) prints only a JSON array on stdout:
+each fault as `GET /api/v2/incidents` returns it (`name`, `displayName`,
+`description`, `category`, `severity`, `target`, `prerequisites`,
+`requirements`, `detection` and the rest of `fault.yaml`), plus `active`. A
+silently injected fault is never marked active. Load warnings go to stderr.
 
 ## Room to inject
 

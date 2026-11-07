@@ -9,11 +9,19 @@ what ships is [scenarios](../../scenarios.md).
 
 ```bash
 labctl scenario list                        # names, categories, active state
+labctl scenario list -o json                # the same as a JSON array, for scripts
 labctl scenario info observability-sre      # description, prerequisites, components, hints
 labctl scenario up observability-sre        # activate: install every declared component
 labctl scenario down observability-sre      # deactivate: remove them
 labctl scenario status                      # which scenarios are active
 ```
+
+`scenario list -o json` (`--output json`) prints only a JSON array on stdout,
+one object per scenario with the fields `GET /api/v2/scenarios` returns:
+`name`, `displayName`, `description`, `category`, `runtimes`, `active` and
+`app`. Load warnings go to stderr, so `labctl scenario list -o json | jq`
+works. The default, `-o table`, is the table above; any other value is an
+error that lists the two.
 
 `scenario info` on an active scenario describes it for the app it was activated
 with, so its manifests, snippets and commands name that app, not the default.
