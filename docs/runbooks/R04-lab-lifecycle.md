@@ -292,6 +292,27 @@ docker top k3d-snowops-agent-0 | grep /bin/k3s || docker restart k3d-snowops-age
 
 `kind` is not affected: its nodes run kubelet under systemd, which restarts it.
 
+### The inotify limit after a Docker VM restart
+
+A VM restart also puts `fs.inotify.max_user_instances` back at the VM's
+default (128 on colima). `runtimes/k3d/up.sh` raises it to 512, but a lab left
+running after the restart keeps the default, and a node's k3s later dies with
+`failed to create inotify fd: too many open files`. Its container stays `Up`,
+the node goes `NotReady`, its pods sit in `Terminating` and their replacements
+stay `Pending`.
+
+- Every labctl command that runs scripts against a k3d lab (lab, platform,
+  scenario, incident, traffic) raises the limit back to 512 before its scripts
+  run, and says so.
+- `labctl status` only reports: a limit below 512, and each node that is
+  `NotReady` while its container runs, naming "too many open files" when the
+  node's recent log holds it. It prints the recovery: the sysctl loop when the
+  limit is still low, then `docker restart <node>` for each such node.
+- `labctl doctor` adds a note when the limit is below 512.
+
+A node that died before the limit came back stays `NotReady` until its
+container restarts; raising the limit alone does not revive it.
+
 ---
 
 ## Sign-off

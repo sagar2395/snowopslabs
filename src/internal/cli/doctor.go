@@ -85,6 +85,9 @@ func runDoctor(ctx context.Context, out io.Writer, runner toolchain.Runner) erro
 		if note := memoryRequestsNote(ctx, runner, lab, docker.res); note != "" {
 			notes = append(notes, note)
 		}
+		if note := inotifyNote(ctx, runner, lab); note != "" {
+			notes = append(notes, note)
+		}
 	}
 	suffix, local := labDomain(lab, labErr)
 	if !local && !hostsBlockPresent() {
@@ -256,6 +259,25 @@ func memoryRequestsNote(ctx context.Context, runner toolchain.Runner, lab string
 	return fmt.Sprintf("The lab's pods ask for %s GB of memory, %d%% of Docker's %s GB. New pods may\n"+
 		"    not fit. Stop a scenario you are done with ('labctl scenario down <name>') first.",
 		formatMiB(requested), requested*100/engineMiB, formatMiB(engineMiB))
+}
+
+// inotifyNote warns when a k3d lab's fs.inotify.max_user_instances is back at
+// the Docker VM's default, as a VM restart leaves it. It only reports; the next
+// command that runs scripts against the lab raises it.
+func inotifyNote(ctx context.Context, runner toolchain.Runner, lab string) string {
+	cfg, err := config.Load(lab)
+	if err != nil || cfg.Profile != "k3d" {
+		return ""
+	}
+	label, _ := capacity.NodeLabel(cfg.Profile, cfg.ClusterName)
+	limit, err := capacity.InotifyLimit(ctx, runner, label)
+	if err != nil || limit == 0 || limit >= capacity.InotifyInstances {
+		return ""
+	}
+	return fmt.Sprintf("fs.inotify.max_user_instances is %d; the lab needs %d. A Docker VM restart\n"+
+		"    resets it, and k3s on a node then stops with \"too many open files\". The next\n"+
+		"    lab, platform, scenario, incident or traffic command raises it; 'labctl\n"+
+		"    status' lists nodes that need a restart.", limit, capacity.InotifyInstances)
 }
 
 // formatMiB formats MiB as GB with one decimal, the way doctor shows Docker's

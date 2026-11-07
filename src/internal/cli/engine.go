@@ -8,6 +8,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/sagar2395/snowopslabs/internal/capacity"
 	"github.com/sagar2395/snowopslabs/internal/inventory"
 	"github.com/sagar2395/snowopslabs/internal/run"
 	"github.com/sagar2395/snowopslabs/internal/store"
@@ -90,10 +91,36 @@ func scriptEnv() map[string]string {
 // verb names the operation in the start line and the failure message, e.g.
 // "lab up" or "install ingress/traefik".
 func runEngineOperation(ctx context.Context, out io.Writer, eng *run.Engine, st *store.Store, verb string, submit func() (string, error)) error {
-	if err := eng.Start(ctx); err != nil {
+	if err := startEngine(ctx, out, eng); err != nil {
 		return err
 	}
 	return streamSubmittedRun(ctx, out, st, verb, submit)
+}
+
+// startEngine puts a k3d lab's inotify limit back, then starts the engine.
+// Every command that runs scripts against the lab starts its engine here.
+func startEngine(ctx context.Context, out io.Writer, eng *run.Engine) error {
+	restoreInotifyLimit(ctx, out, toolchain.NewExec())
+	return eng.Start(ctx)
+}
+
+// restoreInotifyLimit raises fs.inotify.max_user_instances on a k3d lab's
+// nodes when it reads below what the lab needs. runtimes/k3d/up.sh sets it when
+// it creates the cluster, but a Docker VM restart puts the VM's default back,
+// and k3s on a node then dies with "too many open files" while its container
+// stays up (R04). A lab that is down or cannot be read is left alone.
+func restoreInotifyLimit(ctx context.Context, out io.Writer, runner toolchain.Runner) {
+	if cfg == nil || cfg.Profile != "k3d" || cfg.ClusterName == "" {
+		return
+	}
+	label, _ := capacity.NodeLabel(cfg.Profile, cfg.ClusterName)
+	limit, err := capacity.RaiseInotifyLimit(ctx, runner, label)
+	if err != nil || limit == 0 || limit >= capacity.InotifyInstances {
+		return
+	}
+	fmt.Fprintf(out, "Raised fs.inotify.max_user_instances from %d to %d on the lab's nodes; a Docker VM\n"+
+		"restart had reset it. A node that went NotReady meanwhile needs a restart: see 'labctl status'.\n\n",
+		limit, capacity.InotifyInstances)
 }
 
 // streamSubmittedRun submits one operation, streams its transcript to out, and
