@@ -2,7 +2,6 @@
   {
     "category": "workload",
     "fault": "demo-fault",
-    "firstCheckedAt": "<time>",
     "hintsUsed": 0,
     "injectedAt": "<time>",
     "resolveSeconds": 0,
