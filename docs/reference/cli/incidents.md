@@ -50,6 +50,9 @@ The UI asks the same question in its inject dialog.
 
 ## Game-day mode
 
+[Running a game day](../../game-day.md) is the guide to a team session: roles,
+sizing, the day before, rounds, rescue and review.
+
 ```bash
 labctl incident inject --random --silent      # surprise fault, name hidden
 labctl incident inject --random --seed 42     # reproducible pick for a whole team

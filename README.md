@@ -272,6 +272,7 @@ Everything else, by symptom: [Troubleshooting](docs/troubleshooting.md).
 | [Using the lab](docs/getting-started/using-the-lab.md) | Everyday commands, changing the lab, upgrading, configuration, uninstalling |
 | [Scenario catalog](docs/scenarios.md) | Every scenario, what it teaches and what it needs |
 | [Fault library](docs/incidents.md) | Every fault, what breaks and the challenges built on them |
+| [Running a game day](docs/game-day.md) | A team session on one shared lab: setup, rounds, rescue and review |
 | [Learning paths](learn/README.md) · [Challenges](challenges/README.md) | Guided modules, and timed graded runs |
 | [CLI reference](docs/reference/cli/index.md) | Every `labctl` command and flag |
 | [Resources](docs/resources.md) | How much CPU and memory each scenario needs |

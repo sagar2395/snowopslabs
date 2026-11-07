@@ -53,6 +53,7 @@ When troubleshooting a symptom or validating a specific subsystem, use this inde
 | A platform component fails to install, Helm upgrades fail, or charts conflict | [R05 - Platform components](R05-platform-components.md) | Idempotent platform component installation, Helm upgrade strategies for immutable specs, and service health checks. |
 | I want to practice manual image rollouts and promotion across dev, staging, and prod | [R06 - Multi-env promotion](R06-multi-env-promotion.md) | Multi-namespace delivery pipeline, manual image promotion via `kubectl`, and automated outcome grading. |
 | Dashboards have no data, Loki logs are empty, or traces are missing | [R13 - Observability pipeline](R13-observability-pipeline.md) | End-to-end metrics, logs, and trace telemetry flow for `go-api`, plus Grafana, Loki, and Tempo correlation. |
+| I am preparing a team game day, or a round misbehaves | [R07 - Game day](R07-game-day.md) | Silent rounds, credit for the fix, the page, a rescued round and a review scoped to the session. |
 | People need to reach one lab over the network | [R11 - Team server](R11-team-server.md) | Auth and HTTPS on a network bind, three logins, sessions across a restart, and a participant kubeconfig. |
 | A first-time user is installing a release on fresh macOS or WSL2 | [R14 - Fresh-machine onboarding](R14-fresh-machine-onboarding.md) | First-time user onboarding on fresh macOS and WSL2 following only the public README. |
 
@@ -69,7 +70,7 @@ Runbooks are written as their wave is implemented.
 | R04 | [Lab lifecycle reliability](R04-lab-lifecycle.md) | W3 | **ready** (reliability slice) |
 | R05 | [Platform components](R05-platform-components.md) | W3 | **ready** (durable service slice) |
 | R06 | [Multi-env promotion](R06-multi-env-promotion.md) | W4 | **ready** |
-| R07 | Game day & incidents | W4 | planned |
+| R07 | [Game day](R07-game-day.md) | W4 | **ready** |
 | R08 | API & security | W5 | planned |
 | R09 | UI operational walkthrough | W6 | planned |
 | R10 | Learning & assessment | W7 | planned |
