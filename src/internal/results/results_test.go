@@ -3,6 +3,8 @@
 package results
 
 import (
+	"os"
+	"slices"
 	"testing"
 	"time"
 )
@@ -212,5 +214,53 @@ func TestComparisonRecordRoundTrip(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Workload != "go-api" {
 		t.Fatalf("round trip lost the workload: %+v", got)
+	}
+}
+
+// Read skips a damaged line and reports its number, instead of dropping it
+// without a word.
+func TestRead_ReportsDamagedLines(t *testing.T) {
+	tests := []struct {
+		name        string
+		content     string
+		wantNames   []string
+		wantDamaged []int
+	}{
+		{"no file", "", nil, nil},
+		{"all valid", `{"kind":"incident","name":"a"}` + "\n" + `{"kind":"incident","name":"b"}` + "\n", []string{"a", "b"}, nil},
+		{"a truncated line in the middle", `{"kind":"incident","name":"a"}` + "\n" + `{"kind":"inc` + "\n" + `{"kind":"incident","name":"b"}` + "\n", []string{"a", "b"}, []int{2}},
+		{"blank lines are not damage", "\n" + `{"kind":"incident","name":"a"}` + "\n\n" + `not json` + "\n", []string{"a"}, []int{4}},
+		{"a line with the wrong types", `{"kind":"incident","name":7}` + "\n", nil, []int{1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := makeStore(t)
+			if tt.content != "" {
+				if err := os.WriteFile(s.Path(), []byte(tt.content), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			recs, damaged, err := s.Read()
+			if err != nil {
+				t.Fatalf("Read: %v", err)
+			}
+			var names []string
+			for _, r := range recs {
+				names = append(names, r.Name)
+			}
+			if !slices.Equal(names, tt.wantNames) || !slices.Equal(damaged, tt.wantDamaged) {
+				t.Errorf("Read = %v, damaged %v; want %v, damaged %v", names, damaged, tt.wantNames, tt.wantDamaged)
+			}
+		})
+	}
+}
+
+func TestRead_UnreadableFile(t *testing.T) {
+	s := NewStore(t.TempDir())
+	if err := os.Mkdir(s.Path(), 0o700); err != nil { // a directory where the file should be
+		t.Fatal(err)
+	}
+	if _, _, err := s.Read(); err == nil {
+		t.Error("Read of an unreadable results file returned no error")
 	}
 }

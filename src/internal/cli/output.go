@@ -14,8 +14,11 @@ import (
 
 // Output formats a command can print with -o.
 const (
-	outputTable = "table"
-	outputJSON  = "json"
+	outputTable    = "table"
+	outputJSON     = "json"
+	outputCSV      = "csv"
+	outputMarkdown = "markdown"
+	outputSVG      = "svg"
 )
 
 // addOutputFlag registers -o/--output on cmd, defaulting to the first of

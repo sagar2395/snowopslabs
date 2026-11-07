@@ -82,8 +82,74 @@ labctl incident inject --random --category network
   `resolve.sh` as a recorded resolve. That removes the armed alert rule and the
   `labfault-*` bookkeeping a fix leaves behind; the run still counts as solved.
 - Each run is appended to `~/.snowops/state/<cluster>/history/results.jsonl` with MTTR, hints
-  used, and whether it was resolved manually or via `resolve`. The escape hatch
+  used, and whether it was resolved manually or via `resolve`
+  ([recorded results](#recorded-results)). The escape hatch
   counts as a non-completion for challenge scoring.
+
+## Recorded results
+
+Every finished incident, challenge, scenario verification, learning module and
+comparison is a line in `~/.snowops/state/<cluster>/history/results.jsonl`.
+The file's own format is internal; `labctl results export` is the supported
+way to read it.
+
+```bash
+labctl results export > results.json                       # every run, as JSON
+labctl results export --kind incident --since 2026-11-01 -o csv > game-day.csv
+labctl results export --since 4h -o csv                    # runs that started in the last 4 hours
+labctl results card                                        # Markdown card for your latest run
+labctl results card oom-kill --by "Team Blue" -o svg > card.svg
+```
+
+### `labctl results export`
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `-o`, `--output` | `json` | `json` (an array) or `csv` (a header row, then one row per run) |
+| `--kind` | all | `incident`, `challenge`, `scenario`, `module` or `comparison` |
+| `--since` | - | runs that started at or after this: a date (`2026-11-01`, local midnight), an RFC 3339 time, or a duration back from now (`4h`) |
+| `--until` | - | runs that started before this, in the same forms |
+
+Runs come out oldest first. Each has these fields, in this order in the CSV.
+Fields may be added in a later release; none is renamed or removed.
+
+| Field | Meaning |
+|---|---|
+| `kind` | `incident`, `challenge`, `scenario`, `module` or `comparison` |
+| `name` | the fault, challenge or scenario; `<path>/<module>` for a module |
+| `user` | who ran it: the logged-in user under `LABCTL_AUTH`, otherwise the OS user (`unknown` when neither is known) |
+| `workload` | the app it ran against, when recorded |
+| `startedAt`, `endedAt` | RFC 3339, UTC |
+| `elapsedSeconds` | wall-clock seconds; for an incident, time to resolve |
+| `hintsUsed` | hints revealed |
+| `score` | 0-100, or `null` in JSON and empty in CSV for a run that is not scored, such as an incident outside a challenge |
+| `outcome` | as recorded: `resolved` or `auto-resolved` for an incident, `passed`, `failed` or `aborted` for a challenge, `passed` or `failed` for a scenario, `completed` for a module, `measured` for a comparison |
+| `resolvedBy` | for an incident, `fix` (the detection check passed after your fix) or `escape-hatch` (`labctl incident resolve` put the lab back); empty for other kinds |
+
+A history line that is not a valid record is skipped, and stderr names the
+file and the line numbers, so the export on stdout is still parseable. A CSV
+text value that starts with `=`, `+`, `-` or `@` gets a leading `'`, so a
+spreadsheet does not run it as a formula.
+
+### `labctl results card`
+
+Prints a card for the most recent incident, challenge or scenario run, or the
+most recent run of the name given, as Markdown (`-o markdown`, the default) or
+an SVG image (`-o svg`). It is made on your machine and nothing is uploaded.
+
+The card shows the run, the time to resolve and hints used (for an incident),
+the score (for a challenge) or checks passed (for a scenario), how it ended
+and the date. An incident ended with `labctl incident resolve` says
+`escape hatch` instead of claiming a fix. Every card, in both formats, ends
+with:
+
+> Self-reported: recorded on a personal lab and not verified by the SnowOps
+> Labs project.
+
+The history is a local file anyone can edit, so the card never suggests the
+project checked it. It carries no user, app, cluster, host or path; `--by`
+adds a name of your choosing. `--kind` limits it to `incident`, `challenge` or
+`scenario`.
 
 ## On-call drills
 

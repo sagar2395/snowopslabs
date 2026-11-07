@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/sagar2395/snowopslabs/internal/results"
 )
 
 func TestParseHints(t *testing.T) {
@@ -184,5 +185,45 @@ func TestHistory_SkipsCorruptLines(t *testing.T) {
 	recs, err := e.History()
 	if err != nil || len(recs) != 1 {
 		t.Fatalf("corrupt lines must be skipped: %v, %d records", err, len(recs))
+	}
+}
+
+// The outcome an incident run records is what `labctl results export` and the
+// result card read to tell a fix from the escape hatch.
+func TestHistory_OutcomeTellsAFixFromTheEscapeHatch(t *testing.T) {
+	tests := []struct {
+		name           string
+		end            func(t *testing.T, e *Engine, root string)
+		wantOutcome    string
+		wantResolvedBy string
+	}{
+		{"the detection check passes after a fix", func(t *testing.T, e *Engine, root string) {
+			os.Remove(filepath.Join(root, "incidents", "fault-a", "BROKEN"))
+			if res, err := e.Status(context.Background(), testRunner(), ""); err != nil || !res.Resolved {
+				t.Fatalf("status after the fix: %v %+v", err, res)
+			}
+		}, results.OutcomeResolved, results.ResolvedByFix},
+		{"the escape hatch puts the lab back", func(t *testing.T, e *Engine, root string) {
+			if _, err := e.Resolve("", executor.New(root), ""); err != nil {
+				t.Fatal(err)
+			}
+		}, results.OutcomeAutoResolved, results.ResolvedByEscapeHatch},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e, root := testEngine(t, "fault-a")
+			if _, err := e.Inject("fault-a", executor.New(root), false, false); err != nil {
+				t.Fatal(err)
+			}
+			tt.end(t, e, root)
+			recs, err := e.resultsStore().ByKind(results.KindIncident)
+			if err != nil || len(recs) != 1 {
+				t.Fatalf("results: %v, %d records", err, len(recs))
+			}
+			rows := results.Export(recs, results.ExportFilter{})
+			if recs[0].Outcome != tt.wantOutcome || rows[0].ResolvedBy != tt.wantResolvedBy {
+				t.Errorf("outcome %q exported as %q; want %q, %q", recs[0].Outcome, rows[0].ResolvedBy, tt.wantOutcome, tt.wantResolvedBy)
+			}
+		})
 	}
 }
