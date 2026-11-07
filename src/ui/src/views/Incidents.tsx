@@ -22,6 +22,8 @@ import type { ConfirmRequest } from '../components/ConfirmDialog'
 interface IncidentsProps {
   notify: NotifyFn
   requestConfirm: (req: ConfirmRequest) => void
+  /** False for a participant: inject and resolve controls are hidden. The server still refuses them. */
+  canOperate?: boolean
 }
 
 const SEVERITY_VARIANT: Record<string, 'stopped' | 'category' | 'runtime'> = {
@@ -55,7 +57,7 @@ function relTime(iso?: string) {
   return `${Math.floor(m / 60)}h ${m % 60}m ago`
 }
 
-export function Incidents({ notify, requestConfirm }: IncidentsProps) {
+export function Incidents({ notify, requestConfirm, canOperate = true }: IncidentsProps) {
   const { data, loading, loaded, loadError, refreshing, reload: load } =
     useApiQuery(qk.incidents, api.listIncidents)
   const faults = data?.faults ?? []
@@ -286,9 +288,11 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
                 <Icon name="lightbulb" size={14} />
                 {busy === 'hint' ? 'Revealing…' : hintsExhausted ? 'No more hints' : hints.length > 0 ? 'Reveal next hint' : 'Reveal a hint'}
               </button>
-              <button className="btn btn-sm btn-primary" onClick={resolve} disabled={!!busy || checking}>
-                {busy === 'resolve' ? 'Resolving…' : 'Resolve'}
-              </button>
+              {canOperate && (
+                <button className="btn btn-sm btn-primary" onClick={resolve} disabled={!!busy || checking}>
+                  {busy === 'resolve' ? 'Resolving…' : 'Resolve'}
+                </button>
+              )}
               <span className="hint-text">Hints cost score when the fault is run as a challenge.</span>
             </div>
           </div>
@@ -296,12 +300,18 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
       ) : (
         <div className="banner banner-info" role="note">
           <Icon name="info" size={16} className="banner-icon" />
-          <span className="banner-body">No active incident. Inject one below to start diagnosing - or let the lab surprise you.</span>
-          <span className="banner-actions">
-            <button className="btn btn-sm" onClick={injectRandom} disabled={busy === 'inject:random'}>
-              {busy === 'inject:random' ? 'Injecting…' : (<><Icon name="zap" size={14} />Inject random</>)}
-            </button>
+          <span className="banner-body">
+            {canOperate
+              ? 'No active incident. Inject one below to start diagnosing - or let the lab surprise you.'
+              : 'No active incident. Only an operator can inject one.'}
           </span>
+          {canOperate && (
+            <span className="banner-actions">
+              <button className="btn btn-sm" onClick={injectRandom} disabled={busy === 'inject:random'}>
+                {busy === 'inject:random' ? 'Injecting…' : (<><Icon name="zap" size={14} />Inject random</>)}
+              </button>
+            </span>
+          )}
         </div>
       )}
 
@@ -362,14 +372,16 @@ export function Incidents({ notify, requestConfirm }: IncidentsProps) {
                   </div>
                   {isActive && <Badge variant="running">Active</Badge>}
                   <div className="scenario-actions">
-                    <button
-                      className="btn btn-sm btn-primary"
-                      disabled={!!active || busy === `inject:${f.name}`}
-                      title={active ? 'Resolve the active incident first' : undefined}
-                      onClick={() => confirmInject(f)}
-                    >
-                      {busy === `inject:${f.name}` ? 'Injecting…' : (<><Icon name="zap" size={14} />Inject</>)}
-                    </button>
+                    {canOperate && (
+                      <button
+                        className="btn btn-sm btn-primary"
+                        disabled={!!active || busy === `inject:${f.name}`}
+                        title={active ? 'Resolve the active incident first' : undefined}
+                        onClick={() => confirmInject(f)}
+                      >
+                        {busy === `inject:${f.name}` ? 'Injecting…' : (<><Icon name="zap" size={14} />Inject</>)}
+                      </button>
+                    )}
                     <button className="btn btn-sm" onClick={() => setDetail(f)}>Details</button>
                   </div>
                 </div>

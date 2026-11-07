@@ -76,6 +76,8 @@ export type AppOutletContext = {
   requestConfirm: (req: ConfirmRequest) => void
   liveCluster: ClusterInfo | null
   lastStatusAt: number | null
+  /** False for a participant on an auth-enabled lab; operator-only controls are hidden. */
+  canOperate: boolean
 }
 
 /** Views pull the shared app state from the router outlet. */
@@ -337,7 +339,8 @@ function AppLayout({ auth, onLogout }: { auth: AuthStatus; onLogout: () => void 
   const current = location.pathname.replace(/^\//, '') || 'dashboard'
   const pageTitle = NAV.find(n => n.path === current)?.label ?? 'SnowOps Labs'
 
-  const ctx: AppOutletContext = { notify, requestConfirm: setConfirm, liveCluster, lastStatusAt }
+  const canOperate = !auth.authEnabled || auth.role === 'operator'
+  const ctx: AppOutletContext = { notify, requestConfirm: setConfirm, liveCluster, lastStatusAt, canOperate }
 
   return (
     <div className="app-shell">
@@ -509,8 +512,8 @@ function ScenariosRoute() {
   return <Scenarios notify={notify} requestConfirm={requestConfirm} />
 }
 function IncidentsRoute() {
-  const { notify, requestConfirm } = useApp()
-  return <Incidents notify={notify} requestConfirm={requestConfirm} />
+  const { notify, requestConfirm, canOperate } = useApp()
+  return <Incidents notify={notify} requestConfirm={requestConfirm} canOperate={canOperate} />
 }
 function PlatformRoute() {
   const { notify, requestConfirm, liveCluster } = useApp()
