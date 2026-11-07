@@ -12,7 +12,8 @@ review that shows only the session.
 
 ## Preconditions
 
-- R11 passed and its server is running, with `facilitator`, `alice` and `bob`.
+- R11 passed and its server is running, with its `<facilitator>`,
+  `<participant-1>` and `<participant-2>` accounts.
 - `team.kubeconfig` on a participant machine.
 
 ## Steps
@@ -41,30 +42,32 @@ API and from `labctl incident inject <any fault>`.
 **Expect:** `409` and exit 1, each saying the incident was injected silently
 and is not named.
 
-**4. Fix and credit.** As `bob`, reveal a hint. As `alice`, fix the fault with
+**4. Fix and credit.** As `<participant-2>`, reveal a hint. As
+`<participant-1>`, fix the fault with
 `kubectl` and press **Check if resolved**.
 
 **Expect:** the check passes and names the fault. `labctl results export --kind
-incident` has a row for it with `user` `alice`, `hintsUsed` `1`,
-`resolvedBy` `fix` and `workload` `go-api`. `kubectl get prometheusrule -A`
+incident` has a row for it with `user` `<participant-1>`, `hintsUsed` `1`,
+`resolvedBy` `fix` and `workload` set to the lab's app (`APP_NAME`, `go-api`
+by default). `kubectl get prometheusrule -A`
 lists no `labfault` rule.
 
 **5. The page.** ⚠️ Inject `service-selector-broken --silent`. Watch
 `kubectl -n pager logs deploy/pager -f | grep ^PAGE`.
 
 **Expect:** a `firing` page within about three minutes, naming
-`LabFaultServiceEndpointsEmpty` and the `go-api` namespace, and not the fault.
+`LabFaultServiceEndpointsEmpty` and the app's namespace, and not the fault.
 
 **6. Rescue.** Leave it unfixed. As the facilitator, press **Resolve** in the UI.
 
-**Expect:** the lab is put back (`kubectl -n go-api get endpointslices` lists an
+**Expect:** the lab is put back (`kubectl -n <app> get endpointslices` lists an
 address), and the round's export row has `resolvedBy` `escape-hatch`.
 
 **7. Review.** In the UI, open Leaderboard and choose **Last 4 hours**. Run the
 guide's export and `labctl results card` commands.
 
-**Expect:** the board lists only the people who played. `alice` has 1 incident
-and the round's time as Avg MTTR; the facilitator, credited with the rescued
+**Expect:** the board lists only the people who played. `<participant-1>` has
+1 incident and the round's time as Avg MTTR; the facilitator, credited with the rescued
 round, has 0 incidents and no MTTR. The card for the rescued round says
 `Time before it ended` and `escape hatch`, and every card ends with the
 self-reported line.

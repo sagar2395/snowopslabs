@@ -41,7 +41,8 @@ exports afterwards.
 ## Size the machine
 
 The lab machine runs the cluster, the monitoring stack and the app the faults
-break. `labctl doctor` prints what Docker has.
+break: the one `APP_NAME` names in `.env` (`go-api` by default), written
+`<app>` below. `labctl doctor` prints what Docker has.
 
 | Docker size | Game day |
 |---|---|
@@ -61,7 +62,7 @@ On the lab machine, as the facilitator:
 labctl init                                    # bring the lab up, or back after a restart
 labctl doctor                                  # tools and Docker size
 labctl status                                  # cluster, platform and apps healthy
-labctl app build go-api && labctl app deploy go-api   # only if status lists go-api as not deployed
+labctl app build <app> && labctl app deploy <app>    # only if status lists the app as not deployed
 labctl service up pager                        # the in-cluster pager the alerts page
 ```
 
@@ -118,7 +119,7 @@ Send each person, before the session:
 
 At the start, tell them how a round runs:
 
-- The fault is somewhere in the `go-api` app and what serves it. Fix it the way
+- The fault is somewhere in the app the lab runs and what serves it. Fix it the way
   you would in production; the lab only checks the result.
 - Press **Check if resolved** when you think it is fixed. The person whose check
   first passes is credited with the fix.
@@ -157,7 +158,7 @@ At the start, tell them how a round runs:
 | Time is up | `labctl incident resolve` on the lab machine, or **Resolve** in the UI as the facilitator. The lab is put back, and the round is recorded as ended with the escape hatch: it counts as resolved for nobody and adds to nobody's time |
 | The team fixed it but the check still fails | The check is right more often than not: hiding a symptom does not pass. Use a hint, or end the round and look at the check in the review |
 | `incident status` says no incident is active, but the lab is still broken | `labctl incident resolve <fault>` restores it without the active record. You chose the fault, so you know its name; for a random pick, `labctl results export --kind incident` names it once it has ended |
-| The app is broken in a way the fault did not cause | `labctl app deploy go-api` |
+| The app is broken in a way the fault did not cause | `labctl app deploy <app>` |
 | A command reports a run already holds the lock | [Recovering a stuck run](troubleshooting.md#recovering-a-stuck-run) |
 | The cluster stops answering | `labctl init`, which restarts it and keeps the apps. `labctl reset` rebuilds it from scratch and loses everything; save it for the end |
 
@@ -175,10 +176,12 @@ faults a person fixed, and **Avg MTTR** is their average time to resolve; a
 round ended with the escape hatch counts in neither. A round's hints count for
 the person credited with it, not for whoever revealed them.
 
-**Every round.** Export what was recorded since the session started:
+**Every round.** Export what was recorded since the session started, giving
+the start as an RFC 3339 time such as `2026-11-07T09:00:00Z`, or as a
+duration such as `4h`:
 
 ```bash
-labctl results export --kind incident --since 2026-11-07T09:00:00Z -o csv > game-day.csv
+labctl results export --kind incident --since <session start> -o csv > game-day.csv
 ```
 
 Each row has the fault, who was credited, `elapsedSeconds` from inject to fix,
@@ -209,7 +212,7 @@ Stop `labctl ui` with Ctrl-C first: a removed user keeps their session until
 the server restarts. Then:
 
 ```bash
-labctl users remove alice                      # each participant
+labctl users remove <participant>              # once per participant
 labctl service down pager
 ```
 

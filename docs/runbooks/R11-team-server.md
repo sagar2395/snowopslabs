@@ -13,21 +13,25 @@ kubeconfig work for someone else.
 
 ## Preconditions
 
-- A lab that `labctl status` reports healthy, with `go-api` deployed.
+- A lab that `labctl status` reports healthy, with its app (`APP_NAME`,
+  `go-api` by default) deployed.
 - A second machine on the same network, or this machine using its own LAN
   address in place of `localhost`.
 - `jq`, `openssl` and `curl`.
 
 ## Steps
 
-**1. Add three people.** Follow step 1 of the guide. For a scripted run, set the
-password in `LABCTL_PASSWORD` for each `users add`.
+**1. Add three people.** Follow step 1 of the guide with one operator and two
+participants. This runbook calls them `<facilitator>`, `<participant-1>` and
+`<participant-2>`; use any names. For a scripted run, set the password in
+`LABCTL_PASSWORD` for each `users add`.
 
 ```bash
 $ labctl users list
 ```
 
-**Expect:** `facilitator` as `operator`, `alice` and `bob` as `participant`.
+**Expect:** `<facilitator>` as `operator`, the two participants as
+`participant`.
 
 **2. Refuse the network without auth.** 🔍
 
@@ -71,7 +75,8 @@ again with the same command. Repeat `auth/me` with the cookies from step 5.
 authenticated. After `POST /api/v2/auth/logout` with one cookie, that cookie
 answers `"authenticated":false`.
 
-**7. Participants cannot start or end the incident.** As `bob`:
+**7. Participants cannot start or end the incident.** With
+`<participant-2>`'s cookies:
 
 ```bash
 $ curl -s --cacert server.crt -b cookies -X POST https://<LAN address>:3939/api/v2/incidents/inject-random
@@ -108,9 +113,9 @@ kubeconfig.
 ## Teardown
 
 ```bash
-$ labctl users remove alice
-$ labctl users remove bob
-$ labctl users remove facilitator
+$ labctl users remove <participant-1>
+$ labctl users remove <participant-2>
+$ labctl users remove <facilitator>
 ```
 
 Stop the server with Ctrl-C and delete `team.kubeconfig` and `server.crt` from

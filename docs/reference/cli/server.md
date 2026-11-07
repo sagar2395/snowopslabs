@@ -109,11 +109,11 @@ escape hatch: the lab runs one incident for the whole team, so starting and
 ending it is the operator's.
 
 ```bash
-labctl users add alice --role operator --password 's3cret'
-labctl users add bob   --role participant                      # prompts for the password
-LABCTL_PASSWORD='pw' labctl users add carol --role participant # scripted
-labctl users list                                              # names and roles, never hashes
-labctl users remove bob
+labctl users add <name> --role operator --password '<password>'
+labctl users add <name> --role participant                         # prompts for the password
+LABCTL_PASSWORD='<password>' labctl users add <name> --role participant # scripted
+labctl users list                                                  # names and roles, never hashes
+labctl users remove <name>
 ```
 
 Password precedence for `users add`: `--password`, then `LABCTL_PASSWORD`, then
@@ -159,13 +159,14 @@ SnowOps Labs ships no container image or Helm chart for `labctl` itself; the
 `incluster` [runtime profile](../../runtime-profiles.md) points the lab at a
 cluster you already have, but `labctl` still runs on a machine, as here.
 
-**1. Add the people.** Run on the lab machine. Each command asks for the
-password; share it with that person out of band.
+**1. Add the people.** Run on the lab machine: one `operator` account for
+the facilitator, and one `participant` account per person, each under the
+name they will log in with. Each command asks for the password; share it with
+that person out of band.
 
 ```bash
-labctl users add facilitator --role operator
-labctl users add alice --role participant
-labctl users add bob --role participant
+labctl users add <facilitator> --role operator
+labctl users add <participant> --role participant   # once per participant
 labctl users list
 ```
 
@@ -182,12 +183,15 @@ It prints a URL for each of the machine's addresses and the certificate's
 SHA-256 fingerprint:
 
 ```
-Starting labctl web UI at https://192.168.29.136:3939
+Starting labctl web UI at https://192.0.2.10:3939
   also at https://localhost:3939
-HTTPS uses a self-signed certificate (~/.snowops/state/snowops/tls/server.crt), valid until 2027-02-05.
+HTTPS uses a self-signed certificate (~/.snowops/state/<cluster>/tls/server.crt), valid until 2027-02-05.
 Browsers warn the first time; accept only if the certificate's SHA-256 fingerprint is:
   5C:1E:...:9A
 ```
+
+`192.0.2.10` stands for the lab machine's address on your network; the first
+URL is the one to send.
 
 Send people the first URL and the fingerprint. Their browser warns about the
 certificate once; they compare the fingerprint in the certificate details and
@@ -198,13 +202,16 @@ command under `tmux` or `nohup`: the server stops when it exits.
 **3. Give people `kubectl`.** The k3d cluster's API listens on every interface
 of the lab machine, but its certificate does not name the machine's address,
 so the kubeconfig names the address and checks the certificate against
-`kubernetes`, a name it does carry. With the lab machine's address in `IP`:
+`kubernetes`, a name it does carry. Set `IP` to the address in the first URL
+`labctl ui` printed, and `CLUSTER` to the lab's `CLUSTER_NAME` (`snowops`
+unless you changed it):
 
 ```bash
-IP=192.168.29.136
-k3d kubeconfig get snowops > team.kubeconfig
+IP=<lab machine address>
+CLUSTER=<cluster name>
+k3d kubeconfig get "$CLUSTER" > team.kubeconfig
 PORT=$(kubectl --kubeconfig team.kubeconfig config view -o jsonpath='{.clusters[0].cluster.server}' | sed 's/.*://')
-kubectl --kubeconfig team.kubeconfig config set-cluster k3d-snowops --server "https://$IP:$PORT" --tls-server-name kubernetes
+kubectl --kubeconfig team.kubeconfig config set-cluster "k3d-$CLUSTER" --server "https://$IP:$PORT" --tls-server-name kubernetes
 kubectl --kubeconfig team.kubeconfig get nodes
 ```
 
@@ -213,7 +220,7 @@ credentials, so treat it like a password and delete it after the session.
 Each participant runs `export KUBECONFIG=$PWD/team.kubeconfig`.
 
 **4. Dashboards.** Lab hostnames end in `.localhost`, which every browser
-resolves to its own machine, so `grafana.snowops.localhost` works only on the
+resolves to its own machine, so `grafana.<cluster>.localhost` works only on the
 lab machine. Participants reach Grafana and Prometheus with `kubectl
 port-forward` instead:
 
@@ -235,11 +242,11 @@ machine so `curl` verifies it:
 
 ```bash
 curl -s --cacert server.crt -c cookies -H 'Content-Type: application/json' \
-  -d '{"username":"alice","password":"<alice password>"}' https://192.168.29.136:3939/api/v2/auth/login
-curl -s --cacert server.crt -b cookies https://192.168.29.136:3939/api/v2/auth/me
+  -d '{"username":"<name>","password":"<password>"}' https://<lab machine address>:3939/api/v2/auth/login
+curl -s --cacert server.crt -b cookies https://<lab machine address>:3939/api/v2/auth/me
 ```
 
-`auth/me` answers `{"authEnabled":true,"authenticated":true,"user":"alice","role":"participant"}`.
+`auth/me` answers `{"authEnabled":true,"authenticated":true,"user":"<name>","role":"participant"}`.
 
 **Stopping.** Ctrl-C stops the server. `labctl users remove <name>` and a
 restart end a person's access to the UI; deleting `team.kubeconfig` from every
