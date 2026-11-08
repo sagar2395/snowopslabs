@@ -202,7 +202,7 @@ type Status struct {
 	Scenario string    `json:"scenario"`
 	State    State     `json:"state"`
 	RunID    string    `json:"runId,omitempty"`
-	Since    time.Time `json:"since,omitempty"`
+	Since    time.Time `json:"since,omitzero"`
 }
 
 // Status reads a scenario's state from the store without contacting the

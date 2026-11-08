@@ -19,7 +19,7 @@ import (
 type AlertStatus struct {
 	Expected string    `json:"expected"`
 	Fired    bool      `json:"fired"`
-	Since    time.Time `json:"since,omitempty"`
+	Since    time.Time `json:"since,omitzero"`
 	Error    string    `json:"error,omitempty"` // query problems are reported, never fatal
 }
 

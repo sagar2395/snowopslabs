@@ -147,7 +147,7 @@ type Status struct {
 	State State     `json:"state"`
 	Fault string    `json:"fault,omitempty"` // the fault the deciding run acted on
 	RunID string    `json:"runId,omitempty"`
-	Since time.Time `json:"since,omitempty"`
+	Since time.Time `json:"since,omitzero"`
 }
 
 // Status reads the incident state from the store without contacting the

@@ -153,7 +153,7 @@ type Active struct {
 	HintsRevealed int       `yaml:"hintsRevealed" json:"hintsRevealed"`
 	// FirstCheckedAt is when `incident status` first ran. The run record uses
 	// it as the time the problem was detected.
-	FirstCheckedAt time.Time `yaml:"firstCheckedAt,omitempty" json:"firstCheckedAt,omitempty"`
+	FirstCheckedAt time.Time `yaml:"firstCheckedAt,omitempty" json:"firstCheckedAt,omitzero"`
 	// App is the workload the fault was injected into. Status and Resolve
 	// usually run in a later process than Inject, so they read the app from
 	// here rather than from the current configuration.
