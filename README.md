@@ -197,7 +197,8 @@ cd snowopslabs
 `~/.local/bin`, verifies its checksum and needs no sudo. It also records where
 your clone is, so `labctl` works from any directory. If `~/.local/bin` is not
 on your `PATH` yet, it prints one command that adds it to the right startup
-file for your shell.
+file for your shell. To enable shell tab-completion, see
+[Shell completion](docs/reference/cli/index.md#shell-completion).
 
 On Windows, clone inside WSL2, in your Linux home (`cd ~`), not under `/mnt/c`.
 
