@@ -53,9 +53,19 @@ export class ApiError extends Error {
   }
 }
 
+/** RequestTimeoutError is a request the client stopped waiting for. The server
+ *  may still be working on it, so a caller that asked for a change can check
+ *  whether it happened instead of reporting a failure. */
+export class RequestTimeoutError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RequestTimeoutError'
+  }
+}
+
 /** Generic fetch wrapper - throws Error with a useful message on every
  *  failure mode: network down, timeout, HTTP error body, malformed JSON. An
- *  error status is thrown as an ApiError. */
+ *  error status is thrown as an ApiError, a timeout as a RequestTimeoutError. */
 async function req<T>(path: string, opts?: RequestInit, timeoutMs = GET_TIMEOUT_MS): Promise<T> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), timeoutMs)
@@ -65,7 +75,7 @@ async function req<T>(path: string, opts?: RequestInit, timeoutMs = GET_TIMEOUT_
     res = await fetch(BASE + path, { ...opts, signal: ctrl.signal })
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
-      throw new Error(`Request timed out after ${Math.round(timeoutMs / 1000)}s - the server may be busy or stuck`)
+      throw new RequestTimeoutError(`Request timed out after ${Math.round(timeoutMs / 1000)}s - the server may be busy or stuck`)
     }
     // fetch() rejects with TypeError when the server is unreachable
     throw new Error('Cannot reach the labctl server - is `labctl ui` still running?')

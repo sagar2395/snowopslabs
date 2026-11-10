@@ -8,10 +8,10 @@
 // Silent mode is honoured: while an injected fault is unresolved and silent, its
 // identity stays hidden until a detection check confirms it's resolved.
 import { useState, useEffect, useRef } from 'react'
-import { api } from '../api/client'
+import { api, RequestTimeoutError } from '../api/client'
 import { qk } from '../lib/queryClient'
 import { useApiQuery } from '../hooks/useApiQuery'
-import type { Fault, IncidentStatus, IncidentHint, NotifyFn } from '../types'
+import type { Fault, IncidentList, IncidentStatus, IncidentHint, NotifyFn } from '../types'
 import { Badge } from '../components/Badge'
 import { ErrorState } from '../components/ErrorState'
 import { Icon } from '../components/Icon'
@@ -29,6 +29,12 @@ interface IncidentsProps {
 const SEVERITY_VARIANT: Record<string, 'stopped' | 'category' | 'runtime'> = {
   high: 'stopped', medium: 'category', low: 'runtime',
 }
+
+/** How often and for how long the view re-reads the incident list after an
+ *  inject or resolve request times out. The limit matches the 5 min bound of
+ *  the incident.inject and incident.resolve runs. */
+const FOLLOW_EVERY_MS = 5_000
+const FOLLOW_LIMIT_MS = 5 * 60_000
 
 /** Compact "ingress" summary of a fault's prerequisites, or "" if none.
  *
@@ -71,6 +77,12 @@ export function Incidents({ notify, requestConfirm, canOperate = true }: Inciden
   const [detail, setDetail] = useState<Fault | null>(null)
   const modalCloseRef = useRef<HTMLButtonElement>(null)
   const detailOpener = useRef<Element | null>(null)
+  const mounted = useRef(true)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   // Reset per-incident state when the active fault changes.
   useEffect(() => {
@@ -127,27 +139,65 @@ export function Incidents({ notify, requestConfirm, canOperate = true }: Inciden
     })
   }
 
+  /** Follows a request the client stopped waiting for while the server carries
+   *  on with it: re-reads the incident list until done holds, then reports the
+   *  result, or a failure once FOLLOW_LIMIT_MS passes with no change. */
+  async function follow(what: string, done: (list: IncidentList) => boolean, onDone: (list: IncidentList) => void) {
+    notify('info', `${what} still running`, 'The request timed out, but the server carries on with it. Follow it in the Command Output panel; this page updates when it finishes.')
+    const deadline = Date.now() + FOLLOW_LIMIT_MS
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, FOLLOW_EVERY_MS))
+      if (!mounted.current) return
+      try {
+        const list = await api.listIncidents()
+        if (done(list)) {
+          onDone(list)
+          load()
+          return
+        }
+      } catch { /* a failed read is retried on the next round */ }
+    }
+    notify('error', `${what} did not finish`, `Nothing changed in ${FOLLOW_LIMIT_MS / 60_000} minutes. The Command Output panel has what the server reported.`)
+    load()
+  }
+
   async function inject(name: string, label: string, app?: string) {
     if (busy) return
     setBusy(`inject:${name}`)
+    const injected = (silent: boolean) =>
+      notify('success', `Injected ${label}${app ? ` into ${app}` : ''}`, silent ? 'Silent mode - the fault is hidden until you diagnose it.' : 'Diagnose it, then resolve.')
     try {
       const res = await api.injectIncident(name, app)
-      notify('success', `Injected ${label}${app ? ` into ${app}` : ''}`, res.silent ? 'Silent mode - the fault is hidden until you diagnose it.' : 'Diagnose it, then resolve.')
+      injected(res.silent)
       await load()
     } catch (e) {
-      notify('error', 'Inject failed', e instanceof Error ? e.message : String(e))
+      if (e instanceof RequestTimeoutError) {
+        await follow('Inject', list => list.active != null, list => injected(list.active?.silent === true))
+      } else {
+        notify('error', 'Inject failed', e instanceof Error ? e.message : String(e))
+      }
     } finally { setBusy(null) }
   }
 
   async function injectRandom() {
     if (busy) return
     setBusy('inject:random')
+    const injected = (silent: boolean, label: string) =>
+      notify('success', 'Injected a random incident', silent ? 'Silent mode - diagnose it from the symptoms.' : `Now solve: ${label}.`)
     try {
       const res = await api.injectRandomIncident()
-      notify('success', 'Injected a random incident', res.silent ? 'Silent mode - diagnose it from the symptoms.' : `Now solve: ${res.fault?.displayName ?? res.fault?.name ?? 'it'}.`)
+      injected(res.silent, res.fault?.displayName ?? res.fault?.name ?? 'it')
       await load()
     } catch (e) {
-      notify('error', 'Random inject failed', e instanceof Error ? e.message : String(e))
+      if (e instanceof RequestTimeoutError) {
+        await follow('Random inject', list => list.active != null, list => {
+          const name = list.active?.fault ?? ''
+          const f = list.faults.find(x => x.name === name)
+          injected(list.active?.silent === true, f?.displayName || name || 'it')
+        })
+      } else {
+        notify('error', 'Random inject failed', e instanceof Error ? e.message : String(e))
+      }
     } finally { setBusy(null) }
   }
 
@@ -165,7 +215,14 @@ export function Incidents({ notify, requestConfirm, canOperate = true }: Inciden
           setStatus(null)
           await load()
         } catch (e) {
-          notify('error', 'Resolve failed', e instanceof Error ? e.message : String(e))
+          if (e instanceof RequestTimeoutError) {
+            await follow('Resolve', list => list.active == null, () => {
+              notify('success', 'Incident resolved', 'The active incident is cleared.')
+              setStatus(null)
+            })
+          } else {
+            notify('error', 'Resolve failed', e instanceof Error ? e.message : String(e))
+          }
         } finally { setBusy(null) }
       },
     })

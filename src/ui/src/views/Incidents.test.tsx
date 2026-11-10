@@ -3,12 +3,13 @@
 // Incidents view behaviour: browse the library, inject/resolve, and reveal hints
 // progressively - plus an axe pass. Requests go through the real client to the
 // contract server (test/contract.ts).
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { axe, toHaveNoViolations } from 'jest-axe'
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { serveContract, type ContractServer } from '../test/contract'
+import { api, RequestTimeoutError } from '../api/client'
 import { Incidents } from './Incidents'
 import type { Fault, IncidentList } from '../types'
 import type { ConfirmRequest } from '../components/ConfirmDialog'
@@ -258,6 +259,92 @@ describe('Incidents view', () => {
     )
     await screen.findByText('oom-kill')
     expect(await axe(container)).toHaveNoViolations()
+  })
+})
+
+// The server carries on with an inject or resolve the client stopped waiting
+// for, so a client timeout is not a failure: the view follows the incident list
+// until the change shows up, and reports a failure only if it never does.
+describe('Incidents view when an inject or resolve request times out', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  const timedOut = () => Promise.reject(new RequestTimeoutError('Request timed out after 30s - the server may be busy or stuck'))
+  const oomActive = { fault: 'oom-kill', injectedAt: new Date().toISOString(), silent: false, hintsRevealed: 0 }
+  const withActive: IncidentList = { ...twoFaults, active: oomActive }
+  const injectRow = () => within(screen.getByText('oom-kill').closest('.scenario-row') as HTMLElement)
+
+  const cases: {
+    name: string
+    call: 'injectIncident' | 'injectRandomIncident' | 'resolveIncident'
+    lists: IncidentList[]
+    act: () => void
+    busy: () => HTMLElement
+    wait: number
+    running: [string, string]
+    result: [string, string, string]
+  }[] = [
+    {
+      name: 'an inject that finishes',
+      call: 'injectIncident',
+      lists: [twoFaults, twoFaults, withActive],
+      act: () => fireEvent.click(injectRow().getByRole('button', { name: /^inject$/i })),
+      busy: () => injectRow().getByRole('button', { name: 'Injecting…' }),
+      wait: 10_000,
+      running: ['info', 'Inject still running'],
+      result: ['success', 'Injected oom-kill into go-api', 'Diagnose it, then resolve.'],
+    },
+    {
+      name: 'a random inject that finishes',
+      call: 'injectRandomIncident',
+      lists: [twoFaults, withActive],
+      act: () => fireEvent.click(screen.getByRole('button', { name: /inject random/i })),
+      busy: () => screen.getByRole('button', { name: 'Injecting…' }),
+      wait: 5_000,
+      running: ['info', 'Random inject still running'],
+      result: ['success', 'Injected a random incident', 'Now solve: oom-kill.'],
+    },
+    {
+      name: 'a resolve that finishes',
+      call: 'resolveIncident',
+      lists: [withActive, twoFaults],
+      act: () => fireEvent.click(screen.getByRole('button', { name: /^resolve$/i })),
+      busy: () => screen.getByRole('button', { name: 'Resolving…' }),
+      wait: 5_000,
+      running: ['info', 'Resolve still running'],
+      result: ['success', 'Incident resolved', 'The active incident is cleared.'],
+    },
+    {
+      name: 'an inject that never finishes',
+      call: 'injectIncident',
+      lists: [twoFaults],
+      act: () => fireEvent.click(injectRow().getByRole('button', { name: /^inject$/i })),
+      busy: () => injectRow().getByRole('button', { name: 'Injecting…' }),
+      wait: 5 * 60_000 + 5_000,
+      running: ['info', 'Inject still running'],
+      result: ['error', 'Inject did not finish', 'Nothing changed in 5 minutes. The Command Output panel has what the server reported.'],
+    },
+  ]
+
+  it.each(cases)('waits for $name instead of reporting a failure', async ({ call, lists, act, busy, wait, running, result }) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const server = serveIncidents(lists[0])
+    server.overrideEach('GET', '/incidents', 200, lists)
+    vi.spyOn(api, call).mockImplementation(timedOut)
+
+    const { notify } = renderIncidents(autoConfirm)
+    await screen.findByText('Incident library (2)')
+    act()
+
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(...running, expect.stringMatching(/Command Output panel/)))
+    expect(busy()).toBeDisabled()
+    expect(notify).not.toHaveBeenCalledWith('error', expect.anything(), expect.anything())
+
+    await vi.advanceTimersByTimeAsync(wait)
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(...result))
+    expect(notify).toHaveBeenCalledTimes(2)
   })
 })
 

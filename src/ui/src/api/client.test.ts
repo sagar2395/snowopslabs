@@ -13,7 +13,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { api, ApiError } from './client'
+import { api, ApiError, RequestTimeoutError } from './client'
 import { API, jsonError, page, server } from '../test/server'
 
 describe('api client', () => {
@@ -87,6 +87,29 @@ describe('api client', () => {
       vi.useRealTimers()
       vi.unstubAllGlobals()
     }
+  })
+
+  // The server keeps working on a request the client stops waiting for, so a
+  // caller must be able to tell a timeout from a request that failed.
+  it('throws a RequestTimeoutError for a timeout and a plain Error for a dropped connection', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', (_url: string, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+    }))
+    try {
+      const call = expect(api.injectIncident('cpu-throttling')).rejects.toEqual(expect.objectContaining({
+        name: 'RequestTimeoutError',
+        message: 'Request timed out after 30s - the server may be busy or stuck',
+      }))
+      await vi.advanceTimersByTimeAsync(30_000)
+      await call
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+
+    server.use(http.post(`${API}/incidents/cpu-throttling/inject`, () => HttpResponse.error()))
+    await expect(api.injectIncident('cpu-throttling')).rejects.not.toBeInstanceOf(RequestTimeoutError)
   })
 
   it('does not swallow a 404 as an empty list', async () => {
