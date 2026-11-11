@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
 )
 
 // TestMainStaysTrivial guards ADR-0005's entrypoint rule.

@@ -24,7 +24,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/sagar2395/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the CLI golden transcripts under testdata/golden")

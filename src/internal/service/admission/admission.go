@@ -13,8 +13,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/capacity"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/capacity"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // Gate answers admission questions for one lab. Its function fields are the

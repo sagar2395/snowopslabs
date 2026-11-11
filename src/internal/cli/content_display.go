@@ -7,8 +7,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/snippet"
-	"github.com/sagar2395/snowopslabs/pkg/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/snippet"
+	"github.com/snowops-oss/snowopslabs/pkg/scenario"
 )
 
 // resolveFunc expands template variables such as {{.DomainSuffix}} in a

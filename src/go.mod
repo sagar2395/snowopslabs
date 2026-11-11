@@ -1,4 +1,4 @@
-module github.com/sagar2395/snowopslabs
+module github.com/snowops-oss/snowopslabs
 
 go 1.25.0
 

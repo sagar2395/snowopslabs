@@ -26,17 +26,17 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 
-	"github.com/sagar2395/snowopslabs/internal/auth"
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/executor"
-	"github.com/sagar2395/snowopslabs/internal/incident"
-	"github.com/sagar2395/snowopslabs/internal/metrics"
-	"github.com/sagar2395/snowopslabs/internal/platform"
-	"github.com/sagar2395/snowopslabs/internal/runtime"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
-	"github.com/sagar2395/snowopslabs/internal/services"
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/auth"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/incident"
+	"github.com/snowops-oss/snowopslabs/internal/metrics"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
+	"github.com/snowops-oss/snowopslabs/internal/runtime"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/services"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // Server is the API server that backs the web UI.

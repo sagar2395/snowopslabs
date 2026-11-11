@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/lab"
-	"github.com/sagar2395/snowopslabs/internal/labtest"
-	"github.com/sagar2395/snowopslabs/internal/platform"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/lab"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
 )
 
 // newLabServer serves an empty project with the fixture lab's stand-in

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/capacity"
+	"github.com/snowops-oss/snowopslabs/internal/capacity"
 )
 
 const demandScenario = `name: kafka-lab

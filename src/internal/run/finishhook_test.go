@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 func TestFinishHook_FiresWithTerminalRecord(t *testing.T) {

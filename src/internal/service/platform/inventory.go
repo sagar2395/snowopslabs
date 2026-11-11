@@ -5,8 +5,8 @@ package platform
 import (
 	"context"
 
-	"github.com/sagar2395/snowopslabs/internal/k8s"
-	catalog "github.com/sagar2395/snowopslabs/internal/platform"
+	"github.com/snowops-oss/snowopslabs/internal/k8s"
+	catalog "github.com/snowops-oss/snowopslabs/internal/platform"
 )
 
 // Installed returns the "category/provider" name of every provider in reg that

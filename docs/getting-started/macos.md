@@ -22,7 +22,7 @@ Clone the latest release wherever you keep projects, then install the matching
 `labctl` and build the lab:
 
 ```bash
-git clone --branch stable https://github.com/sagar2395/snowopslabs.git
+git clone --branch stable https://github.com/snowops-oss/snowopslabs.git
 cd snowopslabs
 ./install.sh
 labctl init

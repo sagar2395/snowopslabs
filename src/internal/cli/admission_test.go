@@ -5,7 +5,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/config"
 )
 
 func TestConfiguredAgents(t *testing.T) {

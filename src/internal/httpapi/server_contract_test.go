@@ -27,8 +27,8 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/sagar2395/snowopslabs/internal/auth"
-	"github.com/sagar2395/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/auth"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
 )
 
 var updateGolden = flag.Bool("update", false, "rewrite the contract golden files under testdata/contract")

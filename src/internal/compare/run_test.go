@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 // fakeLab records the order of everything it is asked to do, because the order

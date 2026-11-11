@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/runowner"
+	"github.com/snowops-oss/snowopslabs/internal/runowner"
 )
 
 func TestRecoverOwner(t *testing.T) {

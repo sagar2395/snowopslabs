@@ -4,7 +4,7 @@
 # Install the labctl binary that matches this clone of SnowOps Labs, and record
 # the clone so labctl finds it from any directory.
 #
-#   git clone --branch stable https://github.com/sagar2395/snowopslabs.git
+#   git clone --branch stable https://github.com/snowops-oss/snowopslabs.git
 #   cd snowopslabs && ./install.sh
 #
 # The version comes from the clone's LAB_VERSION. After upgrading the clone
@@ -19,7 +19,7 @@
 
 set -eu
 
-REPO="sagar2395/snowopslabs"
+REPO="snowops-oss/snowopslabs"
 BIN_DIR="${SNOWOPS_BIN_DIR:-$HOME/.local/bin}"
 STATE_HOME="${SNOWOPS_HOME:-$HOME/.snowops}"
 RELEASE_URL="${SNOWOPS_RELEASE_URL:-https://github.com/$REPO/releases}"

@@ -4,7 +4,7 @@ A codespace is a Linux machine GitHub runs for you, with VS Code in the
 browser. The lab runs inside it exactly as it does on Linux, so you can try
 SnowOps Labs with nothing installed on your own computer.
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/sagar2395/snowopslabs/tree/stable?quickstart=1)
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/snowops-oss/snowopslabs/tree/stable?quickstart=1)
 
 ## What you need
 

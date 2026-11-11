@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/run"
-	platsvc "github.com/sagar2395/snowopslabs/internal/service/platform"
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	platsvc "github.com/snowops-oss/snowopslabs/internal/service/platform"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // harness wires an engine with the inventory recorder registered as a finish

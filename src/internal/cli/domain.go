@@ -7,7 +7,7 @@ import (
 	"io"
 	"slices"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/config"
 )
 
 // legacyDomainSuffixes are the suffixes k3d and kind labs used by default

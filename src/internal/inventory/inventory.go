@@ -9,8 +9,8 @@ package inventory
 import (
 	"context"
 
-	platsvc "github.com/sagar2395/snowopslabs/internal/service/platform"
-	"github.com/sagar2395/snowopslabs/internal/store"
+	platsvc "github.com/snowops-oss/snowopslabs/internal/service/platform"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 const kindPlatform = "platform"

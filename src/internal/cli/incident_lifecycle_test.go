@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/run"
-	incsvc "github.com/sagar2395/snowopslabs/internal/service/incident"
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	incsvc "github.com/snowops-oss/snowopslabs/internal/service/incident"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // fakeIncidentEnv points incidentEngineFactory at a Fake-backed engine and a

@@ -16,4 +16,4 @@
 
 # An entrypoint only: internal/cli/root_test.go asserts main() stays a single
 # statement, so 0% hides no logic.
-github.com/sagar2395/snowopslabs/cmd/labctl            0.0   permanent  entrypoint only, guarded by TestMainStaysTrivial
+github.com/snowops-oss/snowopslabs/cmd/labctl            0.0   permanent  entrypoint only, guarded by TestMainStaysTrivial

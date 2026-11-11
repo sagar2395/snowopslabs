@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/display"
-	resultspkg "github.com/sagar2395/snowopslabs/internal/results"
+	"github.com/snowops-oss/snowopslabs/internal/display"
+	resultspkg "github.com/snowops-oss/snowopslabs/internal/results"
 	"github.com/spf13/cobra"
 )
 

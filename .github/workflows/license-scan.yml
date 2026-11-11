@@ -47,7 +47,7 @@ jobs:
         # the module tree; --ignore skips our own first-party packages (they are
         # Apache-2.0 and are not what this scan is for - it guards dependencies).
         working-directory: src
-        run: go-licenses check ./... --disallowed_types=forbidden,restricted --ignore github.com/sagar2395/snowopslabs
+        run: go-licenses check ./... --disallowed_types=forbidden,restricted --ignore github.com/snowops-oss/snowopslabs
 
   spdx-headers:
     name: SPDX headers (advisory)

@@ -15,12 +15,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/auth"
-	"github.com/sagar2395/snowopslabs/internal/display"
-	"github.com/sagar2395/snowopslabs/internal/httpapi"
-	"github.com/sagar2395/snowopslabs/internal/metrics"
-	"github.com/sagar2395/snowopslabs/internal/tlscert"
-	"github.com/sagar2395/snowopslabs/internal/webui"
+	"github.com/snowops-oss/snowopslabs/internal/auth"
+	"github.com/snowops-oss/snowopslabs/internal/display"
+	"github.com/snowops-oss/snowopslabs/internal/httpapi"
+	"github.com/snowops-oss/snowopslabs/internal/metrics"
+	"github.com/snowops-oss/snowopslabs/internal/tlscert"
+	"github.com/snowops-oss/snowopslabs/internal/webui"
 )
 
 // uiOptions are the flags of `labctl ui`.

@@ -5,7 +5,7 @@ package run
 import (
 	"sync"
 
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // EventType distinguishes what changed.

@@ -26,7 +26,7 @@ In your distro's terminal:
 
 ```bash
 cd ~
-git clone --branch stable https://github.com/sagar2395/snowopslabs.git
+git clone --branch stable https://github.com/snowops-oss/snowopslabs.git
 cd snowopslabs
 ./install.sh
 labctl init
@@ -156,7 +156,7 @@ detects a WSL environment.
 - **Fix:** Clone the lab inside the native Linux filesystem within your WSL home directory (`cd ~`) using the distro's `git`:
   ```bash
   cd ~
-  git clone --branch stable https://github.com/sagar2395/snowopslabs.git
+  git clone --branch stable https://github.com/snowops-oss/snowopslabs.git
   cd snowopslabs
   ./install.sh
   ```

@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 // Check scripts must receive the bound workload in their environment, as

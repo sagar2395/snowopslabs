@@ -65,11 +65,11 @@ idiomatic way and confused tooling. v2 gave the module a repo-root-derived path.
 Issue #7 then moved the whole module under `src/` so the repository root reads as
 a content/authoring workspace and a later "the engine gets its own repo" split is
 a straight lift of `src/`. **The module path is unchanged**
-(`github.com/sagar2395/snowopslabs`), so every import below is still written with
+(`github.com/snowops-oss/snowopslabs`), so every import below is still written with
 no `src/` prefix, only the on-disk path gained one:
 
 ```
-src/go.mod                      module github.com/sagar2395/snowopslabs
+src/go.mod                      module github.com/snowops-oss/snowopslabs
 src/cmd/labctl/main.go          entrypoint, nothing else
 src/internal/cli/               cobra commands - thin, parse + call service
 src/internal/httpapi/           REST/WS/SSE - thin, decode + call service
@@ -108,7 +108,7 @@ a 100-entry in-memory map, and dropped log lines for slow clients.
 That v1 executor still ships. The CLI's `lab`, `platform`, `scenario`,
 `incident` and `traffic` commands use the run engine. The web UI's mutating
 `/api/v2` actions, and the CLI's challenge setup, still start `internal/executor`
-jobs directly. Until the [move onto the run engine](https://github.com/sagar2395/snowopslabs/issues/121)
+jobs directly. Until the [move onto the run engine](https://github.com/snowops-oss/snowopslabs/issues/121)
 lands, the guarantees below hold only for work submitted as a `run.Spec`.
 
 

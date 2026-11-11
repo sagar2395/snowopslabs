@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/display"
+	"github.com/snowops-oss/snowopslabs/internal/display"
 )
 
 func TestCLIDisplayPathUsesCurrentDirectoryPolicy(t *testing.T) {

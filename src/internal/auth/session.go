@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // CookieName is the session cookie set by the server and read on each request.

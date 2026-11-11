@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 // Config holds the resolved project configuration.
@@ -265,7 +265,7 @@ func ListApps(projectRoot string) ([]string, error) {
 // clone, SNOWOPS_LAB_DIR is unset and install.sh has recorded none.
 var ErrNoLab = errors.New("could not find your lab (a snowopslabs clone, with scenarios/ and runtimes/).\n" +
 	"Clone it and run its installer, which also lets labctl find it from any directory:\n" +
-	"  git clone --branch stable https://github.com/sagar2395/snowopslabs.git\n" +
+	"  git clone --branch stable https://github.com/snowops-oss/snowopslabs.git\n" +
 	"  cd snowopslabs && ./install.sh\n" +
 	"Or run labctl inside a clone, set SNOWOPS_LAB_DIR=<clone>, or pass --project-dir <clone>")
 

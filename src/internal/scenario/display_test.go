@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/workload"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 // Every string a reader is shown must have its templates expanded. The test

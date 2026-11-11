@@ -47,7 +47,7 @@ contradict themselves, or you are editing the code in question.
 | Write tests | [TESTING.md](TESTING.md) | - |
 | Ship a release | [RELEASING.md](../RELEASING.md) | - |
 | Accept a branch for release on a live lab | [release acceptance](release-acceptance.md) | - |
-| Pick up known work | [GitHub issues](https://github.com/sagar2395/snowopslabs/issues) | - |
+| Pick up known work | [GitHub issues](https://github.com/snowops-oss/snowopslabs/issues) | - |
 
 Everything else: [docs/README index in the root README](../README.md#documentation).
 

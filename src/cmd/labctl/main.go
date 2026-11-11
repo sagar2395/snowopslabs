@@ -7,7 +7,7 @@
 package main
 
 import (
-	"github.com/sagar2395/snowopslabs/internal/cli"
+	"github.com/snowops-oss/snowopslabs/internal/cli"
 )
 
 // version is set at build time with -ldflags "-X main.version=..." (see

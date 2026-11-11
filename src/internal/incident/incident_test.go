@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
-	"github.com/sagar2395/snowopslabs/internal/workload"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 const testFaultYAML = `name: %s

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // StepMarker is the line prefix a script emits to announce progress:

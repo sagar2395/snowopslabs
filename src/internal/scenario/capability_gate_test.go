@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	schema "github.com/sagar2395/snowopslabs/pkg/scenario"
+	schema "github.com/snowops-oss/snowopslabs/pkg/scenario"
 
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 func contractWith(t *testing.T, caps string) workload.Contract {

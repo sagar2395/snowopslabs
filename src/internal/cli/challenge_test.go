@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/challenge"
-	"github.com/sagar2395/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/challenge"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
 )
 
 // A timed challenge at the terminal: start breaks the lab, a submit on the

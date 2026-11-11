@@ -61,7 +61,7 @@ older Node). None of the fixes need sudo:
 - **bats** (for `make test-shell`): `npm install -g bats` with that Node.
 
 ```bash
-git clone https://github.com/sagar2395/snowopslabs.git
+git clone https://github.com/snowops-oss/snowopslabs.git
 cd snowopslabs
 
 # 1. Build the CLI, UI embedded (no committed binary). The Go module lives under

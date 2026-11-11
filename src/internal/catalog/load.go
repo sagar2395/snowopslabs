@@ -9,11 +9,11 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sagar2395/snowopslabs/internal/challenge"
-	"github.com/sagar2395/snowopslabs/internal/incident"
-	"github.com/sagar2395/snowopslabs/internal/learn"
-	"github.com/sagar2395/snowopslabs/internal/workload"
-	"github.com/sagar2395/snowopslabs/pkg/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/challenge"
+	"github.com/snowops-oss/snowopslabs/internal/incident"
+	"github.com/snowops-oss/snowopslabs/internal/learn"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/pkg/scenario"
 )
 
 // kindDir maps each kind to the directory and item filename it lives in under a

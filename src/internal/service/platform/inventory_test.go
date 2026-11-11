@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	catalog "github.com/sagar2395/snowopslabs/internal/platform"
+	catalog "github.com/snowops-oss/snowopslabs/internal/platform"
 )
 
 // stubKubectl puts a fake kubectl first on PATH. script is the body of a POSIX

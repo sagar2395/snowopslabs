@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 func TestResolveTemplateShortensLearnerPaths(t *testing.T) {

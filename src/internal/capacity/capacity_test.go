@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 func TestResources_Meets(t *testing.T) {

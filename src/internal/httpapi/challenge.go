@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/challenge"
-	"github.com/sagar2395/snowopslabs/internal/incident"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
-	chalsvc "github.com/sagar2395/snowopslabs/internal/service/challenge"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/challenge"
+	"github.com/snowops-oss/snowopslabs/internal/incident"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
+	chalsvc "github.com/snowops-oss/snowopslabs/internal/service/challenge"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 func challengeEngine(s *Server) *challenge.Engine {

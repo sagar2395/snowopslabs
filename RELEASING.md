@@ -57,7 +57,7 @@ gh release edit v1.6.0 --draft=false   # publish; stable moves to v1.6.0
 ```
 
 After publishing, the archives appear on the
-[Releases page](https://github.com/sagar2395/snowopslabs/releases), `stable`
+[Releases page](https://github.com/snowops-oss/snowopslabs/releases), `stable`
 moves to the tag, and the [README install steps](README.md#install) give
 learners the new release.
 The step-by-step version follows.

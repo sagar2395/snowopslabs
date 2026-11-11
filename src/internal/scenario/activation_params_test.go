@@ -3,7 +3,7 @@
 package scenario
 
 import (
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 	"os"
 	"path/filepath"
 	"testing"

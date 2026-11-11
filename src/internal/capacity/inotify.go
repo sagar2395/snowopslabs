@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // InotifyInstances is the fs.inotify.max_user_instances value the lab needs.

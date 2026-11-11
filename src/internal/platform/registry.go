@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
 	"gopkg.in/yaml.v3"
 )
 

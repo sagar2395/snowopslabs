@@ -23,14 +23,14 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/display"
-	"github.com/sagar2395/snowopslabs/internal/snippet"
-	"github.com/sagar2395/snowopslabs/internal/tmpl"
-	"github.com/sagar2395/snowopslabs/internal/workload"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
-	"github.com/sagar2395/snowopslabs/pkg/extension"
-	schema "github.com/sagar2395/snowopslabs/pkg/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/display"
+	"github.com/snowops-oss/snowopslabs/internal/snippet"
+	"github.com/snowops-oss/snowopslabs/internal/tmpl"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/pkg/extension"
+	schema "github.com/snowops-oss/snowopslabs/pkg/scenario"
 )
 
 // CommandExecutor runs the helm and kubectl commands and scenario scripts the

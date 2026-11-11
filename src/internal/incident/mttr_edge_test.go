@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
 )
 
 // TestActive_ReturnsNilWhenNoActive verifies that Active() returns (nil, nil)

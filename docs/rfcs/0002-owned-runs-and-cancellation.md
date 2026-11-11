@@ -12,7 +12,7 @@ running work visible and let the operator explicitly release its lock key.
 
 Ship this recovery change first. Add stored cancellation requests in a separate
 phase. Recovery can land before the
-[traffic operation migration](https://github.com/sagar2395/snowopslabs/issues/13),
+[traffic operation migration](https://github.com/snowops-oss/snowopslabs/issues/13),
 without claiming to fix the separate remote-cancellation problem.
 
 ## Motivation

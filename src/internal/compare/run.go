@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 // Lab is everything a comparison does that changes the cluster. It is an

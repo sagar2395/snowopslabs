@@ -9,10 +9,10 @@ import (
 	"io"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/k8s"
-	"github.com/sagar2395/snowopslabs/internal/platform"
-	platsvc "github.com/sagar2395/snowopslabs/internal/service/platform"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/k8s"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
+	platsvc "github.com/snowops-oss/snowopslabs/internal/service/platform"
 )
 
 // requireCluster fails with what to do next when the cluster's API server

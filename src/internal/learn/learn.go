@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/results"
+	"github.com/snowops-oss/snowopslabs/internal/results"
 	"gopkg.in/yaml.v3"
 )
 

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/platform"
-	platsvc "github.com/sagar2395/snowopslabs/internal/service/platform"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
+	platsvc "github.com/snowops-oss/snowopslabs/internal/service/platform"
 	"github.com/spf13/cobra"
 )
 

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
 )
 
 func amServer(t *testing.T, body string, status int) *httptest.Server {

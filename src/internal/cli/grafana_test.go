@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/labcheck"
-	"github.com/sagar2395/snowopslabs/internal/platform"
+	"github.com/snowops-oss/snowopslabs/internal/labcheck"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
 )
 
 // datasourceServer answers Grafana's Prometheus datasource health check. It

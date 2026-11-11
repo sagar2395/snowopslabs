@@ -13,7 +13,7 @@ be injected and resolved. It has two halves.
    [`release-acceptance` skill](../.claude/skills/release-acceptance/SKILL.md).
 
 A branch is ready to release when both are green and every finding is fixed or
-filed as a [GitHub issue](https://github.com/sagar2395/snowopslabs/issues).
+filed as a [GitHub issue](https://github.com/snowops-oss/snowopslabs/issues).
 
 ## Before you start
 

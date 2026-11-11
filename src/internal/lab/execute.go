@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
-	"github.com/sagar2395/snowopslabs/internal/platform"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
 )
 
 // Deps are the engines a plan runs through. The lab package never talks to the

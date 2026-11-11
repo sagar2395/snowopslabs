@@ -11,11 +11,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/labtest"
-	"github.com/sagar2395/snowopslabs/internal/platform"
-	platsvc "github.com/sagar2395/snowopslabs/internal/service/platform"
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
+	platsvc "github.com/snowops-oss/snowopslabs/internal/service/platform"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // writeProvider creates platform/<relDir>/install.sh so the registry scan

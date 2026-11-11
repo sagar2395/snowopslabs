@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/platform"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
 )
 
 func reqWithOrigin(host, origin string) *http.Request {

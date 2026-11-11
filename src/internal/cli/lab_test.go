@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/lab"
-	"github.com/sagar2395/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/lab"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
 )
 
 // The lab's own lifecycle at the terminal: bring the cluster up, snapshot

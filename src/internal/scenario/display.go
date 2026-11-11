@@ -5,11 +5,11 @@ package scenario
 import (
 	"maps"
 
-	"github.com/sagar2395/snowopslabs/internal/display"
-	"github.com/sagar2395/snowopslabs/internal/snippet"
-	"github.com/sagar2395/snowopslabs/internal/tmpl"
-	"github.com/sagar2395/snowopslabs/internal/workload"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/display"
+	"github.com/snowops-oss/snowopslabs/internal/snippet"
+	"github.com/snowops-oss/snowopslabs/internal/tmpl"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 // ResolvedForDisplay returns a copy of the scenario with every reader-facing

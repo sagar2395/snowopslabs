@@ -19,9 +19,9 @@ action C3):
 
 | Team | Owns |
 |------|------|
-| `@snowops/scenario-maintainers` | `packs/`, `scenarios/`, `incidents/`, `learn/`, `challenges/` |
-| `@snowops/platform-maintainers` | `platform/` |
-| `@snowops/docs-maintainers` | `docs/` |
+| `@snowops-oss/scenario-maintainers` | `packs/`, `scenarios/`, `incidents/`, `learn/`, `challenges/` |
+| `@snowops-oss/platform-maintainers` | `platform/` |
+| `@snowops-oss/docs-maintainers` | `docs/` |
 
 ## Emeritus
 

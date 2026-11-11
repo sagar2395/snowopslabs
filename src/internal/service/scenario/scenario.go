@@ -21,11 +21,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/run"
-	scn "github.com/sagar2395/snowopslabs/internal/scenario"
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	scn "github.com/snowops-oss/snowopslabs/internal/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 // Run kinds. Each has an entry in run.DefaultTimeouts.

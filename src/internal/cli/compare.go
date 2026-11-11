@@ -13,10 +13,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/compare"
-	scnsvc "github.com/sagar2395/snowopslabs/internal/service/scenario"
-	"github.com/sagar2395/snowopslabs/internal/traffic"
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/compare"
+	scnsvc "github.com/snowops-oss/snowopslabs/internal/service/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/traffic"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 var compareOpts struct {

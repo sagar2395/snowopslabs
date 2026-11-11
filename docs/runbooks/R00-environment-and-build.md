@@ -58,13 +58,13 @@ $ ls scenarios/ runtimes/ apps/          # user-facing content stays at the root
 
 **Expect:** all present, no errors. The Go module lives under `src/` (issue #7);
 the module path is unchanged, so imports still read
-`github.com/sagar2395/snowopslabs/...` with no `src/` prefix.
+`github.com/snowops-oss/snowopslabs/...` with no `src/` prefix.
 
 ```bash
 $ head -1 src/go.mod
 ```
 
-**Expect:** `module github.com/sagar2395/snowopslabs`
+**Expect:** `module github.com/snowops-oss/snowopslabs`
 
 ---
 

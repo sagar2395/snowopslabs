@@ -26,9 +26,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/runowner"
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/runowner"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // RunFunc is an in-process operation the engine runs as a recorded run. It must

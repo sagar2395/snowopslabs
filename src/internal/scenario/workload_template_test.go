@@ -5,7 +5,7 @@ package scenario
 import (
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 func TestResolveTemplateWorkloadVars(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/capacity"
+	"github.com/snowops-oss/snowopslabs/internal/capacity"
 )
 
 // CapacityResponse is the Docker engine's size and how much of it the lab
