@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/k8s"
-	"github.com/sagar2395/snowopslabs/internal/lab"
+	"github.com/snowops-oss/snowopslabs/internal/k8s"
+	"github.com/snowops-oss/snowopslabs/internal/lab"
 )
 
 func (s *Server) labStore() *lab.Store {

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/auth"
-	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/auth"
+	"github.com/snowops-oss/snowopslabs/internal/config"
 )
 
 // The auth endpoints must be recognised under both the /api and /api/v2

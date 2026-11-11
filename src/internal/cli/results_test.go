@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
 )
 
 // resultsFile is where the test lab keeps its results history.

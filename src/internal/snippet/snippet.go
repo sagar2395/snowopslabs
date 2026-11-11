@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/pkg/scenario"
+	"github.com/snowops-oss/snowopslabs/pkg/scenario"
 )
 
 // Resolve returns sn as a reader sees it: label, description and apply command

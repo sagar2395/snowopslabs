@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 // Answer is what one kubectl call printed, and its error if it failed.

@@ -10,10 +10,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/k8s"
-	"github.com/sagar2395/snowopslabs/internal/run"
-	labsvc "github.com/sagar2395/snowopslabs/internal/service/lab"
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/k8s"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	labsvc "github.com/snowops-oss/snowopslabs/internal/service/lab"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // `labctl lab up|down|status` run through the run engine, so each bring-up and

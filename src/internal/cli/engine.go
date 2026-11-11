@@ -8,11 +8,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/capacity"
-	"github.com/sagar2395/snowopslabs/internal/inventory"
-	"github.com/sagar2395/snowopslabs/internal/run"
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/capacity"
+	"github.com/snowops-oss/snowopslabs/internal/inventory"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // The commands that run through the run engine (lab, platform, scenario,

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
-	"github.com/sagar2395/snowopslabs/internal/platform"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
 )
 
 // fakeLabProject builds a project root with everything Execute touches.

@@ -12,9 +12,9 @@
 
 <p align="center">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-38bdf8.svg"></a>
-  <a href="https://github.com/sagar2395/snowopslabs/actions/workflows/ci.yaml"><img alt="CI" src="https://github.com/sagar2395/snowopslabs/actions/workflows/ci.yaml/badge.svg"></a>
-  <a href="https://github.com/sagar2395/snowopslabs/releases"><img alt="Release" src="https://img.shields.io/github/v/release/sagar2395/snowopslabs?color=818cf8&sort=semver"></a>
-  <a href="https://codespaces.new/sagar2395/snowopslabs/tree/stable?quickstart=1"><img alt="Open in GitHub Codespaces" src="https://img.shields.io/badge/Open_in-Codespaces-24292f?logo=github&logoColor=white"></a>
+  <a href="https://github.com/snowops-oss/snowopslabs/actions/workflows/ci.yaml"><img alt="CI" src="https://github.com/snowops-oss/snowopslabs/actions/workflows/ci.yaml/badge.svg"></a>
+  <a href="https://github.com/snowops-oss/snowopslabs/releases"><img alt="Release" src="https://img.shields.io/github/v/release/snowops-oss/snowopslabs?color=818cf8&sort=semver"></a>
+  <a href="https://codespaces.new/snowops-oss/snowopslabs/tree/stable?quickstart=1"><img alt="Open in GitHub Codespaces" src="https://img.shields.io/badge/Open_in-Codespaces-24292f?logo=github&logoColor=white"></a>
 </p>
 
 **SnowOps Labs is a Kubernetes platform-engineering simulator.** One command
@@ -37,20 +37,20 @@ your browser through GitHub Codespaces.
 ## Try it
 
 ```bash
-git clone --branch stable https://github.com/sagar2395/snowopslabs.git
+git clone --branch stable https://github.com/snowops-oss/snowopslabs.git
 cd snowopslabs && ./install.sh
 labctl init                                              # cluster + platform, 5 to 10 minutes
 labctl incident inject crashloop-bad-config --deploy-prereqs
 labctl incident status                                   # hints, and whether you fixed it
 ```
 
-No Docker on this machine? [Open it in GitHub Codespaces](https://codespaces.new/sagar2395/snowopslabs/tree/stable?quickstart=1)
+No Docker on this machine? [Open it in GitHub Codespaces](https://codespaces.new/snowops-oss/snowopslabs/tree/stable?quickstart=1)
 and skip to [Your first lab](#your-first-lab).
 
 **Status:** stable releases ship on the `stable` branch, with every fault
 checked against a live cluster each night. What comes next is on the
 [roadmap](docs/ROADMAP.md); bugs and ideas go in
-[issues](https://github.com/sagar2395/snowopslabs/issues).
+[issues](https://github.com/snowops-oss/snowopslabs/issues).
 
 ## The four loops
 
@@ -186,13 +186,13 @@ scenario and fault is a file you can open, read and change. Clone the latest
 release anywhere you like, then run its installer:
 
 ```bash
-git clone --branch stable https://github.com/sagar2395/snowopslabs.git
+git clone --branch stable https://github.com/snowops-oss/snowopslabs.git
 cd snowopslabs
 ./install.sh
 ```
 
 `stable` always points at the latest release; to pin one, clone with
-`--branch vX.Y.Z` (see [releases](https://github.com/sagar2395/snowopslabs/releases)).
+`--branch vX.Y.Z` (see [releases](https://github.com/snowops-oss/snowopslabs/releases)).
 `install.sh` downloads the `labctl` binary that matches your clone into
 `~/.local/bin`, verifies its checksum and needs no sudo. It also records where
 your clone is, so `labctl` works from any directory. If `~/.local/bin` is not
@@ -203,7 +203,7 @@ file for your shell. To enable shell tab-completion, see
 On Windows, clone inside WSL2, in your Linux home (`cd ~`), not under `/mnt/c`.
 
 To skip installing anything,
-[open the lab in GitHub Codespaces](https://codespaces.new/sagar2395/snowopslabs/tree/stable?quickstart=1).
+[open the lab in GitHub Codespaces](https://codespaces.new/snowops-oss/snowopslabs/tree/stable?quickstart=1).
 It builds the lab in a 4-core codespace on your GitHub account with the same
 `install.sh` and `labctl init` ([details](docs/getting-started/codespaces.md)).
 
@@ -286,7 +286,7 @@ Everything else, by symptom: [Troubleshooting](docs/troubleshooting.md).
 The easiest first contribution is content: a new fault or scenario is YAML
 plus a shell script, with no Go to write. Start with
 [your first scenario](docs/authoring/first-scenario.md), pick up a
-[good first issue](https://github.com/sagar2395/snowopslabs/labels/good%20first%20issue),
+[good first issue](https://github.com/snowops-oss/snowopslabs/labels/good%20first%20issue),
 and read [CONTRIBUTING](CONTRIBUTING.md) for working on labctl itself.
 
 ## License

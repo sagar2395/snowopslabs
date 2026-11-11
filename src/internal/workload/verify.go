@@ -5,7 +5,7 @@ package workload
 import (
 	"fmt"
 
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 // Checks returns the checks that confirm a deployed workload honours the

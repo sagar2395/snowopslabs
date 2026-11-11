@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // harness wires an engine to a temp store, a fake runner and a scratch content

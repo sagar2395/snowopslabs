@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	schema "github.com/sagar2395/snowopslabs/pkg/scenario"
+	schema "github.com/snowops-oss/snowopslabs/pkg/scenario"
 	"gopkg.in/yaml.v3"
 )
 

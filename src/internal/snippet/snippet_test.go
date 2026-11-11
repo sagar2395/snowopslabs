@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/pkg/scenario"
+	"github.com/snowops-oss/snowopslabs/pkg/scenario"
 )
 
 func TestResolve(t *testing.T) {

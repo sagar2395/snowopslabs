@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/labcheck"
-	"github.com/sagar2395/snowopslabs/internal/learn"
+	"github.com/snowops-oss/snowopslabs/internal/labcheck"
+	"github.com/snowops-oss/snowopslabs/internal/learn"
 	"github.com/spf13/cobra"
 )
 

@@ -77,5 +77,5 @@ labctl records every operation as a run and holds a lock per lab resource while 
 ## Still stuck
 
 `labctl runs list` shows every operation labctl ran and `labctl runs logs <id>`
-its full output. Open an [issue](https://github.com/sagar2395/snowopslabs/issues)
+its full output. Open an [issue](https://github.com/snowops-oss/snowopslabs/issues)
 with the output of `labctl doctor` and `labctl status`.

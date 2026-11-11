@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/challenge"
-	chalsvc "github.com/sagar2395/snowopslabs/internal/service/challenge"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/challenge"
+	chalsvc "github.com/snowops-oss/snowopslabs/internal/service/challenge"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 	"github.com/spf13/cobra"
 )
 

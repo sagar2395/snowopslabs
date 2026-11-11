@@ -13,8 +13,8 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/sagar2395/snowopslabs/internal/runowner"
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/runowner"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 func TestRunRecoveryAPI(t *testing.T) {

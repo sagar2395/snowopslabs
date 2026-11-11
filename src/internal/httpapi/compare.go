@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/gorilla/mux"
-	"github.com/sagar2395/snowopslabs/internal/compare"
+	"github.com/snowops-oss/snowopslabs/internal/compare"
 )
 
 func compareStore(s *Server) *compare.Store {

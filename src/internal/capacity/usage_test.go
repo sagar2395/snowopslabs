@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 const meminfo4GB = `MemTotal:        3998720 kB

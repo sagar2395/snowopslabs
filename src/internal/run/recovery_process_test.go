@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 type recoveryProcessReceipt struct {

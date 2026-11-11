@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // slowSetup is a scenario setup that runs until it is stopped, and records

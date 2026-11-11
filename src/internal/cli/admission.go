@@ -10,11 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/capacity"
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/k8s"
-	"github.com/sagar2395/snowopslabs/internal/service/admission"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/capacity"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/k8s"
+	"github.com/snowops-oss/snowopslabs/internal/service/admission"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // newAdmissionGate builds the capacity gate for the configured lab, or nil for

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/config"
 )
 
 func TestDomainMove(t *testing.T) {

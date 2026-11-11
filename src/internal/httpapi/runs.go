@@ -10,7 +10,7 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // The run console endpoints list recorded runs, show one run's steps and

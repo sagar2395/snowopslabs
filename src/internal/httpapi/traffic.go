@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/sagar2395/snowopslabs/internal/traffic"
+	"github.com/snowops-oss/snowopslabs/internal/traffic"
 )
 
 // trafficStartRequest is the JSON body for POST /traffic/start. Only profile

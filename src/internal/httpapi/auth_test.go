@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/auth"
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/auth"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // authedServer builds an auth-enabled Server with one operator (alice/pw) and

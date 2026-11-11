@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // colima4GB is a 2 CPU / 4 GiB engine whose machine has 2000 MiB in use. The

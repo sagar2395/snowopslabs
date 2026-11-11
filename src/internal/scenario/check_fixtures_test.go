@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/checkfixture"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/checkfixture"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 const varsScenario = `name: vars-demo

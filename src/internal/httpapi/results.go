@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/sagar2395/snowopslabs/internal/results"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/results"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 func resultsStore(s *Server) *results.Store {

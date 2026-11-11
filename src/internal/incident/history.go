@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/results"
+	"github.com/snowops-oss/snowopslabs/internal/results"
 )
 
 // Record is a completed incident run, read back from its results.Record for

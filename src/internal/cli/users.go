@@ -12,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/auth"
+	"github.com/snowops-oss/snowopslabs/internal/auth"
 )
 
 var (

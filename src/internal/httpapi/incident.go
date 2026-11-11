@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/incident"
-	"github.com/sagar2395/snowopslabs/internal/labcheck"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/incident"
+	"github.com/snowops-oss/snowopslabs/internal/labcheck"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 func (s *Server) incidentRunner() *checks.Runner {

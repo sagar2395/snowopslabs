@@ -10,7 +10,7 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/runowner"
+	"github.com/snowops-oss/snowopslabs/internal/runowner"
 )
 
 // ActiveOwners returns owners referenced by unfinished or recovery-required work.

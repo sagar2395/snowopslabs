@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/challenge"
-	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/challenge"
+	"github.com/snowops-oss/snowopslabs/internal/config"
 )
 
 const challengeTestYAML = `

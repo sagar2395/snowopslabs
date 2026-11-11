@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/config"
 )
 
 // growthNudgeMarker flags that printSignupNudge has already run on this

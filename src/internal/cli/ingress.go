@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/labcheck"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/labcheck"
 )
 
 // ingressWait is how long the ingress may take to answer through the host

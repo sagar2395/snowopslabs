@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/sagar2395/snowopslabs/internal/compare"
-	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/compare"
+	"github.com/snowops-oss/snowopslabs/internal/config"
 )
 
 func newCompareServer(t *testing.T) *Server {

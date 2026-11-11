@@ -26,8 +26,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/workload"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 // Options are the conditions every workload in a comparison is measured

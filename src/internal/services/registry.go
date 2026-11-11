@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
 )
 
 // Service represents a shared service (e.g., redis, postgres).

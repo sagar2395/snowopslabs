@@ -9,8 +9,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/sagar2395/snowopslabs/internal/incident"
-	"github.com/sagar2395/snowopslabs/pkg/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/incident"
+	"github.com/snowops-oss/snowopslabs/pkg/scenario"
 )
 
 // crossReference checks integrity between items after every item is loaded: a

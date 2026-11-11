@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/capacity"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/capacity"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // docker4GB is a colima engine of 2 CPU / 4 GB whose machine has usedMiB in use.

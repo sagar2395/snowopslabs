@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/auth"
-	"github.com/sagar2395/snowopslabs/internal/results"
+	"github.com/snowops-oss/snowopslabs/internal/auth"
+	"github.com/snowops-oss/snowopslabs/internal/results"
 )
 
 // actingUser returns the user to record results under: the authenticated API

@@ -13,10 +13,10 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/run"
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
-	trafficopts "github.com/sagar2395/snowopslabs/internal/traffic"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
+	trafficopts "github.com/snowops-oss/snowopslabs/internal/traffic"
 )
 
 type harness struct {

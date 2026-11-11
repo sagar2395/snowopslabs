@@ -11,7 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/lab"
+	"github.com/snowops-oss/snowopslabs/internal/lab"
 	"github.com/spf13/cobra"
 )
 

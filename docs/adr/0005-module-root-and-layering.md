@@ -7,7 +7,7 @@
 > **Update (issue #7 - repo restructure):** the Go module moved from the repo
 > root into `src/` so the root reads as a content/authoring workspace and a
 > later "the engine gets its own repo" split is a straight lift of `src/`. The
-> **module path is unchanged** (`github.com/sagar2395/snowopslabs`), so every
+> **module path is unchanged** (`github.com/snowops-oss/snowopslabs`), so every
 > import path in this ADR still holds, only the on-disk location gained a `src/`
 > prefix (e.g. `src/internal/service`). Tooling still runs from the module root;
 > that root is now `src/`, and the top-level `Makefile` delegates into it. The
@@ -28,7 +28,7 @@ above 85% - the logic simply was not reachable without an HTTP request.
 
 ## Decision
 
-1. Move `go.mod` to the repo root, module `github.com/sagar2395/snowopslabs`.
+1. Move `go.mod` to the repo root, module `github.com/snowops-oss/snowopslabs`.
 2. Introduce `internal/service` as the only home for use-cases and invariants.
    `internal/cli` and `internal/httpapi` become thin adapters: parse input, call
    a service method, format output. Neither contains a business rule.

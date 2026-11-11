@@ -18,16 +18,16 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/display"
-	"github.com/sagar2395/snowopslabs/internal/executor"
-	"github.com/sagar2395/snowopslabs/internal/incident"
-	"github.com/sagar2395/snowopslabs/internal/labcheck"
-	"github.com/sagar2395/snowopslabs/internal/platform"
-	"github.com/sagar2395/snowopslabs/internal/runtime"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
-	"github.com/sagar2395/snowopslabs/internal/services"
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/display"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/incident"
+	"github.com/snowops-oss/snowopslabs/internal/labcheck"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
+	"github.com/snowops-oss/snowopslabs/internal/runtime"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/services"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 var (

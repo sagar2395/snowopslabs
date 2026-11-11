@@ -17,13 +17,13 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
-	"github.com/sagar2395/snowopslabs/internal/appdetail"
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/k8s"
-	"github.com/sagar2395/snowopslabs/internal/labcheck"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
-	platsvc "github.com/sagar2395/snowopslabs/internal/service/platform"
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/internal/appdetail"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/k8s"
+	"github.com/snowops-oss/snowopslabs/internal/labcheck"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
+	platsvc "github.com/snowops-oss/snowopslabs/internal/service/platform"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 // validName matches identifiers safe to use as file-path segments and shell arguments.

@@ -15,7 +15,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // `labctl runs` lists recorded runs, prints their transcripts, and cancels

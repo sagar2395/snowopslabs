@@ -29,9 +29,9 @@ Some older paths still skip these layers. Their GitHub issues describe how to
 retire them, and new code should not copy them:
 
 - The web UI's mutating actions use `internal/executor` instead of the run
-  engine: [open issue](https://github.com/sagar2395/snowopslabs/issues/121).
+  engine: [open issue](https://github.com/snowops-oss/snowopslabs/issues/121).
 - `internal/cli` keeps its wiring in package-level variables:
-  [open issue](https://github.com/sagar2395/snowopslabs/issues/122).
+  [open issue](https://github.com/snowops-oss/snowopslabs/issues/122).
 
 ## 2. Context
 
@@ -133,7 +133,7 @@ gets its own copies.
   what it prints without a terminal. `runDoctor` is the pattern to follow.
 - Don't add new package-level `var fooCmd = &cobra.Command{…}` values or flag
   variables. Older commands still use them
-  ([open issue](https://github.com/sagar2395/snowopslabs/issues/122)).
+  ([open issue](https://github.com/snowops-oss/snowopslabs/issues/122)).
 - A command is tested through the CLI harness: a step in its group's journey,
   so its output is in a golden transcript, and a row in the group's failure
   table for each way it fails ([TESTING](TESTING.md#go-unit-and-contract-tests)).

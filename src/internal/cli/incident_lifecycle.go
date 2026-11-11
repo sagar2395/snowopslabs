@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/run"
-	incsvc "github.com/sagar2395/snowopslabs/internal/service/incident"
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	incsvc "github.com/snowops-oss/snowopslabs/internal/service/incident"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // `labctl incident inject|resolve` run inject.sh and resolve.sh through the

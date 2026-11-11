@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
-	"github.com/sagar2395/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
 )
 
 func createTestService(t *testing.T, root, name string) {

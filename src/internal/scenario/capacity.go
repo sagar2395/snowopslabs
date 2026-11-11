@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/sagar2395/snowopslabs/internal/capacity"
+	"github.com/snowops-oss/snowopslabs/internal/capacity"
 )
 
 // AdmitFunc decides whether an activation may go ahead given what it adds to

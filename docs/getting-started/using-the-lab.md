@@ -84,7 +84,7 @@ git merge origin/stable      # your changes are kept; git stops on a conflict
 
 If you have uncommitted changes, commit or stash them first. When labctl and
 your clone come from different releases, every command says so and prints the
-fix. Each [release](https://github.com/sagar2395/snowopslabs/releases) says
+fix. Each [release](https://github.com/snowops-oss/snowopslabs/releases) says
 whether anything needs rebuilding after the merge.
 
 ## Uninstall

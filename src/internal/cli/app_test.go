@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
 )
 
 func TestApp_Journey(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/pkg/checks"
-	"github.com/sagar2395/snowopslabs/pkg/extension"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/pkg/extension"
 )
 
 const noCheckScenarioYAML = `name: no-checks-scenario

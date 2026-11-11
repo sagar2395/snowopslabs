@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/capacity"
-	"github.com/sagar2395/snowopslabs/internal/labtest"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/capacity"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 func TestPreflightDocker(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/sagar2395/snowopslabs/internal/capacity"
+	"github.com/snowops-oss/snowopslabs/internal/capacity"
 )
 
 // AdmitFunc decides whether a fault may be injected given what it adds to the

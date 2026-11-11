@@ -8,8 +8,8 @@ import (
 	"maps"
 	"strings"
 
-	trafficsvc "github.com/sagar2395/snowopslabs/internal/service/traffic"
-	"github.com/sagar2395/snowopslabs/internal/traffic"
+	trafficsvc "github.com/snowops-oss/snowopslabs/internal/service/traffic"
+	"github.com/snowops-oss/snowopslabs/internal/traffic"
 	"github.com/spf13/cobra"
 )
 

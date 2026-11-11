@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/pkg/scenario"
+	"github.com/snowops-oss/snowopslabs/pkg/scenario"
 )
 
 // identityResolve stands in for an engine's resolver where the test's content

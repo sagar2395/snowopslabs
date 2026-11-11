@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // Floor is the smallest Docker engine the lab supports: the cluster plus the

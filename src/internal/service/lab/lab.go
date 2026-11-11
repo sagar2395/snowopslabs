@@ -23,8 +23,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/run"
-	"github.com/sagar2395/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	"github.com/snowops-oss/snowopslabs/internal/store"
 )
 
 // LockKey is the lock both up and down take, so one cannot start while the

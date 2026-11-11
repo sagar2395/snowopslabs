@@ -15,8 +15,8 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/incident"
-	incsvc "github.com/sagar2395/snowopslabs/internal/service/incident"
+	"github.com/snowops-oss/snowopslabs/internal/incident"
+	incsvc "github.com/snowops-oss/snowopslabs/internal/service/incident"
 	"github.com/spf13/cobra"
 )
 

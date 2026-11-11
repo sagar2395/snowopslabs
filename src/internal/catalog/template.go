@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/tmpl"
+	"github.com/snowops-oss/snowopslabs/internal/tmpl"
 )
 
 // TemplateContext is the set of variables content templates may reference. It

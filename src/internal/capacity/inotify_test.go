@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 const k3dLabel = "k3d.cluster=snowops"

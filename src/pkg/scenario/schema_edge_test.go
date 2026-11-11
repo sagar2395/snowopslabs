@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/pkg/checks"
+	"github.com/snowops-oss/snowopslabs/pkg/checks"
 )
 
 // TestValidate_MissingName verifies that a scenario without a name is rejected.

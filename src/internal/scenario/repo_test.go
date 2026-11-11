@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/tmpl"
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/tmpl"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 // repoRoot walks up from the package directory until it finds the project

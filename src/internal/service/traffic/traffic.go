@@ -12,8 +12,8 @@ import (
 	"path"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/run"
-	trafficopts "github.com/sagar2395/snowopslabs/internal/traffic"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	trafficopts "github.com/snowops-oss/snowopslabs/internal/traffic"
 )
 
 // LockKey prevents traffic start and stop from changing the same workload at once.

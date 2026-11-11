@@ -18,7 +18,7 @@ code disagree, fix the doc in the same change.
 
 ## Layout
 
-- `src/`: the Go module (`github.com/sagar2395/snowopslabs`) and the UI. **Run
+- `src/`: the Go module (`github.com/snowops-oss/snowopslabs`) and the UI. **Run
   `go` and `make` targets from here.**
   - `src/cmd/labctl/` entrypoint · `src/internal/` implementation ·
     `src/pkg/` exported SDK · `src/ui/` React app · `src/services/` in-cluster

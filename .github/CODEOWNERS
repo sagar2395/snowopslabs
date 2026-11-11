@@ -5,8 +5,8 @@
 # licensing. With branch protection requiring code-owner review, nothing in
 # those paths merges without the lead maintainer.
 #
-# Area teams (@snowops/scenario-maintainers and so on) are listed in comments
-# until the GitHub org and its teams exist. Until then the lead maintainer owns
+# Area teams (@snowops-oss/scenario-maintainers and so on) are listed in comments
+# until the area teams exist in the snowops-oss org. Until then the lead maintainer owns
 # everything.
 
 # Default owner for everything
@@ -35,12 +35,12 @@
 /src/pkg/extension/         @sagar2395
 
 # --- Content: open to area maintainers once teams exist ---
-# /scenarios/               @sagar2395 @snowops/scenario-maintainers
-# /incidents/               @sagar2395 @snowops/scenario-maintainers
-# /learn/                   @sagar2395 @snowops/scenario-maintainers
-# /challenges/              @sagar2395 @snowops/scenario-maintainers
-# /platform/                @sagar2395 @snowops/platform-maintainers
-# /docs/                    @sagar2395 @snowops/docs-maintainers
+# /scenarios/               @sagar2395 @snowops-oss/scenario-maintainers
+# /incidents/               @sagar2395 @snowops-oss/scenario-maintainers
+# /learn/                   @sagar2395 @snowops-oss/scenario-maintainers
+# /challenges/              @sagar2395 @snowops-oss/scenario-maintainers
+# /platform/                @sagar2395 @snowops-oss/platform-maintainers
+# /docs/                    @sagar2395 @snowops-oss/docs-maintainers
 /scenarios/                 @sagar2395
 /incidents/                 @sagar2395
 /learn/                     @sagar2395

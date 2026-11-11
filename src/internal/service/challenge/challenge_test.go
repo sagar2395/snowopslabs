@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/challenge"
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/executor"
-	"github.com/sagar2395/snowopslabs/internal/incident"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/challenge"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/incident"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
 )
 
 const script = "#!/usr/bin/env bash\nset -eu\n"

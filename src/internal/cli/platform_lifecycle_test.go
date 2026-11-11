@@ -14,12 +14,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/inventory"
-	"github.com/sagar2395/snowopslabs/internal/platform"
-	"github.com/sagar2395/snowopslabs/internal/run"
-	platsvc "github.com/sagar2395/snowopslabs/internal/service/platform"
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/inventory"
+	"github.com/snowops-oss/snowopslabs/internal/platform"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	platsvc "github.com/snowops-oss/snowopslabs/internal/service/platform"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // fakePlatformEnv points platformEngineFactory at a Fake-backed engine and a

@@ -35,7 +35,7 @@ labctl reset                                  # start again from a clean cluster
 ## Install
 
 ```bash
-git clone --branch stable https://github.com/sagar2395/snowopslabs.git
+git clone --branch stable https://github.com/snowops-oss/snowopslabs.git
 cd snowopslabs && ./install.sh
 ```
 

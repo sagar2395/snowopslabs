@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/run"
-	scnsvc "github.com/sagar2395/snowopslabs/internal/service/scenario"
-	"github.com/sagar2395/snowopslabs/internal/store"
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/run"
+	scnsvc "github.com/snowops-oss/snowopslabs/internal/service/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/store"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // `labctl scenario up|down` run through the run engine: an activation is one

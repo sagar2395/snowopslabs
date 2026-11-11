@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/checkfixture"
-	"github.com/sagar2395/snowopslabs/internal/labtest"
+	"github.com/snowops-oss/snowopslabs/internal/checkfixture"
+	"github.com/snowops-oss/snowopslabs/internal/labtest"
 )
 
 // drillMarker exists while the drill scenario's exercise is unsolved.

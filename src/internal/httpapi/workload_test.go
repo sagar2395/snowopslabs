@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/incident"
-	"github.com/sagar2395/snowopslabs/internal/scenario"
-	"github.com/sagar2395/snowopslabs/internal/workload"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/incident"
+	"github.com/snowops-oss/snowopslabs/internal/scenario"
+	"github.com/snowops-oss/snowopslabs/internal/workload"
 )
 
 func testBindServer(t *testing.T) *Server {

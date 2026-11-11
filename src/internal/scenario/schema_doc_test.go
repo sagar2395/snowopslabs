@@ -13,7 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	pkgscenario "github.com/sagar2395/snowopslabs/pkg/scenario"
+	pkgscenario "github.com/snowops-oss/snowopslabs/pkg/scenario"
 )
 
 // schemaTypes walks the type graph reachable from Scenario, following struct

@@ -56,7 +56,7 @@ it. Run the runbook twice: once with Docker Desktop's WSL Integration off (so
 In a directory of your choice (on WSL: `cd ~` first):
 
 ```bash
-$ git clone --branch stable https://github.com/sagar2395/snowopslabs.git
+$ git clone --branch stable https://github.com/snowops-oss/snowopslabs.git
 $ cd snowopslabs && ./install.sh
 $ cd ~ && labctl scenario list | head -3     # works outside the clone
 ```

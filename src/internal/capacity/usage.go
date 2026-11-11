@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/toolchain"
+	"github.com/snowops-oss/snowopslabs/internal/toolchain"
 )
 
 // NodeLabel is the Docker label that selects a local cluster's node

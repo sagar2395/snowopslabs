@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/executor"
+	"github.com/snowops-oss/snowopslabs/internal/executor"
 )
 
 // parseAfterCursor returns the event sequence a stream should resume after:

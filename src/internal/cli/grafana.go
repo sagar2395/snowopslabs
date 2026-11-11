@@ -12,7 +12,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/labcheck"
+	"github.com/snowops-oss/snowopslabs/internal/labcheck"
 )
 
 // datasourceWait is how long Grafana's Prometheus datasource may take to

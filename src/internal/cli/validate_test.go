@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/sagar2395/snowopslabs/internal/catalog"
+	"github.com/snowops-oss/snowopslabs/internal/catalog"
 )
 
 const validScenarioYAML = `name: s1

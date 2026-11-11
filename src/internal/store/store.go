@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sagar2395/snowopslabs/internal/config"
-	"github.com/sagar2395/snowopslabs/internal/runowner"
+	"github.com/snowops-oss/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/runowner"
 	_ "modernc.org/sqlite" // pure-Go driver, registered as "sqlite"
 )
 

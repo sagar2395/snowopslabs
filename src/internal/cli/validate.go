@@ -12,8 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/sagar2395/snowopslabs/internal/catalog"
-	"github.com/sagar2395/snowopslabs/internal/config"
+	"github.com/snowops-oss/snowopslabs/internal/catalog"
+	"github.com/snowops-oss/snowopslabs/internal/config"
 )
 
 // `labctl validate` loads every content item (scenarios, incidents, learning
