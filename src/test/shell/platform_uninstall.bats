@@ -78,3 +78,15 @@ $script: unbounded namespace delete: kubectl $line" ;;
   done < <(uninstall_scripts)
   [ -z "$bad" ] || { printf 'teardown hang risk:%s\n' "$bad"; return 1; }
 }
+
+# The ExternalSecrets that name an app belong to the scenarios that applied
+# them; the platform removes only what its install made.
+@test "external-secrets uninstall removes the ClusterSecretStore and names no app" {
+  export WORKLOAD_NAME=cart WORKLOAD_NAMESPACE=shop SECRETS_NAMESPACE=shop
+  run bash "$ROOT/platform/secrets/external-secrets/uninstall.sh"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  assert_called kubectl "delete clustersecretstore vault-backend"
+  assert_called kubectl "delete secret vault-token -n external-secrets"
+  run grep -E 'cart|shop|go-api' "$STUB_LOG"
+  [ "$status" -ne 0 ] || { echo "names an app: $output"; false; }
+}

@@ -2,7 +2,6 @@
 set -euo pipefail
 
 NAMESPACE="external-secrets"
-TARGET_NS="${SECRETS_NAMESPACE:-go-api}"
 
 echo "=== External Secrets Operator Status ==="
 echo ""
@@ -23,23 +22,19 @@ for d in external-secrets external-secrets-webhook external-secrets-cert-control
 done
 echo ""
 
-# SecretStore + ExternalSecret readiness in the target namespace
-echo "Sync wiring in '$TARGET_NS':"
-store=$(kubectl get secretstore vault-backend -n "$TARGET_NS" \
+# The store every ExternalSecret reads Vault through
+store=$(kubectl get clustersecretstore vault-backend \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-echo "  SecretStore vault-backend Ready: ${store:-NotFound}"
-es=$(kubectl get externalsecret go-api-secret -n "$TARGET_NS" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-echo "  ExternalSecret go-api-secret Ready: ${es:-NotFound}"
+echo "ClusterSecretStore vault-backend Ready: ${store:-NotFound}"
 echo ""
 
-# The synced k8s Secret produced by the ExternalSecret
-echo "Synced Secret '${TARGET_NS}/go-api-secrets':"
-if kubectl get secret go-api-secrets -n "$TARGET_NS" >/dev/null 2>&1; then
-  keys=$(kubectl get secret go-api-secrets -n "$TARGET_NS" -o jsonpath='{.data}' 2>/dev/null |
-    grep -o '"[^"]*":' | tr -d '":' | tr '\n' ' ' || echo "")
-  echo "  present (keys: ${keys:-?})"
-  echo "  reveal: kubectl -n $TARGET_NS get secret go-api-secrets -o go-template='{{index .data \"api-key\" | base64decode}}{{\"\\n\"}}'"
+# The ExternalSecrets scenarios applied, and the Secret each one writes
+echo "ExternalSecrets:"
+list=$(kubectl get externalsecrets --all-namespaces \
+  -o jsonpath='{range .items[*]}  {.metadata.namespace}/{.metadata.name} -> Secret {.spec.target.name}, Ready: {.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null || echo "")
+if [ -n "$list" ]; then
+  printf '%s\n' "$list"
+  echo "  reveal: kubectl -n <namespace> get secret <secret> -o go-template='{{index .data \"api-key\" | base64decode}}{{\"\\n\"}}'"
 else
-  echo "  not found - check the ExternalSecret status above"
+  echo "  none - a scenario such as secrets-management applies one for its app"
 fi

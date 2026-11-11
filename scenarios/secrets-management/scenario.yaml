@@ -31,8 +31,14 @@ objectives:
 
 stages:
   - name: consume
-    description: Seed a known baseline in Vault and stand up two consumers of the same Secret - one mounting it as a file, one taking it as an env var
+    description: Sync the app's Vault key into a Secret, seed a known baseline in Vault and stand up two consumers of that Secret - one mounting it as a file, one taking it as an env var
     components:
+      # First, so teardown removes it last: restore-baseline still nudges it.
+      - name: vault-sync
+        type: manifest
+        path: manifests/external-secret.yaml
+        namespace: "{{.WorkloadNamespace}}"
+
       - name: secret-consumers
         type: manifest
         path: manifests/consumer.yaml
@@ -164,7 +170,7 @@ explore:
   tips:
     - "Rotate in Vault, never in Kubernetes. Editing the Secret directly is undone at ESO's next refresh - that is the operator doing its job, and it is the habit this scenario is trying to build."
     - "Propagation is two hops, not one: ESO refreshes the Secret every 15s, then the kubelet refreshes the mounted file on its own cycle. End to end it can take ~90s, so 'rotation-reached-pod' showing PENDING for a minute is normal, not broken."
-    - "The Vault->Secret wiring (SecretStore, ExternalSecret, vault-token) belongs to the secrets/external-secrets platform component. This scenario only seeds a value and mounts the result, so tearing it down leaves that wiring intact."
+    - "The wiring is split on purpose. The secrets/external-secrets platform component owns the operator and the vault-backend ClusterSecretStore, which name no app. This scenario brings the {{.WorkloadName}}-secret ExternalSecret for the app it is bound to, so tearing it down removes that ExternalSecret and the Secret it wrote, and leaves the store for the next app."
     - "env-consumer is the control group, not a broken pod. The kubelet cannot rewrite a running process's environment, so an env-var secret is frozen at start and only a rollout moves it. That is why it still shows the old value, and why file mounts are the answer when you want rotation to be free."
     - "Binding the key explicitly (secretKeyRef) rather than envFrom is deliberate: 'api-key' is not a valid environment variable name, and envFrom would skip it silently with an InvalidVariableNames event."
     - "Dev-mode Vault keeps data in memory. If vault-0 restarts, its KV is wiped - re-run 'labctl scenario up secrets-management --force' to reseed the baseline."

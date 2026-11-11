@@ -3,8 +3,8 @@
 # kubelet when the Secret changes, so a rotation reaches a running pod with no
 # restart. An env var is captured at process start and would need a redeploy.
 #
-# The Secret and its ExternalSecret are owned by the secrets/external-secrets
-# platform component; this scenario only mounts what that component publishes.
+# The Secret is written by this scenario's ExternalSecret (external-secret.yaml),
+# which reads Vault through the secrets/external-secrets platform component.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

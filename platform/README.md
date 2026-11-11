@@ -174,16 +174,18 @@ Centralised secrets: a **Vault** backend plus the **External Secrets Operator
 | Provider | Chart | Role |
 |----------|-------|------|
 | **vault** | `hashicorp/vault` | Secrets backend (dev mode for the lab; seeds `secret/go-api`, UI via ingress) |
-| **external-secrets** | `external-secrets/external-secrets` | Syncs `secret/go-api` → `ExternalSecret` → k8s Secret `go-api-secrets` |
+| **external-secrets** | `external-secrets/external-secrets` | Operator + ClusterSecretStore `vault-backend`, which any namespace reads Vault through |
 
 ESO **prerequires** Vault - its `install.sh` preflights for the Vault service and
-errors (rather than auto-installing) if it's missing. The full chain demonstrates
-`Vault KV → ExternalSecret → k8s Secret → go-api env var`, and rotating the value
-in Vault propagates within the 15s refresh interval (the rotation exercise).
+errors (rather than auto-installing) if it's missing. The platform part names no
+app: the `secrets-management` scenario applies the ExternalSecret for the app it
+is bound to, completing `Vault KV → ExternalSecret → k8s Secret → pod`, and
+rotating the value in Vault propagates within the 15s refresh interval (the
+rotation exercise).
 
 ```bash
 labctl platform up secrets/vault            # backend + demo secret + UI
-labctl platform up secrets/external-secrets # operator + SecretStore + ExternalSecret
+labctl platform up secrets/external-secrets # operator + ClusterSecretStore
 # or both, in order:  make platform-secrets-up
 labctl platform status secrets/external-secrets
 labctl platform down secrets/external-secrets && labctl platform down secrets/vault
