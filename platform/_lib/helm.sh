@@ -79,7 +79,10 @@ discovery_noise_filter() {
 # Runs a command with discovery_noise_filter on its stderr only. Its stdout,
 # its other stderr lines and its exit status are unchanged.
 quiet_discovery() {
-  { "$@" 2>&1 1>&3 3>&- | discovery_noise_filter >&2 3>&-; rc="${PIPESTATUS[0]}"; } 3>&1
+  {
+    "$@" 2>&1 1>&3 3>&- | discovery_noise_filter >&2 3>&-
+    rc="${PIPESTATUS[0]}"
+  } 3>&1
   return "$rc"
 }
 

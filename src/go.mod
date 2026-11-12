@@ -5,7 +5,7 @@ go 1.25.0
 // The language floor above stays at 1.25; this pins the toolchain that BUILDS
 // it. Without it `make vuln` passes in CI (which tracks the latest 1.26 patch)
 // and fails on any developer machine whose Go has fallen behind a stdlib CVE.
-toolchain go1.26.10
+toolchain go1.26.11
 
 // npm packages can ship Go sources; they are not part of this module.
 ignore ./ui/node_modules

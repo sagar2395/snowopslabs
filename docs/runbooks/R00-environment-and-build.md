@@ -22,7 +22,7 @@ verifies it does not run.
 Optional but exercised below: `golangci-lint` (which also provides the `gosec`
 security gate), `govulncheck`, `shfmt`.
 
-`src/go.mod` pins `toolchain go1.26.10` while keeping the `go 1.25.0` language
+`src/go.mod` pins `toolchain go1.26.11` while keeping the `go 1.25.0` language
 floor, so the build always runs on a toolchain patched against the standard
 library CVEs `make vuln` checks for. Go downloads it on demand; only
 `GOTOOLCHAIN=local` on an older install will refuse. CI installs Go 1.26
