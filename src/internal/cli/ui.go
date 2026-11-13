@@ -3,14 +3,19 @@
 package cli
 
 import (
+	"bytes"
+	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -63,6 +68,7 @@ For a team server, bind to the network with authentication and HTTPS:
 	cmd.Flags().StringVar(&o.tlsKey, "tls-key", "", "path to the TLS private key (PEM)")
 	cmd.Flags().BoolVar(&o.selfSigned, "tls-self-signed", false, "serve HTTPS with a self-signed certificate for this machine's names and addresses, made once and kept in the lab state")
 	cmd.Flags().StringVar(&o.dir, "ui-dir", os.Getenv("LABCTL_UI_DIR"), "serve the UI live from this directory (e.g. src/ui/dist) instead of the embedded bundle; defaults to $LABCTL_UI_DIR")
+	cmd.AddCommand(uiKubeconfigCmd())
 	return cmd
 }
 
@@ -141,6 +147,140 @@ func lanAddresses(addrs []net.Addr) []string {
 		}
 	}
 	return append(v4, v6...)
+}
+
+// uiKubeconfigCmd writes a kubeconfig participants can use to reach this lab
+// from another machine.
+func uiKubeconfigCmd() *cobra.Command {
+	var (
+		server  string
+		out     string
+		timeout time.Duration
+	)
+	cmd := &cobra.Command{
+		Use:   "kubeconfig",
+		Short: "Write a kubeconfig that reaches this lab from another machine",
+		Long: `Rewrite the k3d kubeconfig so participants can reach the lab's API
+server from another machine on the LAN.
+
+The k3d kubeconfig points at a loopback address, which only works on this
+machine. This command replaces that address with a LAN address, pins the TLS
+server name so the cluster's certificate still validates, and checks the API
+server answers before it writes the file.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return writeParticipantKubeconfig(cmd, server, out, timeout)
+		},
+	}
+	cmd.Flags().StringVar(&server, "server", "", "address participants use to reach the API server, host:port (default: the first LAN address)")
+	cmd.Flags().StringVar(&out, "out", "participants.kubeconfig", "write the kubeconfig to this file")
+	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Second, "how long to wait for the API server to answer")
+	return cmd
+}
+
+// writeParticipantKubeconfig rewrites the k3d kubeconfig to a LAN address,
+// checks the API server answers, and writes the result to out.
+func writeParticipantKubeconfig(cmd *cobra.Command, server, out string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+	defer cancel()
+
+	// The k3d kubeconfig points at a loopback address; participants need a LAN
+	// address, the same one `labctl ui` prints.
+	if server == "" {
+		addrs, _ := net.InterfaceAddrs()
+		lans := lanAddresses(addrs)
+		if len(lans) == 0 {
+			return errors.New("no LAN address found; pass --server with the address participants use")
+		}
+		server = lans[0]
+	}
+	host, port, err := net.SplitHostPort(server)
+	if err != nil {
+		return fmt.Errorf("--server %q must be host:port: %w", server, err)
+	}
+	if net.ParseIP(host) == nil {
+		return fmt.Errorf("--server %q is not an IP address participants can dial", host)
+	}
+
+	raw, err := k3dKubeconfig(ctx, cfg.ClusterName)
+	if err != nil {
+		return err
+	}
+	rewritten, tlsName, err := rewriteKubeconfigServer(raw, host, port)
+	if err != nil {
+		return err
+	}
+	if err := checkAPIReachable(ctx, net.JoinHostPort(host, port), tlsName); err != nil {
+		return err
+	}
+	if err := os.WriteFile(out, rewritten, 0o600); err != nil {
+		return fmt.Errorf("writing %s: %w", out, err)
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Wrote %s for participants at %s\n", out, net.JoinHostPort(host, port))
+	return nil
+}
+
+// k3dKubeconfig returns the kubeconfig k3d wrote for the cluster.
+func k3dKubeconfig(ctx context.Context, cluster string) ([]byte, error) {
+	c := exec.CommandContext(ctx, "k3d", "kubeconfig", "get", cluster)
+	var stderr bytes.Buffer
+	c.Stderr = &stderr
+	out, err := c.Output()
+	if err != nil {
+		return nil, fmt.Errorf("k3d kubeconfig get %s: %w: %s", cluster, err, strings.TrimSpace(stderr.String()))
+	}
+	return out, nil
+}
+
+// rewriteKubeconfigServer replaces the API server address in a kubeconfig with
+// host:port and pins the TLS server name to the address the cluster's
+// certificate was issued for, so the certificate still validates.
+func rewriteKubeconfigServer(raw []byte, host, port string) ([]byte, string, error) {
+	lines := strings.Split(string(raw), "\n")
+	var tlsName string
+	out := make([]string, 0, len(lines)+1)
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "server:") {
+			val := strings.TrimSpace(strings.TrimPrefix(trimmed, "server:"))
+			if u, err := url.Parse(val); err == nil && u.Host != "" {
+				origHost := u.Hostname()
+				u.Host = net.JoinHostPort(host, port)
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+				out = append(out, indent+"server: "+u.String())
+				out = append(out, indent+"tls-server-name: "+origHost)
+				if tlsName == "" {
+					tlsName = origHost
+				}
+				continue
+			}
+		}
+		out = append(out, line)
+	}
+	if tlsName == "" {
+		return nil, "", errors.New("the kubeconfig has no API server address")
+	}
+	return []byte(strings.Join(out, "\n")), tlsName, nil
+}
+
+// checkAPIReachable dials the API server and completes a TLS handshake with the
+// name the cluster's certificate was issued for, so a wrong address or a
+// certificate mismatch fails before the kubeconfig is written.
+func checkAPIReachable(ctx context.Context, addr, tlsName string) error {
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return fmt.Errorf("the API server at %s is not reachable: %w", addr, err)
+	}
+	defer conn.Close()
+	if deadline, ok := ctx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+	tlsConn := tls.Client(conn, &tls.Config{ServerName: tlsName, MinVersion: tls.VersionTLS12})
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		return fmt.Errorf("the API server at %s did not complete a TLS handshake for %q: %w", addr, tlsName, err)
+	}
+	return nil
 }
 
 // serveUI prints the plan and serves until the command's context ends.
