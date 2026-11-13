@@ -576,19 +576,23 @@ which is otherwise green at t=0 when nothing has piled up yet.
 **Category:** security
 
 **What it deploys:**
-- Two workloads consuming the same synced Secret `go-api-secrets`:
+- An ExternalSecret `<app>-secret` in the app's namespace that syncs Vault
+  `secret/<app>` into the Secret `<app>-secrets`
+- Two workloads consuming that Secret:
   `secret-consumer` mounts it as a **file** (`/etc/api/api-key`), `env-consumer`
   takes it as an **env var**: the control group
-- A baseline value seeded at Vault `secret/go-api`
+- A baseline value seeded at Vault `secret/<app>`
 - A **Secret Rotation** Grafana dashboard (ESO sync calls, readiness, Vault API rate)
 
-The Vault->ESO->Secret wiring itself belongs to the `secrets/external-secrets`
-platform component; this scenario mounts what that component publishes and does
-not re-create or remove it.
+The `secrets/external-secrets` platform component installs the operator and the
+`vault-backend` ClusterSecretStore, and names no app. The ExternalSecret is the
+scenario's own, so it can be activated for any app on the same platform install,
+and `scenario down` removes the ExternalSecret and the Secret it wrote while the
+store stays.
 
 **Prerequisites:**
 - Platform: secrets/vault, secrets/external-secrets, monitoring/metrics
-- Apps: go-api
+- Apps: the bound workload (go-api by default)
 
 **Checks (9):** ESO controller ready, ExternalSecret ready, **ESO reports synced**
 (promql on ESO's own Ready condition, no series means Prometheus is not scraping

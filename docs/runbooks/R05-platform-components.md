@@ -35,6 +35,13 @@ supply only their differences ([ADR-0010](../adr/0010-platform-values-single-sou
 A second copy of the values drifts, and Helm reports the drift as a forbidden
 update to an immutable field.
 
+A component is installed once, for whichever app is bound at that moment, so it
+names no app. Wiring for one app, such as the ExternalSecret that syncs
+`secret/<app>`, is a component of the scenario that needs it: the
+`secrets/external-secrets` component installs only the operator and the
+`vault-backend` ClusterSecretStore, and `secrets-management` applies the
+ExternalSecret for its own binding.
+
 ## Helm truths this repo has been bitten by
 
 **`helm upgrade` never updates CRDs.** The `crds/` directory is install-only, so

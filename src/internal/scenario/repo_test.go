@@ -7,12 +7,16 @@ package scenario
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/snowops-oss/snowopslabs/internal/tmpl"
 	"github.com/snowops-oss/snowopslabs/internal/workload"
@@ -226,6 +230,80 @@ func TestRepoScenarios_RenderForAnyWorkload(t *testing.T) {
 				t.Errorf("uses {{.WorkloadName}} but the rendered scenario never names %q", bound.Name)
 			}
 		})
+	}
+}
+
+// TestRepoScenarios_BringTheExternalSecretsTheyCheck checks that a scenario
+// which grades an ExternalSecret applies it itself, rendered for the bound app.
+// A platform component is installed once, for whichever app is bound at that
+// moment, so an ExternalSecret left to it is missing for every other app.
+func TestRepoScenarios_BringTheExternalSecretsTheyCheck(t *testing.T) {
+	root := repoRoot(t)
+	engine := NewEngine(root, "lab.test", "k3d")
+	engine.Workload = workload.Workload{Name: "zz-app", Namespace: "zz-ns", Port: "9999", Metric: "zz_metric"}
+
+	graded := 0
+	for _, s := range engine.List() {
+		params := engine.ParamDefaults(s)
+		var applied []manifestObject
+		for _, comp := range s.AllComponents() {
+			if comp.Type != "manifest" {
+				continue
+			}
+			text, err := engine.RenderFile(s, comp.Path)
+			if err != nil {
+				t.Fatalf("scenario %q: render %s: %v", s.Name, comp.Path, err)
+			}
+			applied = append(applied, manifestObjects(t, text, engine.ResolveTemplateWithParams(comp.Namespace, params))...)
+		}
+		for _, c := range s.Checks {
+			name, ok := strings.CutPrefix(engine.ResolveTemplateWithParams(c.Resource, params), "externalsecret/")
+			if c.Type != "kubectl" || !ok {
+				continue
+			}
+			graded++
+			want := manifestObject{Kind: "ExternalSecret", Name: name, Namespace: engine.ResolveTemplateWithParams(c.Namespace, params)}
+			if !slices.Contains(applied, want) {
+				t.Errorf("scenario %q checks externalsecret/%s in %q, but none of its manifests applies it", s.Name, want.Name, want.Namespace)
+			}
+		}
+	}
+	if graded == 0 {
+		t.Fatal("no scenario checks an ExternalSecret, so this test guards nothing")
+	}
+}
+
+// manifestObject is what kubectl apply would create from one YAML document.
+type manifestObject struct {
+	Kind, Name, Namespace string
+}
+
+// manifestObjects lists the objects in a rendered manifest. A document with no
+// namespace of its own lands in the component's namespace.
+func manifestObjects(t *testing.T, text, componentNS string) []manifestObject {
+	t.Helper()
+	var out []manifestObject
+	dec := yaml.NewDecoder(strings.NewReader(text))
+	for {
+		var doc struct {
+			Kind     string `yaml:"kind"`
+			Metadata struct {
+				Name      string `yaml:"name"`
+				Namespace string `yaml:"namespace"`
+			} `yaml:"metadata"`
+		}
+		err := dec.Decode(&doc)
+		if errors.Is(err, io.EOF) {
+			return out
+		}
+		if err != nil {
+			t.Fatalf("parse manifest: %v", err)
+		}
+		ns := doc.Metadata.Namespace
+		if ns == "" {
+			ns = componentNS
+		}
+		out = append(out, manifestObject{Kind: doc.Kind, Name: doc.Metadata.Name, Namespace: ns})
 	}
 }
 

@@ -3,9 +3,10 @@ set -eu
 . "$(dirname "$0")/../../_lib/workload.sh"
 
 # Stage 1: put a known baseline value in Vault so the drill has a defined starting
-# point, and wait for it to reach the consumer pod. The Vault->Secret wiring itself
-# belongs to the secrets/external-secrets platform component and is not touched
-# here - this scenario only seeds a value and mounts the result.
+# point, and wait for it to reach the consumer pod. The ExternalSecret that syncs
+# it is the stage's vault-sync component (manifests/external-secret.yaml); the
+# ClusterSecretStore it reads through belongs to the secrets/external-secrets
+# platform component and is not touched here.
 #
 # Config (env, never committed):
 #   VAULT_DEV_ROOT_TOKEN   dev root token (default: root)
@@ -80,6 +81,6 @@ echo "Baseline did not sync within 120s." >&2
 echo "  ExternalSecret ${NS}/${ES} reports: ${REASON:-<no Ready condition>}" >&2
 echo "  Vault holds: $(kubectl exec -n vault vault-0 -- sh -c \
   "VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN='${ROOT_TOKEN}' vault kv get -field=api-key secret/${WORKLOAD_NAME}" 2>/dev/null || echo '<unreadable>')" >&2
-echo "  If Vault holds the baseline but ESO does not, the SecretStore is misconfigured:" >&2
-echo "    kubectl -n ${NS} get secretstore vault-backend -o yaml" >&2
+echo "  If Vault holds the baseline but ESO does not, the store is misconfigured:" >&2
+echo "    kubectl get clustersecretstore vault-backend -o yaml" >&2
 exit 1

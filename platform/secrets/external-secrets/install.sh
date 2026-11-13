@@ -9,21 +9,19 @@ set -euo pipefail
 # ESO depends on Vault. This script PREFLIGHTS for Vault rather than installing
 # it (install secrets/vault first).
 #
+# Nothing here names an app: the platform installs the operator and one
+# ClusterSecretStore that every namespace can read through. A scenario applies
+# the ExternalSecret for the app it is bound to, so one install serves any app.
+#
 # Config (env, with defaults - scripts never source .env themselves):
 #   ESO_CHART_VERSION     pinned external-secrets chart version (config/versions.env)
 #   VAULT_DEV_ROOT_TOKEN  Vault token ESO authenticates with (default: root)
-#   SECRETS_NAMESPACE     namespace to sync into (default: the bound workload)
 #   VAULT_NAMESPACE       namespace where Vault runs (default: vault)
 
 NAMESPACE="external-secrets"
 CHART_VERSION="${ESO_CHART_VERSION:-0.10.5}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_TOKEN="${VAULT_DEV_ROOT_TOKEN:-root}"
-TARGET_NS="${SECRETS_NAMESPACE:-${WORKLOAD_NAMESPACE:-go-api}}"
-# The ExternalSecret, the Secret it writes and the Vault key it reads all name
-# the bound workload - the scenario seeds and rotates secret/<workload>, so a
-# hardcoded key here silently reads a different secret than the drill writes.
-WORKLOAD="${WORKLOAD_NAME:-go-api}"
 VAULT_NS="${VAULT_NAMESPACE:-vault}"
 
 # --- Preflight: Vault must already be installed --------------------------------
@@ -50,24 +48,22 @@ echo "Waiting for the ESO controller + webhook to be ready..."
 kubectl rollout status deployment/external-secrets -n "$NAMESPACE" --timeout=180s
 kubectl rollout status deployment/external-secrets-webhook -n "$NAMESPACE" --timeout=180s
 
-# Ensure the target namespace exists.
-kubectl create namespace "$TARGET_NS" --dry-run=client -o yaml | kubectl apply -f -
-
 # Token ESO uses to talk to Vault. Sourced from env - never committed to git.
-echo "Creating Vault token secret in '$TARGET_NS' (from env, not committed)..."
+# It sits next to the operator; the ClusterSecretStore names its namespace.
+echo "Creating Vault token secret in '$NAMESPACE' (from env, not committed)..."
 kubectl create secret generic vault-token \
-  --namespace "$TARGET_NS" \
+  --namespace "$NAMESPACE" \
   --from-literal=token="$ROOT_TOKEN" \
   --dry-run=client -o yaml | kubectl apply -f -
 
-# SecretStore (Vault backend) + ExternalSecret (sync secret/<workload> -> k8s Secret).
-echo "Wiring SecretStore + ExternalSecret in '$TARGET_NS' ..."
+# One ClusterSecretStore (Vault backend). An ExternalSecret in any namespace
+# reads through it with secretStoreRef kind: ClusterSecretStore.
+echo "Wiring ClusterSecretStore vault-backend ..."
 cat <<EOF | kubectl apply -f -
 apiVersion: external-secrets.io/v1beta1
-kind: SecretStore
+kind: ClusterSecretStore
 metadata:
   name: vault-backend
-  namespace: ${TARGET_NS}
 spec:
   provider:
     vault:
@@ -77,34 +73,16 @@ spec:
       auth:
         tokenSecretRef:
           name: vault-token
+          namespace: ${NAMESPACE}
           key: token
----
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: ${WORKLOAD}-secret
-  namespace: ${TARGET_NS}
-spec:
-  refreshInterval: 15s
-  secretStoreRef:
-    name: vault-backend
-    kind: SecretStore
-  target:
-    name: ${WORKLOAD}-secrets
-    creationPolicy: Owner
-  data:
-    - secretKey: api-key
-      remoteRef:
-        key: ${WORKLOAD}
-        property: api-key
 EOF
 
-echo "Waiting for the ExternalSecret to sync..."
-kubectl wait "externalsecret/${WORKLOAD}-secret" -n "$TARGET_NS" \
+echo "Waiting for the ClusterSecretStore to reach Vault..."
+kubectl wait clustersecretstore/vault-backend \
   --for=condition=Ready --timeout=120s || true
 
 echo ""
 echo "External Secrets Operator installed and wired."
-echo "    Synced secret: '${TARGET_NS}/${WORKLOAD}-secrets' (key: api-key)"
-echo "    Refresh interval: 15s - rotate the Vault value and watch it propagate."
-echo "    Wire into ${WORKLOAD} with envFrom.secretRef.name=${WORKLOAD}-secrets (see runbook)."
+echo "    ClusterSecretStore: vault-backend (Vault KV v2, path secret/)"
+echo "    Sync a Vault key into a namespace with an ExternalSecret whose"
+echo "    secretStoreRef is kind: ClusterSecretStore, name: vault-backend."

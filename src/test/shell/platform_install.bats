@@ -142,6 +142,35 @@ teardown() {
   [ "$status" -ne 0 ] || { echo "metrics.service.enabled is true in ${values#"$ROOT"/}"; false; }
 }
 
+# The platform part is installed once, for whichever app is bound at the time,
+# so anything in it that names an app is missing for every other app. The
+# ExternalSecret belongs to the scenario; the platform brings one
+# ClusterSecretStore whose token sits next to the operator.
+@test "external-secrets install names no app" {
+  export WORKLOAD_NAME=cart WORKLOAD_NAMESPACE=shop SECRETS_NAMESPACE=shop
+  stub_script kubectl <<'EOF'
+case "$*" in
+  "apply -f -") cat >>"$STUB_DIR/applied.yaml" ;;
+esac
+EOF
+  run bash "$ROOT/platform/secrets/external-secrets/install.sh"
+  [ "$status" -eq 0 ] || { echo "$output"; false; }
+  printed="$output"
+  applied="$STUB_DIR/applied.yaml"
+
+  run grep -c '^kind: ClusterSecretStore$' "$applied"
+  [ "$output" = 1 ] || { cat "$applied"; false; }
+  grep -q '^          namespace: external-secrets$' "$applied" || { cat "$applied"; false; }
+  run grep -E '^kind: (ExternalSecret|SecretStore)$' "$applied"
+  [ "$status" -ne 0 ] || { echo "applies an app's wiring: $output"; false; }
+  assert_called kubectl "create secret generic vault-token --namespace external-secrets"
+  run grep -E 'cart|shop|go-api' "$STUB_LOG" "$applied"
+  [ "$status" -ne 0 ] || { echo "names an app: $output"; false; }
+  case "$printed" in
+    *cart* | *shop* | *go-api*) echo "prints an app: $printed" && false ;;
+  esac
+}
+
 # client-go in helm and kubectl prints an error for each API group the
 # apiserver cannot serve yet: the metrics API while metrics-server starts, and
 # the CRDs a chart has just installed. labctl shows them only with --verbose.
